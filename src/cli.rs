@@ -152,8 +152,36 @@ pub enum Cmd {
         #[arg(long)]
         json: bool,
     },
+    /// This machine's remote for the project, or set or remove it
+    Remote {
+        #[command(subcommand)]
+        cmd: Option<RemoteCmd>,
+    },
+    /// Make a project from a remote and list it
+    Clone {
+        url: String,
+        /// Default: the remote's name without .git
+        folder: Option<PathBuf>,
+        #[arg(long)]
+        branch: Option<String>,
+    },
     /// Import a videre-board board into this (empty) project, once
     Import { board_dir: PathBuf },
+}
+
+#[derive(Subcommand)]
+pub enum RemoteCmd {
+    /// Sync with URL; the branch defaults to main
+    Set {
+        url: String,
+        #[arg(long)]
+        branch: Option<String>,
+        /// Sync only with `primum sync`
+        #[arg(long)]
+        manual: bool,
+    },
+    /// Stop syncing; the history stays
+    Remove,
 }
 
 #[derive(Subcommand)]
@@ -307,6 +335,45 @@ fn dispatch(cli: Cli) -> Result<()> {
                     );
                 }
             }
+        }
+        Cmd::Remote { cmd } => {
+            let p = project()?;
+            let Some(h) = crate::history::History::open(&p)? else {
+                bail!("history is off: git not found");
+            };
+            match cmd {
+                None => match h.remote()? {
+                    Some(r) => {
+                        let mode = if r.manual { "manual" } else { "auto" };
+                        println!("{}  {}  {mode}", r.url, r.branch);
+                    }
+                    None => println!("no remote"),
+                },
+                Some(RemoteCmd::Set {
+                    url,
+                    branch,
+                    manual,
+                }) => {
+                    let r = h.set_remote(&url, branch.as_deref(), manual)?;
+                    println!("{}  {}", r.url, r.branch);
+                }
+                Some(RemoteCmd::Remove) => h.remove_remote()?,
+            }
+        }
+        Cmd::Clone {
+            url,
+            folder,
+            branch,
+        } => {
+            let folder = folder.unwrap_or_else(|| {
+                let name = url.trim_end_matches('/').trim_end_matches(".git");
+                let name = name.rsplit(['/', ':']).next().unwrap_or("primum");
+                PathBuf::from(name)
+            });
+            let folder = cwd.join(folder);
+            crate::history::clone(&url, branch.as_deref(), &folder)?;
+            let p = projects::add(&folder)?;
+            println!("primum project {} in {}", p.name, p.root.display());
         }
         Cmd::Serve { port, no_open } => crate::server::serve(port, !no_open)?,
         Cmd::Import { board_dir } => {

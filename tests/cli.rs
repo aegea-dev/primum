@@ -315,3 +315,32 @@ fn log_lists_an_items_changes() {
     let json: serde_json::Value = serde_json::from_str(&t.out(&["log", "--json"])).unwrap();
     assert_eq!(json[0]["message"], "TODO:1: status doing");
 }
+
+#[test]
+#[ignore = "needs primum sync (Task 7)"]
+fn remote_and_clone_commands() {
+    let t = T::new();
+    t.out(&["add", "TODO", "Özgür"]);
+    let url = t.dir.path().join("remote.git");
+    let made = Command::new("git")
+        .args(["init", "--quiet", "--bare", "-b", "main"])
+        .arg(&url)
+        .status()
+        .unwrap();
+    assert!(made.success());
+    let url = url.to_string_lossy().to_string();
+    t.out(&["remote", "set", &url, "--manual"]);
+    assert!(t.out(&["remote"]).contains(&url));
+    t.out(&["sync"]);
+    let cfg2 = t.dir.path().join("config2");
+    let o = Command::new(env!("CARGO_BIN_EXE_primum"))
+        .args(["clone", &url, "kopya"])
+        .current_dir(t.dir.path())
+        .env("XDG_CONFIG_HOME", &cfg2)
+        .output()
+        .unwrap();
+    assert!(o.status.success(), "{o:?}");
+    assert!(t.dir.path().join("kopya/items/TODO-1.md").is_file());
+    let list = std::fs::read_to_string(cfg2.join("primum/projects.toml")).unwrap();
+    assert!(list.contains("kopya"), "{list}");
+}

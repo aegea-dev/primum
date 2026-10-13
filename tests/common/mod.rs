@@ -42,3 +42,26 @@ pub fn tracked(p: &Project) -> Vec<String> {
     v.sort();
     v
 }
+
+/// An empty bare repository to use as a remote, as a path URL.
+pub fn remote(dir: &Path) -> String {
+    let r = dir.join("remote.git");
+    let out = std::process::Command::new("git")
+        .args(["init", "--quiet", "--bare", "-b", "main"])
+        .arg(&r)
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    r.to_string_lossy().to_string()
+}
+
+/// A person: a project folder `name` with its history's identity set.
+pub fn person(dir: &Path, name: &str) -> Project {
+    let mut p = project(&dir.join(name));
+    p.name = "ortak".into();
+    let h = history(&p);
+    h.git(&["config", "user.name", name]).unwrap();
+    let email = format!("{}@example.com", name.to_lowercase());
+    h.git(&["config", "user.email", &email]).unwrap();
+    p
+}

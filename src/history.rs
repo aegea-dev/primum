@@ -244,3 +244,207 @@ impl History {
         self.git(&["show", "--format=", "--find-renames", commit, "--", path])
     }
 }
+
+/// This machine's remote for the project, from the history's git config.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Remote {
+    pub url: String,
+    pub branch: String,
+    /// Sync only with `primum sync`.
+    pub manual: bool,
+}
+
+pub enum Fetched {
+    Ok,
+    /// The remote has no such branch yet.
+    Empty,
+    Offline(String),
+}
+
+pub enum Pushed {
+    Ok,
+    /// The remote moved since the fetch.
+    Rejected,
+    Offline(String),
+}
+
+const NETWORK_SECS: u64 = 10;
+
+/// Runs `c`, killing it after `secs`; None on timeout. Never prompts.
+fn timed(mut c: Command, secs: u64) -> Result<Option<Output>> {
+    if std::env::var_os("GIT_SSH_COMMAND").is_none() {
+        c.env(
+            "GIT_SSH_COMMAND",
+            "ssh -o BatchMode=yes -o ConnectTimeout=10",
+        );
+    }
+    let mut child = c
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .context("cannot run git")?;
+    let start = std::time::Instant::now();
+    loop {
+        if child.try_wait()?.is_some() {
+            return Ok(Some(child.wait_with_output()?));
+        }
+        if start.elapsed() > std::time::Duration::from_secs(secs) {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Ok(None);
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+}
+
+fn stderr_of(o: &Output) -> String {
+    String::from_utf8_lossy(&o.stderr).trim().to_string()
+}
+
+impl History {
+    pub fn run_timed(&self, args: &[&str], secs: u64) -> Result<Option<Output>> {
+        let mut c = self.command();
+        c.args(args);
+        timed(c, secs)
+    }
+
+    fn config(&self, key: &str) -> Result<Option<String>> {
+        let out = self.run(&["config", "--get", key])?;
+        Ok(out
+            .status
+            .success()
+            .then(|| String::from_utf8_lossy(&out.stdout).trim().to_string()))
+    }
+
+    pub fn remote(&self) -> Result<Option<Remote>> {
+        let Some(url) = self.config("remote.origin.url")? else {
+            return Ok(None);
+        };
+        Ok(Some(Remote {
+            url,
+            branch: self
+                .config("primum.branch")?
+                .unwrap_or_else(|| "main".into()),
+            manual: self.config("primum.sync")?.as_deref() == Some("manual"),
+        }))
+    }
+
+    /// Sets this machine's remote; the branch keeps its current setting
+    /// (default `main`) unless given, and the local branch takes its name.
+    pub fn set_remote(&self, url: &str, branch: Option<&str>, manual: bool) -> Result<Remote> {
+        let branch = match branch {
+            Some(b) => b.to_string(),
+            None => self
+                .config("primum.branch")?
+                .unwrap_or_else(|| "main".into()),
+        };
+        if self.config("remote.origin.url")?.is_some() {
+            self.git(&["remote", "set-url", "origin", url])?;
+        } else {
+            self.git(&["remote", "add", "origin", url])?;
+        }
+        let refspec = format!("+refs/heads/{branch}:refs/remotes/origin/{branch}");
+        self.git(&["config", "remote.origin.fetch", &refspec])?;
+        self.git(&["config", "primum.branch", &branch])?;
+        let mode = if manual { "manual" } else { "auto" };
+        self.git(&["config", "primum.sync", mode])?;
+        let current = self.git(&["symbolic-ref", "--short", "HEAD"])?;
+        if current.trim() != branch {
+            if self.head()?.is_some() {
+                self.git(&["branch", "-m", current.trim(), &branch])?;
+            } else {
+                self.git(&["symbolic-ref", "HEAD", &format!("refs/heads/{branch}")])?;
+            }
+        }
+        Ok(Remote {
+            url: url.into(),
+            branch,
+            manual,
+        })
+    }
+
+    pub fn remove_remote(&self) -> Result<()> {
+        if self.config("remote.origin.url")?.is_some() {
+            self.git(&["remote", "remove", "origin"])?;
+        }
+        let _ = self.run(&["config", "--unset", "primum.sync"])?;
+        Ok(())
+    }
+
+    pub fn fetch(&self, r: &Remote) -> Result<Fetched> {
+        let refspec = format!("+refs/heads/{0}:refs/remotes/origin/{0}", r.branch);
+        let args = ["fetch", "--quiet", "origin", &refspec];
+        let Some(out) = self.run_timed(&args, NETWORK_SECS)? else {
+            return Ok(Fetched::Offline("the remote did not answer".into()));
+        };
+        if out.status.success() {
+            return Ok(Fetched::Ok);
+        }
+        let err = stderr_of(&out);
+        if err.contains("couldn't find remote ref") {
+            return Ok(Fetched::Empty);
+        }
+        Ok(Fetched::Offline(err))
+    }
+
+    pub fn push(&self, r: &Remote) -> Result<Pushed> {
+        let refspec = format!("HEAD:refs/heads/{}", r.branch);
+        let Some(out) = self.run_timed(&["push", "--quiet", "origin", &refspec], NETWORK_SECS)?
+        else {
+            return Ok(Pushed::Offline("the remote did not answer".into()));
+        };
+        if out.status.success() {
+            return Ok(Pushed::Ok);
+        }
+        let err = stderr_of(&out);
+        if err.contains("rejected")
+            || err.contains("fetch first")
+            || err.contains("non-fast-forward")
+        {
+            return Ok(Pushed::Rejected);
+        }
+        Ok(Pushed::Offline(err))
+    }
+}
+
+/// Makes `folder` a project from a remote: a bare clone of its history and
+/// the files written from it. The caller lists the project.
+pub fn clone(url: &str, branch: Option<&str>, folder: &std::path::Path) -> Result<()> {
+    if folder.join(".primum").exists() || folder.join("primum.toml").exists() {
+        bail!("{} is already a primum project", folder.display());
+    }
+    std::fs::create_dir_all(folder.join(".primum"))?;
+    let h = History {
+        git_dir: folder.join(".primum/history.git"),
+        work_tree: folder.to_path_buf(),
+    };
+    let mut c = Command::new(git_binary());
+    c.args(["clone", "--quiet", "--bare"]);
+    if let Some(b) = branch {
+        c.args(["--branch", b]);
+    }
+    c.arg(url).arg(&h.git_dir);
+    let out = timed(c, 60)?.ok_or_else(|| anyhow::anyhow!("the remote did not answer"))?;
+    if let Err(e) = check(out, "clone") {
+        let _ = std::fs::remove_dir_all(folder.join(".primum"));
+        return Err(e);
+    }
+    std::fs::write(folder.join(".primum/.gitignore"), "*\n")?;
+    h.write_exclude()?;
+    let branch = h
+        .git(&["symbolic-ref", "--short", "HEAD"])?
+        .trim()
+        .to_string();
+    let refspec = format!("+refs/heads/{branch}:refs/remotes/origin/{branch}");
+    h.git(&["config", "remote.origin.fetch", &refspec])?;
+    h.git(&["config", "primum.branch", &branch])?;
+    h.git(&["config", "primum.sync", "auto"])?;
+    h.git(&["fetch", "--quiet", "origin"])?;
+    h.git(&["read-tree", "-u", "--reset", "HEAD"])?;
+    if !folder.join("primum.toml").is_file() {
+        bail!("{url} has no primum.toml on {branch}: not a primum project");
+    }
+    Ok(())
+}
