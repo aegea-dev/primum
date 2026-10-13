@@ -76,3 +76,34 @@ fn author_is_the_configured_identity() {
         "Özgür"
     );
 }
+
+#[test]
+fn log_follows_an_item_across_a_kind_change() {
+    use primum::store::*;
+    let d = tempfile::tempdir().unwrap();
+    let p = common::project(d.path());
+    insert(&p, "TODO", "Gökçe", Changes::default()).unwrap();
+    insert(&p, "BUG", "başka", Changes::default()).unwrap();
+    let risk = Changes {
+        risk: Some(8),
+        ..Default::default()
+    };
+    update(&p, "TODO:1", risk).unwrap();
+    set_kind(&p, "TODO:1", "BUG").unwrap();
+    let h = common::history(&p);
+    let log = h.log(Some("items/BUG-2.md"), 50).unwrap();
+    let msgs: Vec<&str> = log.iter().map(|e| e.message.as_str()).collect();
+    assert_eq!(
+        msgs,
+        ["TODO:1 -> BUG:2", "TODO:1: risk", "TODO:1: add \"Gökçe\""]
+    );
+    assert_eq!(log[2].path.as_deref(), Some("items/TODO-1.md"));
+    let diff = h.diff(&log[1].commit, "items/TODO-1.md").unwrap();
+    assert!(
+        diff.contains("-risk: 3") && diff.contains("+risk: 8"),
+        "{diff}"
+    );
+    assert_eq!(h.log(None, 2).unwrap().len(), 2);
+    assert!(h.diff("../x", "items/TODO-1.md").is_err());
+    assert!(h.diff(&log[1].commit, "../primum.toml").is_err());
+}

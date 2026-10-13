@@ -138,6 +138,8 @@ pub fn router(entries: Vec<Entry>) -> Router {
         .route("/p/{project}/api/new", post(api_new))
         .route("/p/{project}/api/delete", post(api_delete))
         .route("/p/{project}/api/doc", get(api_doc))
+        .route("/p/{project}/api/history", get(api_history))
+        .route("/p/{project}/api/history/diff", get(api_history_diff))
         .route("/static/{file}", get(asset))
         .with_state(state)
 }
@@ -330,6 +332,40 @@ async fn api_doc(
         Some(text) => ([(header::CONTENT_TYPE, "text/plain; charset=utf-8")], text).into_response(),
         None => (StatusCode::NOT_FOUND, "not a document").into_response(),
     })
+}
+
+async fn api_history(
+    State(s): State<Shared>,
+    Path(project): Path<String>,
+    Query(q): Query<HashMap<String, String>>,
+) -> Result<axum::Json<Vec<crate::history::Entry>>, ApiError> {
+    let p = s.project(&project)?;
+    let Some(h) = crate::history::History::open(p)? else {
+        return Ok(axum::Json(vec![]));
+    };
+    let path = match q.get("id") {
+        Some(id) => {
+            let ids = crate::cli::parse_needs(id).map_err(|e| bad(e.to_string()))?;
+            let [id] = ids.as_slice() else {
+                return Err(bad("name one item id"));
+            };
+            Some(format!("items/{}", file_name(id)))
+        }
+        None => None,
+    };
+    Ok(axum::Json(h.log(path.as_deref(), 200)?))
+}
+
+async fn api_history_diff(
+    State(s): State<Shared>,
+    Path(project): Path<String>,
+    Query(q): Query<HashMap<String, String>>,
+) -> Result<Response, ApiError> {
+    let p = s.project(&project)?;
+    let h = crate::history::History::open(p)?.ok_or_else(|| bad("history is off"))?;
+    let arg = |k: &str| q.get(k).map(String::as_str).unwrap_or("");
+    let diff = h.diff(arg("commit"), arg("path"))?;
+    Ok(([(header::CONTENT_TYPE, "text/plain; charset=utf-8")], diff).into_response())
 }
 
 fn text_field(v: &Value, key: &str) -> Result<Option<String>, ApiError> {

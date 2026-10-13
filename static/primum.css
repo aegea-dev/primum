@@ -121,3 +121,13 @@ main.itempage{padding:16px 16px 48px}
 @media (max-width:700px){
   table.items th:nth-child(n+3):nth-child(-n+6),table.items td:nth-child(n+3):nth-child(-n+6){display:none}
 }
+
+/* The History tab: each change, opening to its diff. */
+ol.history{list-style:none;padding:0;margin:0}
+ol.history li{border-bottom:1px solid var(--line);padding:6px 0}
+ol.history summary{cursor:pointer;font-size:13px}
+ol.history .when{font:12px ui-monospace,Menlo,monospace;color:var(--mut)}
+ol.history .who{color:var(--accent)}
+pre.diff{font:12px/1.5 ui-monospace,Menlo,monospace;background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:8px;overflow:auto;margin-top:6px;white-space:pre}
+pre.diff .add{color:#15803d}
+pre.diff .del{color:var(--danger)}

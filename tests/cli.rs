@@ -302,3 +302,16 @@ fn history_is_kept_and_off_without_git() {
         "primum: history is off: git not found"
     );
 }
+
+#[test]
+fn log_lists_an_items_changes() {
+    let t = T::new();
+    t.out(&["add", "TODO", "Özgür"]);
+    t.out(&["start", "TODO:1"]);
+    let out = t.out(&["log", "TODO:1"]);
+    let lines: Vec<&str> = out.lines().collect();
+    assert_eq!(lines.len(), 2, "{out}");
+    assert!(lines[0].ends_with("TODO:1: status doing"), "{out}");
+    let json: serde_json::Value = serde_json::from_str(&t.out(&["log", "--json"])).unwrap();
+    assert_eq!(json[0]["message"], "TODO:1: status doing");
+}

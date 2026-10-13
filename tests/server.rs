@@ -239,3 +239,26 @@ async fn pages_projects_and_assets() {
         StatusCode::NOT_FOUND
     );
 }
+
+#[tokio::test]
+async fn history_and_its_diffs() {
+    let d = tempfile::tempdir().unwrap();
+    let (_, app) = setup(d.path());
+    post(
+        &app,
+        &format!("{API}/items"),
+        json!({"id": "BUG:1", "effort": 2}),
+    )
+    .await;
+    let (code, text) = get(&app, &format!("{API}/history?id=BUG:1")).await;
+    assert_eq!(code, StatusCode::OK);
+    let log: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(log[0]["message"], "BUG:1: effort");
+    let c = log[0]["commit"].as_str().unwrap();
+    let uri = format!("{API}/history/diff?commit={c}&path=items/BUG-1.md");
+    let (code, diff) = get(&app, &uri).await;
+    assert_eq!(code, StatusCode::OK);
+    assert!(diff.contains("+effort: 2"), "{diff}");
+    let uri = format!("{API}/history/diff?commit={c}&path=Cargo.toml");
+    assert_eq!(get(&app, &uri).await.0, StatusCode::BAD_REQUEST);
+}

@@ -144,6 +144,14 @@ pub enum Cmd {
         #[arg(long)]
         no_open: bool,
     },
+    /// Changes to the project, or to one item, newest first
+    Log {
+        id: Option<String>,
+        #[arg(short, default_value_t = 20)]
+        n: usize,
+        #[arg(long)]
+        json: bool,
+    },
     /// Import a videre-board board into this (empty) project, once
     Import { board_dir: PathBuf },
 }
@@ -276,6 +284,30 @@ fn dispatch(cli: Cli) -> Result<()> {
         }
         Cmd::Delete { id, yes } => delete(&project()?, &norm_id(&id)?, yes)?,
         Cmd::Next { n } => next(&project()?, n)?,
+        Cmd::Log { id, n, json } => {
+            let p = project()?;
+            let Some(h) = crate::history::History::open(&p)? else {
+                bail!("history is off: git not found");
+            };
+            let path = id
+                .as_deref()
+                .map(|i| norm_id(i).map(|i| format!("items/{}", crate::item_file::file_name(&i))))
+                .transpose()?;
+            let log = h.log(path.as_deref(), n)?;
+            if json {
+                println!("{}", serde_json::to_string_pretty(&log)?);
+            } else {
+                for e in &log {
+                    let date = e.date.get(..16).unwrap_or(&e.date).replace('T', " ");
+                    println!(
+                        "{}  {date}  {}  {}",
+                        e.short,
+                        pad(&truncate(&e.author, 12), 12),
+                        e.message
+                    );
+                }
+            }
+        }
         Cmd::Serve { port, no_open } => crate::server::serve(port, !no_open)?,
         Cmd::Import { board_dir } => {
             let p = project()?;

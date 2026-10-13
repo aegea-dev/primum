@@ -1,14 +1,16 @@
 // One item's page: its text and controls on the left, its documents as tabs
-// on the right. board.py's expanded row, as a page of its own; `#<path>`
-// selects a document's tab.
+// on the right, with the item's history as the last tab. board.py's
+// expanded row, as a page of its own; `#<path>` selects a document's tab,
+// `#history` the history.
 const $=s=>document.querySelector(s);
-let IT=null;
+let IT=null, HISTORY=[];
 const docCache={};
 
 async function load(){
   const items=await api('/items');
   IT=items.find(i=>i.id===ITEM_ID);
   if(!IT){location.href='../';return;}
+  HISTORY=await api('/history?id='+encodeURIComponent(ITEM_ID)).catch(()=>[]);
   draw();
 }
 
@@ -39,22 +41,42 @@ function draw(){
 }
 
 function drawDocs(){
-  const docs=IT.docs;
-  $('#split').classList.toggle('single',!docs.length);
-  $('#docpane').classList.toggle('hide',!docs.length);
-  if(!docs.length)return;
+  const docs=IT.docs, any=docs.length||HISTORY.length;
+  $('#split').classList.toggle('single',!any);
+  $('#docpane').classList.toggle('hide',!any);
+  if(!any)return;
   const label=d=>d.kind+(d.path.startsWith('items/'+IT.stem+'.')?'':': '+d.name.replace(/[.]md$/,''));
-  $('#doctabs').innerHTML=docs.map(d=>`<button type=button data-doc="${esc(d.path)}" title="${esc(d.name)}">${esc(label(d))}</button>`).join('');
+  $('#doctabs').innerHTML=docs.map(d=>`<button type=button data-doc="${esc(d.path)}" title="${esc(d.name)}">${esc(label(d))}</button>`).join('')
+    +(HISTORY.length?`<button type=button data-doc="#history" title="every change to this item">history (${HISTORY.length})</button>`:'');
   document.querySelectorAll('#doctabs button').forEach(b=>b.onclick=()=>{
-    history.replaceState(null,'','#'+encodeURIComponent(b.dataset.doc));
-    showDoc(b.dataset.doc);
+    history.replaceState(null,'','#'+(b.dataset.doc==='#history'?'history':encodeURIComponent(b.dataset.doc)));
+    show(b.dataset.doc);
   });
   const want=decodeURIComponent(location.hash.slice(1));
-  showDoc(docs.some(d=>d.path===want)?want:docs[0].path);
+  if(want==='history'&&HISTORY.length)return show('#history');
+  show(docs.some(d=>d.path===want)?want:(docs.length?docs[0].path:'#history'));
+}
+
+function show(tab){
+  document.querySelectorAll('#doctabs button').forEach(b=>b.classList.toggle('on',b.dataset.doc===tab));
+  return tab==='#history'?showHistory():showDoc(tab);
+}
+
+// Each change: when, who, what; opening one shows its diff.
+function showHistory(){
+  $('#docpath').textContent=IT.file;
+  $('#doc').innerHTML='<ol class=history>'+HISTORY.map(e=>
+    `<li><details data-commit="${e.commit}" data-path="${esc(e.path||IT.file)}"><summary><span class=when>${esc(e.date.slice(0,16).replace('T',' '))}</span> <span class=who>${esc(e.author)}</span> ${esc(e.message)}</summary><pre class=diff></pre></details></li>`).join('')+'</ol>';
+  document.querySelectorAll('#doc details').forEach(d=>d.ontoggle=async()=>{
+    const pre=d.querySelector('pre');
+    if(!d.open||pre.dataset.loaded)return;
+    const r=await fetch(API+'/history/diff?commit='+d.dataset.commit+'&path='+encodeURIComponent(d.dataset.path));
+    pre.innerHTML=(await r.text()).split('\n').map(l=>`<span class="${l[0]==='+'?'add':l[0]==='-'?'del':''}">${esc(l)}</span>`).join('\n');
+    pre.dataset.loaded=1;
+  });
 }
 
 async function showDoc(path){
-  document.querySelectorAll('#doctabs button').forEach(b=>b.classList.toggle('on',b.dataset.doc===path));
   $('#docpath').textContent=path;
   const pane=$('#doc');
   if(!(path in docCache)){
@@ -96,5 +118,5 @@ $('#del').onclick=async()=>{
   try{await api('/delete',{id:IT.id});}catch(e){alert(e.message);return;}
   location.href='../';
 };
-window.addEventListener('hashchange',()=>{if(IT&&IT.docs.length)drawDocs();});
+window.addEventListener('hashchange',()=>{if(IT)drawDocs();});
 load();

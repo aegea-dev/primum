@@ -168,3 +168,79 @@ impl History {
         self.commit("edited outside primum")
     }
 }
+
+/// One commit, as `primum log` and the History tab show it.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct Entry {
+    pub commit: String,
+    pub short: String,
+    pub author: String,
+    pub date: String,
+    pub message: String,
+    /// The item's file at that commit, when the log is of one item.
+    pub path: Option<String>,
+}
+
+/// A path the history API may name: primum.toml, BOARD.md, or a file
+/// directly in items/ or conflicts/.
+fn tracked_path(path: &str) -> bool {
+    let in_dir = |d: &str| {
+        path.strip_prefix(d)
+            .is_some_and(|n| !n.is_empty() && !n.contains('/') && !n.contains(".."))
+    };
+    path == "primum.toml" || path == "BOARD.md" || in_dir("items/") || in_dir("conflicts/")
+}
+
+impl History {
+    /// Commits newest first: all of them, or those touching `path`,
+    /// following renames.
+    pub fn log(&self, path: Option<&str>, limit: usize) -> Result<Vec<Entry>> {
+        if self.head()?.is_none() {
+            return Ok(vec![]);
+        }
+        let n = format!("-n{limit}");
+        let mut args = vec![
+            "log",
+            n.as_str(),
+            "--format=%x1e%H%x1f%h%x1f%an%x1f%aI%x1f%s",
+        ];
+        if let Some(p) = path {
+            if !tracked_path(p) {
+                bail!("{p} is not a file primum tracks");
+            }
+            args.extend(["--name-only", "--follow", "--", p]);
+        }
+        let out = self.git(&args)?;
+        Ok(out
+            .split('\x1e')
+            .filter(|r| !r.trim().is_empty())
+            .filter_map(|r| {
+                let mut lines = r.lines();
+                let f: Vec<&str> = lines.next()?.split('\x1f').collect();
+                let path = lines
+                    .map(str::trim)
+                    .find(|l| !l.is_empty())
+                    .map(str::to_string);
+                Some(Entry {
+                    commit: f.first()?.to_string(),
+                    short: f.get(1)?.to_string(),
+                    author: f.get(2)?.to_string(),
+                    date: f.get(3)?.to_string(),
+                    message: f.get(4)?.to_string(),
+                    path,
+                })
+            })
+            .collect())
+    }
+
+    /// What `commit` changed in `path` (the path as it was at that commit).
+    pub fn diff(&self, commit: &str, path: &str) -> Result<String> {
+        if commit.len() < 7 || !commit.bytes().all(|b| b.is_ascii_hexdigit()) {
+            bail!("{commit} is not a commit");
+        }
+        if !tracked_path(path) {
+            bail!("{path} is not a file primum tracks");
+        }
+        self.git(&["show", "--format=", "--find-renames", commit, "--", path])
+    }
+}
