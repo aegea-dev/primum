@@ -221,3 +221,49 @@ fn an_issue_that_disappears_leaves_its_item_unlinked() {
     let it = load(&p).unwrap().get("BUG:1").unwrap().clone();
     assert_eq!((it.github, it.risk), (None, 9));
 }
+
+#[test]
+fn the_title_style_rewrites_issues_and_old_id_labels_go() {
+    use primum::github_sync::{Options, run_with};
+    let (_d, p, m) = synced();
+    let n = link(&p, "TODO:1");
+    // an earlier version left per-item labels behind
+    m.create_label("TODO:1", "75689A").unwrap();
+    m.create_label("kind:todo", "75689A").unwrap();
+    let title = Options {
+        style: IdStyle::Title,
+        rewrite: true,
+        ..Default::default()
+    };
+    run_with(&p, &m, &title).unwrap();
+    assert_eq!(m.issue(n).title, "[TODO:1] Özgür'ün işi");
+    assert_eq!(m.issue(n).labels, ["kind:todo"]);
+    assert_eq!(
+        m.labels().unwrap(),
+        ["kind:todo"],
+        "only id labels are removed"
+    );
+    // a title edited on GitHub keeps its prefix out of the item
+    m.edit(n, |i| i.title = "[TODO:1] Işıl'ın işi".into());
+    let keep = Options {
+        style: IdStyle::Title,
+        ..Default::default()
+    };
+    run_with(&p, &m, &keep).unwrap();
+    assert_eq!(
+        load(&p).unwrap().get("TODO:1").unwrap().title,
+        "Işıl'ın işi"
+    );
+    // a lane change updates the prefix, and is not read back as GitHub's
+    set_kind(&p, "TODO:1", "DEBT").unwrap();
+    run_with(&p, &m, &keep).unwrap();
+    assert_eq!(m.issue(n).title, "[DEBT:1] Işıl'ın işi");
+    assert!(load(&p).unwrap().get("DEBT:1").is_some());
+    // back to no prefix
+    let none = Options {
+        rewrite: true,
+        ..Default::default()
+    };
+    run_with(&p, &m, &none).unwrap();
+    assert_eq!(m.issue(n).title, "Işıl'ın işi");
+}
