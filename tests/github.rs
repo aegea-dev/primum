@@ -95,3 +95,23 @@ fn memory_is_a_small_github() {
     m.remove(1);
     assert!(m.update(1, &issue_write(&item(), &|_| None)).is_err());
 }
+
+#[test]
+fn ids_in_the_title_and_as_a_label() {
+    let w = issue_write_as(&item(), &|_| None, IdStyle::Both);
+    assert_eq!(w.title, "[BUG:4] Gökçe'nin galerisi boş");
+    assert_eq!(w.labels, ["kind:bug", "BUG:4", "doing"]);
+    let back = item_from_issue(&issue(9, &w), &Item::new("TODO", 1, ""));
+    assert_eq!(
+        back.title, "Gökçe'nin galerisi boş",
+        "the prefix is not part of the title"
+    );
+    let only_title = issue_write_as(&item(), &|_| None, IdStyle::Title);
+    assert_eq!(only_title.labels, ["kind:bug", "doing"]);
+    let mut odd = issue(9, &only_title);
+    odd.title = "[not an id] stays".into();
+    let kept = item_from_issue(&odd, &Item::new("TODO", 1, ""));
+    assert_eq!(kept.title, "[not an id] stays");
+    assert_eq!(IdStyle::parse("label"), Some(IdStyle::Label));
+    assert_eq!(IdStyle::parse("rozet"), None);
+}

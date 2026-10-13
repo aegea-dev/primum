@@ -53,6 +53,74 @@ pub trait Api {
     fn close(&self, number: u64, reason: &str) -> Result<()>;
     /// Creates primum's labels that the repository lacks.
     fn ensure_labels(&self) -> Result<()>;
+    /// Every label name in the repository.
+    fn labels(&self) -> Result<Vec<String>>;
+    fn create_label(&self, name: &str, color: &str) -> Result<()>;
+    fn delete_label(&self, name: &str) -> Result<()>;
+}
+
+/// How an item's primum id shows on its issue (`[github] ids` in
+/// primum.toml). Reading always strips a title prefix and ignores id
+/// labels, so switching is safe.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum IdStyle {
+    /// Only in primum's hidden block.
+    #[default]
+    None,
+    /// `[TODO:7] Title`.
+    Title,
+    /// A `TODO:7` label in the lane's color.
+    Label,
+    Both,
+}
+
+impl IdStyle {
+    pub fn parse(s: &str) -> Option<IdStyle> {
+        match s {
+            "none" => Some(IdStyle::None),
+            "title" => Some(IdStyle::Title),
+            "label" => Some(IdStyle::Label),
+            "both" => Some(IdStyle::Both),
+            _ => None,
+        }
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            IdStyle::None => "none",
+            IdStyle::Title => "title",
+            IdStyle::Label => "label",
+            IdStyle::Both => "both",
+        }
+    }
+
+    pub fn title(self) -> bool {
+        matches!(self, IdStyle::Title | IdStyle::Both)
+    }
+
+    pub fn label(self) -> bool {
+        matches!(self, IdStyle::Label | IdStyle::Both)
+    }
+}
+
+/// The lane color of a kind, for its labels.
+pub fn kind_color(kind: &str) -> &'static str {
+    KIND_LABELS
+        .iter()
+        .find(|k| k.0 == kind)
+        .map(|k| k.2)
+        .unwrap_or("75689A")
+}
+
+/// A title without a leading `[ID] ` that primum wrote.
+fn strip_id_prefix(title: &str) -> &str {
+    if let Some(rest) = title.strip_prefix('[')
+        && let Some((id, after)) = rest.split_once("] ")
+        && parse_id(id).is_some()
+    {
+        return after;
+    }
+    title
 }
 
 // ------------------------------------------------------------ the block
@@ -138,6 +206,15 @@ pub fn split_block(body: &str) -> (String, Option<Meta>) {
 /// The issue an item is: its text, a visible `Needs:` line, primum's block,
 /// its kind and `doing` as labels, its status as open or closed.
 pub fn issue_write(it: &Item, issue_of: &dyn Fn(&str) -> Option<u64>) -> IssueWrite {
+    issue_write_as(it, issue_of, IdStyle::None)
+}
+
+/// `issue_write` with the item's id shown as `style` says.
+pub fn issue_write_as(
+    it: &Item,
+    issue_of: &dyn Fn(&str) -> Option<u64>,
+    style: IdStyle,
+) -> IssueWrite {
     let mut body = it.body.trim_end().to_string();
     if !it.needs.is_empty() {
         let refs: Vec<String> = it
@@ -172,6 +249,9 @@ pub fn issue_write(it: &Item, issue_of: &dyn Fn(&str) -> Option<u64>) -> IssueWr
         .map(|k| k.1)
         .unwrap_or("kind:todo");
     let mut labels = vec![kind_label.to_string()];
+    if style.label() {
+        labels.push(it.id.clone());
+    }
     if it.status == "doing" {
         labels.push(DOING.0.into());
     }
@@ -180,8 +260,13 @@ pub fn issue_write(it: &Item, issue_of: &dyn Fn(&str) -> Option<u64>) -> IssueWr
         "wontfix" => (false, Some("not_planned".to_string())),
         _ => (true, None),
     };
+    let title = if style.title() {
+        format!("[{}] {}", it.id, it.title)
+    } else {
+        it.title.clone()
+    };
     IssueWrite {
-        title: it.title.clone(),
+        title,
         body,
         open,
         reason,
@@ -207,7 +292,7 @@ pub fn item_from_issue(issue: &Issue, fallback: &Item) -> Item {
     {
         it.kind = k.0.to_string();
     }
-    it.title = issue.title.clone();
+    it.title = strip_id_prefix(&issue.title).to_string();
     it.body = text;
     let doing = issue.labels.iter().any(|l| l == DOING.0);
     it.status = match (issue.open, issue.reason.as_deref()) {
@@ -404,19 +489,39 @@ impl Api for Gh {
     }
 
     fn ensure_labels(&self) -> Result<()> {
-        let path = format!("repos/{}/labels?per_page=100", self.repo);
-        let names: Vec<String> = pages(self.api("GET", &path, None, true)?)
-            .iter()
-            .filter_map(|l| l["name"].as_str().map(str::to_lowercase))
-            .collect();
+        let names: Vec<String> = self.labels()?.iter().map(|n| n.to_lowercase()).collect();
         let wanted = KIND_LABELS.iter().map(|k| (k.1, k.2)).chain([DOING]);
         for (name, color) in wanted {
             if !names.iter().any(|n| n == name) {
-                let path = format!("repos/{}/labels", self.repo);
-                let body = json!({ "name": name, "color": color });
-                self.api("POST", &path, Some(&body), false)?;
+                self.create_label(name, color)?;
             }
         }
+        Ok(())
+    }
+
+    fn labels(&self) -> Result<Vec<String>> {
+        let path = format!("repos/{}/labels?per_page=100", self.repo);
+        Ok(pages(self.api("GET", &path, None, true)?)
+            .iter()
+            .filter_map(|l| l["name"].as_str().map(str::to_string))
+            .collect())
+    }
+
+    fn create_label(&self, name: &str, color: &str) -> Result<()> {
+        let path = format!("repos/{}/labels", self.repo);
+        let body = json!({ "name": name, "color": color });
+        self.api("POST", &path, Some(&body), false)?;
+        Ok(())
+    }
+
+    fn delete_label(&self, name: &str) -> Result<()> {
+        let name = name.replace(':', "%3A");
+        self.api(
+            "DELETE",
+            &format!("repos/{}/labels/{name}", self.repo),
+            None,
+            false,
+        )?;
         Ok(())
     }
 }
@@ -426,6 +531,7 @@ impl Api for Gh {
 /// A small GitHub for tests: issues in memory, `updated` from a counter.
 pub struct Memory {
     state: Mutex<(Vec<Issue>, u64)>,
+    label_names: Mutex<Vec<String>>,
 }
 
 impl Default for Memory {
@@ -438,6 +544,7 @@ impl Memory {
     pub fn new() -> Memory {
         Memory {
             state: Mutex::new((vec![], 0)),
+            label_names: Mutex::new(vec![]),
         }
     }
 
@@ -562,6 +669,23 @@ impl Api for Memory {
     }
 
     fn ensure_labels(&self) -> Result<()> {
+        Ok(())
+    }
+
+    fn labels(&self) -> Result<Vec<String>> {
+        Ok(self.label_names.lock().expect("lock").clone())
+    }
+
+    fn create_label(&self, name: &str, _: &str) -> Result<()> {
+        self.label_names
+            .lock()
+            .expect("lock")
+            .push(name.to_string());
+        Ok(())
+    }
+
+    fn delete_label(&self, name: &str) -> Result<()> {
+        self.label_names.lock().expect("lock").retain(|n| n != name);
         Ok(())
     }
 }

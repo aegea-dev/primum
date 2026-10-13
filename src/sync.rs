@@ -60,13 +60,27 @@ fn github(p: &Project, h: &History, report: &mut Report) -> Result<()> {
             .success()
             .then(|| String::from_utf8_lossy(&out.stdout).trim().to_string()))
     };
-    let since = config("primum.github-since")?;
-    let all = config("primum.github-all")?.as_deref() == Some("true");
+    // a few minutes of overlap: GitHub's list can lag an edit by seconds,
+    // and an issue seen twice is skipped as unchanged
+    let since = config("primum.github-since")?.map(|s| {
+        chrono::DateTime::parse_from_rfc3339(&s)
+            .map(|t| (t - chrono::Duration::minutes(5)).to_rfc3339())
+            .unwrap_or(s)
+    });
+    let style = crate::projects::github_ids(p)?;
+    let applied = config("primum.github-ids")?.unwrap_or_else(|| "none".into());
+    let options = crate::github_sync::Options {
+        since,
+        all: config("primum.github-all")?.as_deref() == Some("true"),
+        style,
+        rewrite: applied != style.name(),
+    };
     let api = crate::github::Gh { repo };
-    let (gr, newest) = crate::github_sync::run_with(p, &api, since.as_deref(), all)?;
+    let (gr, newest) = crate::github_sync::run_with(p, &api, &options)?;
     if let Some(n) = newest {
         h.git(&["config", "primum.github-since", &n])?;
     }
+    h.git(&["config", "primum.github-ids", style.name()])?;
     let message = format!(
         "GitHub sync: {} new issues, {} new items, {} updated",
         gr.created.len(),

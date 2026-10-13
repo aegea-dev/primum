@@ -17,6 +17,9 @@ struct ProjectFile {
 #[serde(deny_unknown_fields)]
 struct GithubTable {
     repo: String,
+    /// How ids show on issues: none, title, label or both.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    ids: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Default)]
@@ -247,9 +250,24 @@ pub fn set_github(p: &Project, repo: Option<&str>) -> Result<()> {
         }
     }
     let mut pf = read_project_file(p)?;
+    let ids = pf.github.as_ref().and_then(|g| g.ids.clone());
     pf.github = repo.map(|r| GithubTable {
         repo: r.to_string(),
+        ids,
     });
     std::fs::write(p.root.join("primum.toml"), toml::to_string(&pf)?)?;
     Ok(())
+}
+
+/// How the project's ids show on GitHub issues (`[github] ids`).
+pub fn github_ids(p: &Project) -> Result<crate::github::IdStyle> {
+    if !p.root.join("primum.toml").exists() {
+        return Ok(Default::default());
+    }
+    let ids = read_project_file(p)?.github.and_then(|g| g.ids);
+    match ids {
+        None => Ok(Default::default()),
+        Some(s) => crate::github::IdStyle::parse(&s)
+            .ok_or_else(|| anyhow!("[github] ids must be none, title, label or both, not {s}")),
+    }
 }

@@ -221,3 +221,47 @@ fn an_issue_that_disappears_leaves_its_item_unlinked() {
     let it = load(&p).unwrap().get("BUG:1").unwrap().clone();
     assert_eq!((it.github, it.risk), (None, 9));
 }
+
+#[test]
+fn id_styles_rewrite_issues_and_tidy_labels() {
+    use primum::github_sync::{Options, run_with};
+    let (_d, p, m) = synced();
+    let n = link(&p, "TODO:1");
+    let both = Options {
+        style: IdStyle::Both,
+        rewrite: true,
+        ..Default::default()
+    };
+    run_with(&p, &m, &both).unwrap();
+    assert_eq!(m.issue(n).title, "[TODO:1] Özgür'ün işi");
+    assert!(m.issue(n).labels.contains(&"TODO:1".to_string()));
+    let mut labels = m.labels().unwrap();
+    labels.sort();
+    assert_eq!(labels, ["BUG:1", "TODO:1"]);
+    // a title edited on GitHub keeps its prefix out of the item
+    m.edit(n, |i| i.title = "[TODO:1] Işıl'ın işi".into());
+    let keep = Options {
+        style: IdStyle::Both,
+        ..Default::default()
+    };
+    run_with(&p, &m, &keep).unwrap();
+    assert_eq!(
+        load(&p).unwrap().get("TODO:1").unwrap().title,
+        "Işıl'ın işi"
+    );
+    // a lane change moves the label; the old one goes
+    set_kind(&p, "TODO:1", "DEBT").unwrap();
+    run_with(&p, &m, &keep).unwrap();
+    assert_eq!(m.issue(n).title, "[DEBT:1] Işıl'ın işi");
+    let mut labels = m.labels().unwrap();
+    labels.sort();
+    assert_eq!(labels, ["BUG:1", "DEBT:1"]);
+    // back to no ids: titles and labels clean up
+    let none = Options {
+        rewrite: true,
+        ..Default::default()
+    };
+    run_with(&p, &m, &none).unwrap();
+    assert_eq!(m.issue(n).title, "Işıl'ın işi");
+    assert!(m.labels().unwrap().is_empty());
+}

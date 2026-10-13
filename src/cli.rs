@@ -579,6 +579,12 @@ fn print_sync(r: &crate::sync::Report, verbose: bool) {
             for id in &g.added {
                 println!("{id}: added from an issue");
             }
+            let changed = g.updated_items.len() + g.updated_issues.len();
+            if g.created.is_empty() && g.added.is_empty() && changed == 0 {
+                println!("GitHub: up to date");
+            } else if changed > 0 {
+                println!("GitHub: {changed} updated");
+            }
         }
     }
     for (old, new) in &r.renumbered {

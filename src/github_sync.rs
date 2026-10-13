@@ -6,7 +6,9 @@
 //! and its issue. A field both sides changed is a conflict; it is left as
 //! GitHub has it until resolved here.
 use crate::conflicts::{self, BodyValues, Conflict, FieldValues, Side};
-use crate::github::{Api, Issue, IssueWrite, issue_write, item_from_issue, split_block};
+use crate::github::{
+    Api, IdStyle, Issue, IssueWrite, issue_write_as, item_from_issue, kind_color, split_block,
+};
 use crate::item_file::{self, file_name, stem};
 use crate::merge::merge_item;
 use crate::model::Item;
@@ -47,16 +49,19 @@ pub(crate) fn deleted_path(p: &Project) -> PathBuf {
 }
 
 /// The agreed version, kept as the item's own file text so it parses with
-/// the same rules.
+/// the same rules, and with the id it was agreed under: after a lane or
+/// number change here the file is renamed, but what GitHub agreed to is
+/// still the old id.
 fn read_base(p: &Project, id: &str) -> Option<Item> {
     let text = std::fs::read_to_string(base_path(p, id)).ok()?;
     let v: serde_json::Value = serde_json::from_str(&text).ok()?;
-    item_file::parse(&file_name(id), v["item"].as_str()?).ok()
+    let agreed = v["id"].as_str().unwrap_or(id);
+    item_file::parse(&file_name(agreed), v["item"].as_str()?).ok()
 }
 
 fn write_base(p: &Project, it: &Item) -> Result<()> {
     std::fs::create_dir_all(p.root.join("github"))?;
-    let v = serde_json::json!({ "item": item_file::write(it) });
+    let v = serde_json::json!({ "id": it.id, "item": item_file::write(it) });
     std::fs::write(
         base_path(p, &it.id),
         serde_json::to_string_pretty(&v)? + "\n",
@@ -83,23 +88,35 @@ fn carried(it: &Item) -> (&str, &str, &str, &str, &str, [u8; 4], &[String]) {
     )
 }
 
-fn writer(board: &Board) -> impl Fn(&Item) -> IssueWrite + '_ {
-    move |it| issue_write(it, &|id| board.get(id).and_then(|i| i.github))
+fn writer(board: &Board, style: IdStyle) -> impl Fn(&Item) -> IssueWrite + '_ {
+    move |it| issue_write_as(it, &|id| board.get(id).and_then(|i| i.github), style)
+}
+
+/// How one sync runs.
+#[derive(Debug, Clone, Default)]
+pub struct Options {
+    /// Read only issues updated since then; None reads all.
+    pub since: Option<String>,
+    /// Also file closed items, and take in closed issues.
+    pub all: bool,
+    /// How ids show on issues.
+    pub style: IdStyle,
+    /// Rewrite every linked issue (the id style changed).
+    pub rewrite: bool,
 }
 
 pub fn run(p: &Project, api: &dyn Api, since: Option<&str>) -> Result<(Report, Option<String>)> {
-    run_with(p, api, since, false)
+    let o = Options {
+        since: since.map(str::to_string),
+        ..Default::default()
+    };
+    run_with(p, api, &o)
 }
 
-/// One sync. `all` also files closed items as issues and takes in closed
-/// issues. Returns the report and the newest `updated` seen, the next
+/// One sync. Returns the report and the newest `updated` seen, the next
 /// `since`.
-pub fn run_with(
-    p: &Project,
-    api: &dyn Api,
-    since: Option<&str>,
-    all: bool,
-) -> Result<(Report, Option<String>)> {
+pub fn run_with(p: &Project, api: &dyn Api, o: &Options) -> Result<(Report, Option<String>)> {
+    let (since, all, style) = (o.since.as_deref(), o.all, o.style);
     let mut report = Report::default();
     let incoming = api.issues_since(since)?;
     let newest = incoming
@@ -109,12 +126,21 @@ pub fn run_with(
         .or(since.map(str::to_string));
 
     close_deleted(p, api)?;
+    // id labels: read once when they are used, or may need cleaning up
+    let mut labels = if style.label() || o.rewrite {
+        api.labels()?
+    } else {
+        vec![]
+    };
+    if style.label() {
+        ensure_id_labels(api, &store::load(p)?, &mut labels)?;
+    }
     closing_keywords(p, &incoming, &mut report)?;
 
     for issue in incoming.iter().filter(|i| !i.is_pr) {
         let board = store::load(p)?;
         if let Some(it) = board.items.iter().find(|i| i.github == Some(issue.number)) {
-            merge_issue(p, api, &it.id, issue, &mut report)?;
+            merge_issue(p, api, &it.id, issue, style, &mut report)?;
             continue;
         }
         let meta = split_block(&issue.body).1;
@@ -145,7 +171,7 @@ pub fn run_with(
                 let id = store::insert_locked(p, it)?;
                 let board = store::load(p)?;
                 let it = board.get(&id).expect("inserted").clone();
-                api.update(issue.number, &writer(&board)(&it))?;
+                api.update(issue.number, &writer(&board, style)(&it))?;
                 write_base(p, &it)?;
                 report.added.push(id);
             }
@@ -153,7 +179,10 @@ pub fn run_with(
     }
 
     let board = store::load(p)?;
-    let write = writer(&board);
+    if style.label() {
+        ensure_id_labels(api, &board, &mut labels)?;
+    }
+    let write = writer(&board, style);
     for it in &board.items {
         match it.github {
             None if it.is_closed() && !all => {}
@@ -166,7 +195,8 @@ pub fn run_with(
                 report.created.push(it.id.clone());
             }
             Some(n) => {
-                let changed = read_base(p, &it.id).is_none_or(|b| carried(&b) != carried(it));
+                let changed =
+                    o.rewrite || read_base(p, &it.id).is_none_or(|b| carried(&b) != carried(it));
                 if changed
                     && !board.conflicts.contains_key(&it.id)
                     && push(p, api, it, n, &write(it))?
@@ -176,8 +206,30 @@ pub fn run_with(
             }
         }
     }
+    // id labels no item uses any more (renumbered, deleted, or the style
+    // no longer shows labels)
+    for name in labels
+        .iter()
+        .filter(|l| crate::model::parse_id(l).is_some())
+    {
+        if !style.label() || board.get(name).is_none() {
+            api.delete_label(name)?;
+        }
+    }
     store::settle_locked(p)?;
     Ok((report, newest))
+}
+
+/// Creates the `TODO:7`-style labels the board's items need, in their lane
+/// colors.
+fn ensure_id_labels(api: &dyn Api, board: &Board, labels: &mut Vec<String>) -> Result<()> {
+    for it in &board.items {
+        if !labels.contains(&it.id) {
+            api.create_label(&it.id, kind_color(&it.kind))?;
+            labels.push(it.id.clone());
+        }
+    }
+    Ok(())
 }
 
 /// Closes the issues of items deleted here since the last sync.
@@ -255,6 +307,7 @@ fn merge_issue(
     api: &dyn Api,
     id: &str,
     issue: &Issue,
+    style: IdStyle,
     report: &mut Report,
 ) -> Result<()> {
     let ours = store::load(p)?.get(id).expect("linked").clone();
@@ -312,7 +365,7 @@ fn merge_issue(
     if fields.is_empty() && m.body.is_none() {
         let board = store::load(p)?;
         if carried(&item) != carried(&theirs)
-            && push(p, api, &item, issue.number, &writer(&board)(&item))?
+            && push(p, api, &item, issue.number, &writer(&board, style)(&item))?
         {
             report.updated_issues.push(issue.number);
         } else {
