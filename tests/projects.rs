@@ -109,3 +109,32 @@ fn a_bad_primum_toml_is_unavailable_with_its_reason() {
         assert!(l[0].project.as_ref().unwrap_err().contains("primum.toml"));
     });
 }
+
+#[test]
+fn the_github_table() {
+    with_config(|d| {
+        let dir = d.join("işler");
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = projects::init(&dir, None).unwrap();
+        assert_eq!(projects::github_repo(&p).unwrap(), None);
+        projects::set_github(&p, Some("ozgur/isler")).unwrap();
+        assert_eq!(
+            projects::github_repo(&p).unwrap().as_deref(),
+            Some("ozgur/isler")
+        );
+        assert_eq!(
+            std::fs::read_to_string(dir.join("primum.toml")).unwrap(),
+            "name = \"işler\"\n\n[github]\nrepo = \"ozgur/isler\"\n"
+        );
+        assert!(
+            projects::set_github(&p, Some("isler")).is_err(),
+            "owner/repo"
+        );
+        projects::set_github(&p, None).unwrap();
+        assert_eq!(projects::github_repo(&p).unwrap(), None);
+        assert_eq!(
+            std::fs::read_to_string(dir.join("primum.toml")).unwrap(),
+            "name = \"işler\"\n"
+        );
+    });
+}
