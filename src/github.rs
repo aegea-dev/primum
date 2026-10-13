@@ -60,8 +60,9 @@ pub trait Api {
 }
 
 /// How an item's primum id shows on its issue (`[github] ids` in
-/// primum.toml). Reading always strips a title prefix and ignores id
-/// labels, so switching is safe.
+/// primum.toml). Reading always strips a title prefix, so switching is
+/// safe. Ids are never labels: one label per item would bury a
+/// repository's label list in hundreds of them.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum IdStyle {
     /// Only in primum's hidden block.
@@ -69,9 +70,6 @@ pub enum IdStyle {
     None,
     /// `[TODO:7] Title`.
     Title,
-    /// A `TODO:7` label in the lane's color.
-    Label,
-    Both,
 }
 
 impl IdStyle {
@@ -79,8 +77,6 @@ impl IdStyle {
         match s {
             "none" => Some(IdStyle::None),
             "title" => Some(IdStyle::Title),
-            "label" => Some(IdStyle::Label),
-            "both" => Some(IdStyle::Both),
             _ => None,
         }
     }
@@ -89,17 +85,11 @@ impl IdStyle {
         match self {
             IdStyle::None => "none",
             IdStyle::Title => "title",
-            IdStyle::Label => "label",
-            IdStyle::Both => "both",
         }
     }
 
     pub fn title(self) -> bool {
-        matches!(self, IdStyle::Title | IdStyle::Both)
-    }
-
-    pub fn label(self) -> bool {
-        matches!(self, IdStyle::Label | IdStyle::Both)
+        self == IdStyle::Title
     }
 }
 
@@ -249,9 +239,6 @@ pub fn issue_write_as(
         .map(|k| k.1)
         .unwrap_or("kind:todo");
     let mut labels = vec![kind_label.to_string()];
-    if style.label() {
-        labels.push(it.id.clone());
-    }
     if it.status == "doing" {
         labels.push(DOING.0.into());
     }

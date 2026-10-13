@@ -7,7 +7,7 @@
 //! GitHub has it until resolved here.
 use crate::conflicts::{self, BodyValues, Conflict, FieldValues, Side};
 use crate::github::{
-    Api, IdStyle, Issue, IssueWrite, issue_write_as, item_from_issue, kind_color, split_block,
+    Api, IdStyle, Issue, IssueWrite, issue_write_as, item_from_issue, split_block,
 };
 use crate::item_file::{self, file_name, stem};
 use crate::merge::merge_item;
@@ -126,15 +126,6 @@ pub fn run_with(p: &Project, api: &dyn Api, o: &Options) -> Result<(Report, Opti
         .or(since.map(str::to_string));
 
     close_deleted(p, api)?;
-    // id labels: read once when they are used, or may need cleaning up
-    let mut labels = if style.label() || o.rewrite {
-        api.labels()?
-    } else {
-        vec![]
-    };
-    if style.label() {
-        ensure_id_labels(api, &store::load(p)?, &mut labels)?;
-    }
     closing_keywords(p, &incoming, &mut report)?;
 
     for issue in incoming.iter().filter(|i| !i.is_pr) {
@@ -179,9 +170,6 @@ pub fn run_with(p: &Project, api: &dyn Api, o: &Options) -> Result<(Report, Opti
     }
 
     let board = store::load(p)?;
-    if style.label() {
-        ensure_id_labels(api, &board, &mut labels)?;
-    }
     let write = writer(&board, style);
     for it in &board.items {
         match it.github {
@@ -206,30 +194,18 @@ pub fn run_with(p: &Project, api: &dyn Api, o: &Options) -> Result<(Report, Opti
             }
         }
     }
-    // id labels no item uses any more (renumbered, deleted, or the style
-    // no longer shows labels)
-    for name in labels
-        .iter()
-        .filter(|l| crate::model::parse_id(l).is_some())
-    {
-        if !style.label() || board.get(name).is_none() {
+    if o.rewrite {
+        // ids are never labels; remove any an earlier version made
+        for name in api
+            .labels()?
+            .iter()
+            .filter(|l| crate::model::parse_id(l).is_some())
+        {
             api.delete_label(name)?;
         }
     }
     store::settle_locked(p)?;
     Ok((report, newest))
-}
-
-/// Creates the `TODO:7`-style labels the board's items need, in their lane
-/// colors.
-fn ensure_id_labels(api: &dyn Api, board: &Board, labels: &mut Vec<String>) -> Result<()> {
-    for it in &board.items {
-        if !labels.contains(&it.id) {
-            api.create_label(&it.id, kind_color(&it.kind))?;
-            labels.push(it.id.clone());
-        }
-    }
-    Ok(())
 }
 
 /// Closes the issues of items deleted here since the last sync.

@@ -17,7 +17,7 @@ struct ProjectFile {
 #[serde(deny_unknown_fields)]
 struct GithubTable {
     repo: String,
-    /// How ids show on issues: none, title, label or both.
+    /// How ids show on issues: none or title.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     ids: Option<String>,
 }
@@ -268,6 +268,6 @@ pub fn github_ids(p: &Project) -> Result<crate::github::IdStyle> {
     match ids {
         None => Ok(Default::default()),
         Some(s) => crate::github::IdStyle::parse(&s)
-            .ok_or_else(|| anyhow!("[github] ids must be none, title, label or both, not {s}")),
+            .ok_or_else(|| anyhow!("[github] ids must be none or title, not {s}")),
     }
 }

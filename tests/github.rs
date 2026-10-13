@@ -97,21 +97,19 @@ fn memory_is_a_small_github() {
 }
 
 #[test]
-fn ids_in_the_title_and_as_a_label() {
-    let w = issue_write_as(&item(), &|_| None, IdStyle::Both);
+fn ids_in_the_title_never_as_labels() {
+    let w = issue_write_as(&item(), &|_| None, IdStyle::Title);
     assert_eq!(w.title, "[BUG:4] Gökçe'nin galerisi boş");
-    assert_eq!(w.labels, ["kind:bug", "BUG:4", "doing"]);
+    assert_eq!(w.labels, ["kind:bug", "doing"], "no label per item");
     let back = item_from_issue(&issue(9, &w), &Item::new("TODO", 1, ""));
     assert_eq!(
         back.title, "Gökçe'nin galerisi boş",
         "the prefix is not part of the title"
     );
-    let only_title = issue_write_as(&item(), &|_| None, IdStyle::Title);
-    assert_eq!(only_title.labels, ["kind:bug", "doing"]);
-    let mut odd = issue(9, &only_title);
+    let mut odd = issue(9, &w);
     odd.title = "[not an id] stays".into();
     let kept = item_from_issue(&odd, &Item::new("TODO", 1, ""));
     assert_eq!(kept.title, "[not an id] stays");
-    assert_eq!(IdStyle::parse("label"), Some(IdStyle::Label));
-    assert_eq!(IdStyle::parse("rozet"), None);
+    assert_eq!(IdStyle::parse("title"), Some(IdStyle::Title));
+    assert_eq!(IdStyle::parse("label"), None);
 }
