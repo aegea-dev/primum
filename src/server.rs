@@ -140,6 +140,7 @@ pub fn router(entries: Vec<Entry>) -> Router {
         .route("/p/{project}/api/items/kind", post(api_kind))
         .route("/p/{project}/api/new", post(api_new))
         .route("/p/{project}/api/delete", post(api_delete))
+        .route("/p/{project}/api/resolve", post(api_resolve))
         .route("/p/{project}/api/doc", get(api_doc))
         .route("/p/{project}/api/history", get(api_history))
         .route("/p/{project}/api/history/diff", get(api_history_diff))
@@ -533,6 +534,25 @@ async fn api_delete(
     let removed = store::delete(p, &id_field(&v)?)?;
     sync_soon(p);
     Ok(axum::Json(json!({ "removed": removed })))
+}
+
+async fn api_resolve(
+    State(s): State<Shared>,
+    Path(project): Path<String>,
+    axum::Json(v): axum::Json<Value>,
+) -> Result<axum::Json<Value>, ApiError> {
+    let p = s.project(&project)?;
+    let id = id_field(&v)?;
+    let what = text_field(&v, "field")?.ok_or_else(|| bad("field required"))?;
+    let keep = match v.get("keep") {
+        Some(Value::Number(n)) if n.as_u64() == Some(1) => store::Keep::First,
+        Some(Value::Number(n)) if n.as_u64() == Some(2) => store::Keep::Second,
+        Some(Value::String(s)) if s == "both" => store::Keep::Both,
+        _ => return Err(bad("keep must be 1, 2 or \"both\"")),
+    };
+    store::resolve(p, &id, &what, keep)?;
+    sync_soon(p);
+    Ok(axum::Json(json!({ "ok": true })))
 }
 
 // ---------------------------------------------------------------- static

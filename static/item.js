@@ -37,7 +37,31 @@ function draw(){
   $('#kind').classList.toggle('hide',closed);
   $('#kindsave').classList.toggle('hide',closed);
   $('#kind').innerHTML=KINDS.map(k=>`<option ${k===IT.kind?'selected':''}>${k}</option>`).join('');
+  drawConflicts();
   drawDocs();
+}
+
+// What a sync could not decide: both sides of each field, the text and
+// each document, with "keep" buttons.
+function drawConflicts(){
+  const c=IT.conflict, box=$('#conflicts');
+  box.classList.toggle('hide',!c);
+  if(!c)return;
+  const who=i=>`${esc(c.sides[i].author)}${c.sides[i].date?', '+esc(c.sides[i].date.slice(0,16).replace('T',' ')):''}`;
+  const row=(what,label,a,b,both)=>`<div class=conflict data-what="${esc(what)}"><b>${esc(label)}</b>
+    <button type=button data-keep=1>keep ${a} <small>${who(0)}</small></button>
+    <button type=button data-keep=2>keep ${b} <small>${who(1)}</small></button>
+    ${both?'<button type=button data-keep=both>keep both</button>':''}</div>`;
+  box.innerHTML='<h3>Changed on two sides</h3>'
+    +(c.fields||[]).map(f=>row(f.field,f.field,esc(f.values[0]),esc(f.values[1]),false)).join('')
+    +(c.body?`<div class=conflict data-what=body><b>text</b><div class=bodies><div class=md>${md(c.body.values[0])}</div><div class=md>${md(c.body.values[1])}</div></div>
+       <button type=button data-keep=1>keep the first <small>${who(0)}</small></button><button type=button data-keep=2>keep the second <small>${who(1)}</small></button></div>`:'')
+    +(c.documents||[]).map(d=>row(d.path,d.path,'this one',esc(d.other.split('/').pop()),true)).join('');
+  box.querySelectorAll('button[data-keep]').forEach(b=>b.onclick=async()=>{
+    const what=b.closest('.conflict').dataset.what, k=b.dataset.keep;
+    try{await api('/resolve',{id:IT.id,field:what,keep:k==='both'?'both':+k});}catch(e){alert(e.message);return;}
+    await load();
+  });
 }
 
 function drawDocs(){

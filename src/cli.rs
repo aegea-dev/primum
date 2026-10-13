@@ -154,6 +154,16 @@ pub enum Cmd {
     },
     /// Pull, merge and push now
     Sync,
+    /// Settle a conflict a sync left: asks per field on a terminal
+    Resolve {
+        id: String,
+        /// A field (status, impact, ...), `body`, or a document's path
+        #[arg(long)]
+        field: Option<String>,
+        /// 1, 2, or `both` (documents)
+        #[arg(long)]
+        keep: Option<String>,
+    },
     /// This machine's remote for the project, or set or remove it
     Remote {
         #[command(subcommand)]
@@ -226,6 +236,7 @@ fn dispatch(cli: Cli) -> Result<()> {
             | Cmd::Kind { .. }
             | Cmd::Delete { .. }
             | Cmd::Import { .. }
+            | Cmd::Resolve { .. }
     );
     match cli.cmd {
         Cmd::Init { name } => {
@@ -339,6 +350,7 @@ fn dispatch(cli: Cli) -> Result<()> {
             }
         }
         Cmd::Sync => print_sync(&crate::sync::sync(&project()?)?, true),
+        Cmd::Resolve { id, field, keep } => resolve(&project()?, &norm_id(&id)?, field, keep)?,
         Cmd::Remote { cmd } => {
             let p = project()?;
             let Some(h) = crate::history::History::open(&p)? else {
@@ -400,6 +412,70 @@ fn dispatch(cli: Cli) -> Result<()> {
     if changes {
         history_notice();
         auto_sync(&project()?);
+    }
+    Ok(())
+}
+
+fn parse_keep(k: &str) -> Result<store::Keep> {
+    match k {
+        "1" => Ok(store::Keep::First),
+        "2" => Ok(store::Keep::Second),
+        "both" | "b" => Ok(store::Keep::Both),
+        _ => bail!("keep 1, 2 or both, not {k}"),
+    }
+}
+
+/// `primum resolve`: one choice from the flags, else a question per
+/// conflicting field, the text and each document on a terminal.
+fn resolve(p: &Project, id: &str, field: Option<String>, keep: Option<String>) -> Result<()> {
+    if let (Some(f), Some(k)) = (&field, &keep) {
+        store::resolve(p, id, f, parse_keep(k)?)?;
+        println!("{id}: resolved {f}");
+        return Ok(());
+    }
+    let board = store::load(p)?;
+    let c = board
+        .conflicts
+        .get(id)
+        .ok_or_else(|| anyhow!("{id} has no conflict"))?
+        .clone();
+    let who = |i: usize| {
+        let date = c.sides[i].date.get(..16).unwrap_or(&c.sides[i].date);
+        format!("{}, {}", c.sides[i].author, date.replace('T', " "))
+    };
+    let mut questions: Vec<(String, [String; 2], bool)> = c
+        .fields
+        .iter()
+        .map(|f| (f.field.clone(), f.values.clone(), false))
+        .collect();
+    if let Some(b) = &c.body {
+        questions.push(("body".into(), b.values.clone(), false));
+    }
+    for d in &c.documents {
+        questions.push((d.path.clone(), [d.path.clone(), d.other.clone()], true));
+    }
+    let interactive = std::io::stdin().is_terminal();
+    for (what, values, both) in questions {
+        println!("{id} {what}");
+        for (i, v) in values.iter().enumerate() {
+            let shown = if what == "body" {
+                format!("\n{}", v.trim_end())
+            } else {
+                v.clone()
+            };
+            println!("  {}) {shown}  ({})", i + 1, who(i));
+        }
+        if !interactive {
+            continue;
+        }
+        print!("keep [1/2{}]: ", if both { "/both" } else { "" });
+        std::io::stdout().flush()?;
+        let mut answer = String::new();
+        std::io::stdin().read_line(&mut answer)?;
+        store::resolve(p, id, &what, parse_keep(answer.trim())?)?;
+    }
+    if !interactive {
+        bail!("choose with --field F --keep 1|2");
     }
     Ok(())
 }
@@ -725,7 +801,7 @@ fn row_line(v: &ItemView, s: &Style) -> String {
         v.needs.join(",")
     };
     let rest = format!(
-        " {} {:>3} {:>3} {:>3} {:>3} {:>5.1} {} {}",
+        " {} {:>3} {:>3} {:>3} {:>3} {:>5.1} {} {}{}",
         pad(&truncate(&v.title, title_width(s)), title_width(s)),
         v.impact,
         v.urgency,
@@ -733,7 +809,9 @@ fn row_line(v: &ItemView, s: &Style) -> String {
         v.effort,
         v.score,
         pad(&truncate(&needs, 16), 16),
-        v.status
+        v.status,
+        // `!`: a sync left a conflict to resolve
+        if v.conflict.is_some() { "!" } else { "" }
     );
     let rest = if v.status == "doing" {
         s.paint(&rest, "1")

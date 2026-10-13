@@ -594,3 +594,83 @@ pub fn board_markdown(board: &Board, name: &str) -> String {
     }
     out.join("\n").trim_end().to_string() + "\n"
 }
+
+/// Which side of a conflict to keep.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Keep {
+    First,
+    Second,
+    /// Documents only: keep both copies.
+    Both,
+}
+
+/// Settles one conflicting field, the body (`body`), or a document (its
+/// path) of `id` with the chosen side, and removes it from the item's
+/// conflict record.
+pub fn resolve(p: &Project, id: &str, what: &str, keep: Keep) -> Result<()> {
+    change(p, |board| {
+        let mut c = board
+            .conflicts
+            .get(id)
+            .cloned()
+            .ok_or_else(|| anyhow!("{id} has no conflict"))?;
+        let pick = |values: &[String; 2]| -> Result<String> {
+            match keep {
+                Keep::First => Ok(values[0].clone()),
+                Keep::Second => Ok(values[1].clone()),
+                Keep::Both => bail!("keep 1 or 2 for {what}"),
+            }
+        };
+        if what == "body" {
+            let b = c
+                .body
+                .clone()
+                .ok_or_else(|| anyhow!("{id} has no conflict on its text"))?;
+            let body = pick(&b.values)?;
+            c.body = None;
+            let ch = Changes {
+                body: Some(body),
+                ..Default::default()
+            };
+            update_locked(p, board, id, ch)?;
+        } else if let Some(i) = c.documents.iter().position(|d| d.path == what) {
+            let d = c.documents.remove(i);
+            match keep {
+                Keep::First => fs::remove_file(p.root.join(&d.other))?,
+                Keep::Second => fs::rename(p.root.join(&d.other), p.root.join(&d.path))?,
+                Keep::Both => {}
+            }
+        } else {
+            let i = c
+                .fields
+                .iter()
+                .position(|f| f.field == what)
+                .ok_or_else(|| anyhow!("{id} has no conflict on {what}"))?;
+            let v = pick(&c.fields[i].values)?;
+            c.fields.remove(i);
+            let num = || v.parse::<i64>().map_err(|_| anyhow!("{v} is not a score"));
+            let mut ch = Changes::default();
+            match what {
+                "title" => ch.title = Some(v.clone()),
+                "status" => ch.status = Some(v.clone()),
+                "impact" => ch.impact = Some(num()?),
+                "urgency" => ch.urgency = Some(num()?),
+                "risk" => ch.risk = Some(num()?),
+                "effort" => ch.effort = Some(num()?),
+                "source" => {
+                    let it = board.get_mut(id)?;
+                    it.source = v.clone();
+                    let it = it.clone();
+                    save(p, &it)?;
+                }
+                other => bail!("cannot resolve {other}"),
+            }
+            if what != "source" {
+                update_locked(p, board, id, ch)?;
+            }
+        }
+        crate::conflicts::write(p, &c)?;
+        settle_locked(p)?;
+        Ok(((), format!("{id}: resolve {what}")))
+    })
+}

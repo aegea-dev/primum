@@ -131,3 +131,12 @@ ol.history .who{color:var(--accent)}
 pre.diff{font:12px/1.5 ui-monospace,Menlo,monospace;background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:8px;overflow:auto;margin-top:6px;white-space:pre}
 pre.diff .add{color:#15803d}
 pre.diff .del{color:var(--danger)}
+
+/* A conflict a sync left: both sides, and a keep button for each. */
+.conflicts{border:1px solid var(--warn);border-radius:10px;padding:10px 14px;margin:0 0 14px;background:var(--surface)}
+.conflicts h3{font-size:14px;margin:0 0 8px;color:var(--warn)}
+.conflict{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:6px 0}
+.conflict small{color:var(--mut)}
+.conflict .bodies{display:grid;grid-template-columns:1fr 1fr;gap:12px;width:100%}
+.conflict .bodies .md{border:1px solid var(--line);border-radius:6px;padding:8px;font-size:13px}
+.conflict-mark{color:var(--warn);font-weight:700;margin-left:4px}

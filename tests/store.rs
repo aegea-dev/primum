@@ -335,3 +335,57 @@ fn conflicts_show_on_the_board_and_follow_their_item() {
     delete(&p, "BUG:1").unwrap();
     assert!(!d.path().join("conflicts/BUG-1.json").exists());
 }
+
+#[test]
+fn resolving_writes_the_choice_and_clears_the_record() {
+    use primum::conflicts::*;
+    let d = tempfile::tempdir().unwrap();
+    let p = common::project(d.path());
+    let body = Changes {
+        body: Some("bizim\n".into()),
+        ..ch()
+    };
+    insert(&p, "TODO", "x", body).unwrap();
+    set_doc(&p, "TODO:1", "spec", "# bizim\n").unwrap();
+    let other = d.path().join("items/TODO-1.spec.abc1234.md");
+    std::fs::write(&other, "# onların\n").unwrap();
+    let side = |a: &str| Side {
+        author: a.into(),
+        date: String::new(),
+    };
+    let c = Conflict {
+        id: "TODO:1".into(),
+        sides: [side("Özgür"), side("Işıl")],
+        fields: vec![FieldValues {
+            field: "impact".into(),
+            values: ["5".into(), "8".into()],
+        }],
+        body: Some(BodyValues {
+            values: ["bizim\n".into(), "onların\n".into()],
+        }),
+        documents: vec![DocConflict {
+            path: "items/TODO-1.spec.md".into(),
+            other: "items/TODO-1.spec.abc1234.md".into(),
+        }],
+    };
+    write(&p, &c).unwrap();
+    resolve(&p, "TODO:1", "impact", Keep::Second).unwrap();
+    assert_eq!(load(&p).unwrap().get("TODO:1").unwrap().impact, 8);
+    assert!(resolve(&p, "TODO:1", "body", Keep::Both).is_err());
+    resolve(&p, "TODO:1", "body", Keep::First).unwrap();
+    resolve(&p, "TODO:1", "items/TODO-1.spec.md", Keep::Second).unwrap();
+    assert_eq!(
+        common::read(d.path(), "items/TODO-1.spec.md"),
+        "# onların\n"
+    );
+    assert!(!other.exists());
+    assert!(
+        !d.path().join("conflicts/TODO-1.json").exists(),
+        "empty record removed"
+    );
+    assert_eq!(
+        common::subjects(&p)[0],
+        "TODO:1: resolve items/TODO-1.spec.md"
+    );
+    assert!(resolve(&p, "TODO:1", "impact", Keep::First).is_err());
+}
