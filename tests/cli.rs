@@ -365,3 +365,45 @@ fn changes_sync_by_themselves() {
     let log = String::from_utf8_lossy(&log.stdout);
     assert!(log.contains("TODO:1: add \"Gökçe\""), "{log}");
 }
+
+#[test]
+fn github_connect_files_issues_through_gh() {
+    let t = T::new();
+    t.out(&["add", "BUG", "Gökçe'nin hatası"]);
+    let fake = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/fake-gh");
+    let state = t.dir.path().join("gh.json");
+    let gh = |args: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_primum"))
+            .args(args)
+            .current_dir(t.dir.path().join("işler"))
+            .env("HOME", t.dir.path())
+            .env("XDG_CONFIG_HOME", t.dir.path().join("config"))
+            .env("PRIMUM_GH", &fake)
+            .env("FAKE_GH_STATE", &state)
+            .output()
+            .unwrap()
+    };
+    let o = gh(&["github", "connect", "ozgur/isler"]);
+    assert!(o.status.success(), "{o:?}");
+    assert!(String::from_utf8_lossy(&o.stdout).contains("BUG:1: filed as an issue"));
+    let s: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&state).unwrap()).unwrap();
+    assert_eq!(s["issues"][0]["title"], "Gökçe'nin hatası");
+    assert_eq!(s["labels"].as_array().unwrap().len(), 6);
+    assert!(t.item("BUG:1").contains("github: 1"));
+    let toml = std::fs::read_to_string(t.dir.path().join("işler/primum.toml")).unwrap();
+    assert!(toml.contains("repo = \"ozgur/isler\""));
+    let status = gh(&["github", "status"]);
+    let status = String::from_utf8_lossy(&status.stdout).to_string();
+    assert!(
+        status.contains("ozgur/isler  gh ready  1 linked items"),
+        "{status}"
+    );
+    // a change syncs by itself: the issue follows
+    let o = gh(&["done", "BUG:1"]);
+    assert!(o.status.success(), "{o:?}");
+    let s: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&state).unwrap()).unwrap();
+    assert_eq!(s["issues"][0]["state"], "closed");
+    assert_eq!(s["issues"][0]["state_reason"], "completed");
+}

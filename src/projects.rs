@@ -9,6 +9,14 @@ use std::path::{Path, PathBuf};
 #[serde(deny_unknown_fields)]
 struct ProjectFile {
     name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    github: Option<GithubTable>,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct GithubTable {
+    repo: String,
 }
 
 #[derive(Serialize, Deserialize, Default)]
@@ -165,7 +173,7 @@ pub fn init(dir: &Path, name: Option<&str>) -> Result<Project> {
     std::fs::create_dir_all(dir.join("items"))?;
     std::fs::write(
         dir.join("primum.toml"),
-        toml::to_string(&ProjectFile { name })?,
+        toml::to_string(&ProjectFile { name, github: None })?,
     )?;
     let p = open(dir).map_err(|e| anyhow!(e))?;
     crate::history::History::open_with(&p, &format!("primum project {}", p.name))?;
@@ -212,4 +220,36 @@ pub fn resolve(name: Option<&str>, cwd: &Path) -> Result<Project> {
         0 => bail!("no projects yet: run `primum init` in a folder"),
         _ => bail!("several projects are listed; choose one with -p NAME"),
     }
+}
+
+fn read_project_file(p: &Project) -> Result<ProjectFile> {
+    let file = p.root.join("primum.toml");
+    let text = std::fs::read_to_string(&file)?;
+    toml::from_str(&text).with_context(|| format!("{} is not valid", file.display()))
+}
+
+/// The GitHub repository the project is kept in step with, if any.
+pub fn github_repo(p: &Project) -> Result<Option<String>> {
+    if !p.root.join("primum.toml").exists() {
+        return Ok(None);
+    }
+    Ok(read_project_file(p)?.github.map(|g| g.repo))
+}
+
+/// Connects the project to `owner/repo`, or disconnects it with None.
+pub fn set_github(p: &Project, repo: Option<&str>) -> Result<()> {
+    if let Some(r) = repo {
+        let ok = r
+            .split_once('/')
+            .is_some_and(|(o, n)| !o.is_empty() && !n.is_empty() && !n.contains('/'));
+        if !ok {
+            bail!("name the repository as owner/repo, not {r}");
+        }
+    }
+    let mut pf = read_project_file(p)?;
+    pf.github = repo.map(|r| GithubTable {
+        repo: r.to_string(),
+    });
+    std::fs::write(p.root.join("primum.toml"), toml::to_string(&pf)?)?;
+    Ok(())
 }

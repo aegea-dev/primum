@@ -22,6 +22,8 @@ pub struct Item {
     pub docs: Vec<String>,
     pub finished: Option<String>,
     pub source: String,
+    /// The GitHub issue this item is kept in step with.
+    pub github: Option<u64>,
     pub body: String,
 }
 
@@ -53,6 +55,7 @@ impl Item {
             docs: vec![],
             finished: None,
             source: String::new(),
+            github: None,
             body: String::new(),
         }
     }
@@ -64,6 +67,16 @@ impl Item {
         let raw = (self.impact as f64 + self.urgency as f64 + self.risk as f64) * 10.0
             / self.effort.max(1) as f64;
         (raw * 10.0).round_ties_even() / 10.0
+    }
+
+    /// This item's id, kind and number with `other`'s fields.
+    pub fn with_fields_of(&self, other: &Item) -> Item {
+        Item {
+            id: self.id.clone(),
+            kind: self.kind.clone(),
+            num: self.num,
+            ..other.clone()
+        }
     }
 
     pub fn is_closed(&self) -> bool {

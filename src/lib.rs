@@ -1,5 +1,7 @@
 pub mod cli;
 pub mod conflicts;
+pub mod github;
+pub mod github_sync;
 pub mod history;
 pub mod import;
 pub mod item_file;
