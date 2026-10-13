@@ -22,6 +22,7 @@ impl T {
             .args(args)
             .current_dir(self.dir.path().join("işler"))
             .env_clear()
+            .env("PATH", std::env::var("PATH").unwrap())
             .env("HOME", self.dir.path())
             .env("XDG_CONFIG_HOME", self.dir.path().join("config"))
             .env("NO_COLOR", "1")
@@ -273,4 +274,94 @@ fn project_flag_and_projects_commands() {
     assert!(!t.out(&["projects"]).contains("ödev"));
     t.out(&["projects", "add", &o]);
     assert!(t.out(&["projects"]).contains("ödev"));
+}
+
+#[test]
+fn history_is_kept_and_off_without_git() {
+    let t = T::new();
+    t.out(&["add", "TODO", "Işıl"]);
+    assert!(
+        t.dir
+            .path()
+            .join("işler/.primum/history.git/HEAD")
+            .is_file()
+    );
+    let o = Command::new(env!("CARGO_BIN_EXE_primum"))
+        .args(["add", "BUG", "gitsiz"])
+        .current_dir(t.dir.path().join("işler"))
+        .env_clear()
+        .env("HOME", t.dir.path())
+        .env("XDG_CONFIG_HOME", t.dir.path().join("config"))
+        .env("PRIMUM_GIT", "/yok/git")
+        .output()
+        .unwrap();
+    assert!(o.status.success(), "{o:?}");
+    assert_eq!(String::from_utf8_lossy(&o.stdout).trim(), "BUG:1");
+    assert_eq!(
+        String::from_utf8_lossy(&o.stderr).trim(),
+        "primum: history is off: git not found"
+    );
+}
+
+#[test]
+fn log_lists_an_items_changes() {
+    let t = T::new();
+    t.out(&["add", "TODO", "Özgür"]);
+    t.out(&["start", "TODO:1"]);
+    let out = t.out(&["log", "TODO:1"]);
+    let lines: Vec<&str> = out.lines().collect();
+    assert_eq!(lines.len(), 2, "{out}");
+    assert!(lines[0].ends_with("TODO:1: status doing"), "{out}");
+    let json: serde_json::Value = serde_json::from_str(&t.out(&["log", "--json"])).unwrap();
+    assert_eq!(json[0]["message"], "TODO:1: status doing");
+}
+
+#[test]
+fn remote_and_clone_commands() {
+    let t = T::new();
+    t.out(&["add", "TODO", "Özgür"]);
+    let url = t.dir.path().join("remote.git");
+    let made = Command::new("git")
+        .args(["init", "--quiet", "--bare", "-b", "main"])
+        .arg(&url)
+        .status()
+        .unwrap();
+    assert!(made.success());
+    let url = url.to_string_lossy().to_string();
+    t.out(&["remote", "set", &url, "--manual"]);
+    assert!(t.out(&["remote"]).contains(&url));
+    t.out(&["sync"]);
+    let cfg2 = t.dir.path().join("config2");
+    let o = Command::new(env!("CARGO_BIN_EXE_primum"))
+        .args(["clone", &url, "kopya"])
+        .current_dir(t.dir.path())
+        .env("XDG_CONFIG_HOME", &cfg2)
+        .output()
+        .unwrap();
+    assert!(o.status.success(), "{o:?}");
+    assert!(t.dir.path().join("kopya/items/TODO-1.md").is_file());
+    let list = std::fs::read_to_string(cfg2.join("primum/projects.toml")).unwrap();
+    assert!(list.contains("kopya"), "{list}");
+}
+
+#[test]
+fn changes_sync_by_themselves() {
+    let t = T::new();
+    let url = t.dir.path().join("remote.git");
+    let made = Command::new("git")
+        .args(["init", "--quiet", "--bare", "-b", "main"])
+        .arg(&url)
+        .status()
+        .unwrap();
+    assert!(made.success());
+    t.out(&["remote", "set", &url.to_string_lossy()]);
+    t.out(&["add", "TODO", "Gökçe"]);
+    let log = Command::new("git")
+        .arg("--git-dir")
+        .arg(&url)
+        .args(["log", "--format=%s", "main"])
+        .output()
+        .unwrap();
+    let log = String::from_utf8_lossy(&log.stdout);
+    assert!(log.contains("TODO:1: add \"Gökçe\""), "{log}");
 }

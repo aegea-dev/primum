@@ -239,3 +239,62 @@ async fn pages_projects_and_assets() {
         StatusCode::NOT_FOUND
     );
 }
+
+#[tokio::test]
+async fn history_and_its_diffs() {
+    let d = tempfile::tempdir().unwrap();
+    let (_, app) = setup(d.path());
+    post(
+        &app,
+        &format!("{API}/items"),
+        json!({"id": "BUG:1", "effort": 2}),
+    )
+    .await;
+    let (code, text) = get(&app, &format!("{API}/history?id=BUG:1")).await;
+    assert_eq!(code, StatusCode::OK);
+    let log: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(log[0]["message"], "BUG:1: effort");
+    let c = log[0]["commit"].as_str().unwrap();
+    let uri = format!("{API}/history/diff?commit={c}&path=items/BUG-1.md");
+    let (code, diff) = get(&app, &uri).await;
+    assert_eq!(code, StatusCode::OK);
+    assert!(diff.contains("+effort: 2"), "{diff}");
+    let uri = format!("{API}/history/diff?commit={c}&path=Cargo.toml");
+    assert_eq!(get(&app, &uri).await.0, StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn a_conflict_shows_and_resolves() {
+    use primum::conflicts::*;
+    let d = tempfile::tempdir().unwrap();
+    let (p, app) = setup(d.path());
+    let side = |a: &str| Side {
+        author: a.into(),
+        date: String::new(),
+    };
+    let c = Conflict {
+        id: "BUG:1".into(),
+        sides: [side("Özgür"), side("Işıl")],
+        fields: vec![FieldValues {
+            field: "effort".into(),
+            values: ["5".into(), "2".into()],
+        }],
+        body: None,
+        documents: vec![],
+    };
+    write(&p, &c).unwrap();
+    let (_, text) = get(&app, &format!("{API}/items")).await;
+    let items: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(items[0]["conflict"]["fields"][0]["field"], "effort");
+    let bad = json!({"id": "BUG:1", "field": "effort", "keep": 3});
+    assert_eq!(
+        post(&app, &format!("{API}/resolve"), bad).await.0,
+        StatusCode::BAD_REQUEST
+    );
+    let ok = json!({"id": "BUG:1", "field": "effort", "keep": 2});
+    assert_eq!(
+        post(&app, &format!("{API}/resolve"), ok).await.0,
+        StatusCode::OK
+    );
+    assert!(common::read(&p.root, "items/BUG-1.md").contains("effort: 2"));
+}

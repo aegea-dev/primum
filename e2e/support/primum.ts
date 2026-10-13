@@ -84,7 +84,28 @@ async function makeBoard(dir: string, binary: string): Promise<{ root: string; e
   await p("doc", "BUG:1", "plan", "--file", join(dir, "plan.md"));
   await run(binary, ["init"], other, env);
   await run(binary, ["add", "URGENT", "Ödev teslimi"], other, env);
+  await p("set", "BUG:1", "--effort", "4");
+  await makeConflict(dir, binary, root, env);
   return { root, env };
+}
+
+/// A second machine (its own config) clones işler through a bare remote;
+/// both change KILLER:1's urgency and sync, which leaves a conflict on
+/// this machine. Sync is manual, so nothing else syncs during the tests.
+async function makeConflict(dir: string, binary: string, root: string, env: NodeJS.ProcessEnv): Promise<void> {
+  const remote = join(dir, "remote.git");
+  await run("git", ["init", "--quiet", "--bare", "-b", "main", remote], dir, env);
+  const p = (...args: string[]) => run(binary, args, root, env);
+  await p("remote", "set", remote, "--manual");
+  await p("sync");
+  const env2 = { ...env, XDG_CONFIG_HOME: join(dir, "config2") };
+  await run(binary, ["clone", remote, "kopya"], dir, env2);
+  const q = (...args: string[]) => run(binary, args, join(dir, "kopya"), env2);
+  await q("remote", "set", remote, "--manual");
+  await q("set", "KILLER:1", "--urgency", "2");
+  await q("sync");
+  await p("set", "KILLER:1", "--urgency", "8");
+  await p("sync");
 }
 
 export const test = base.extend<{ board: Board }>({

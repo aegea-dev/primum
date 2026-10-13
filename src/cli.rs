@@ -144,8 +144,56 @@ pub enum Cmd {
         #[arg(long)]
         no_open: bool,
     },
+    /// Changes to the project, or to one item, newest first
+    Log {
+        id: Option<String>,
+        #[arg(short, default_value_t = 20)]
+        n: usize,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Pull, merge and push now
+    Sync,
+    /// Settle a conflict a sync left: asks per field on a terminal
+    Resolve {
+        id: String,
+        /// A field (status, impact, ...), `body`, or a document's path
+        #[arg(long)]
+        field: Option<String>,
+        /// 1, 2, or `both` (documents)
+        #[arg(long)]
+        keep: Option<String>,
+    },
+    /// This machine's remote for the project, or set or remove it
+    Remote {
+        #[command(subcommand)]
+        cmd: Option<RemoteCmd>,
+    },
+    /// Make a project from a remote and list it
+    Clone {
+        url: String,
+        /// Default: the remote's name without .git
+        folder: Option<PathBuf>,
+        #[arg(long)]
+        branch: Option<String>,
+    },
     /// Import a videre-board board into this (empty) project, once
     Import { board_dir: PathBuf },
+}
+
+#[derive(Subcommand)]
+pub enum RemoteCmd {
+    /// Sync with URL; the branch defaults to main
+    Set {
+        url: String,
+        #[arg(long)]
+        branch: Option<String>,
+        /// Sync only with `primum sync`
+        #[arg(long)]
+        manual: bool,
+    },
+    /// Stop syncing; the history stays
+    Remove,
 }
 
 #[derive(Subcommand)]
@@ -177,6 +225,19 @@ pub fn run(args: Vec<String>) -> i32 {
 fn dispatch(cli: Cli) -> Result<()> {
     let cwd = std::env::current_dir().context("no working directory")?;
     let project = || projects::resolve(cli.project.as_deref(), &cwd);
+    let changes = matches!(
+        cli.cmd,
+        Cmd::Add { .. }
+            | Cmd::Set { .. }
+            | Cmd::Start { .. }
+            | Cmd::Done { .. }
+            | Cmd::Note { .. }
+            | Cmd::Doc { .. }
+            | Cmd::Kind { .. }
+            | Cmd::Delete { .. }
+            | Cmd::Import { .. }
+            | Cmd::Resolve { .. }
+    );
     match cli.cmd {
         Cmd::Init { name } => {
             let p = projects::init(&cwd, name.as_deref())?;
@@ -239,7 +300,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 body: body_file.as_ref().map(read_text).transpose()?,
                 ..scores_changes(&scores)
             };
-            let named = changed_fields(&c);
+            let named = c.fields();
             if named.is_empty() {
                 bail!("nothing to change: name a field, like --status done");
             }
@@ -264,6 +325,71 @@ fn dispatch(cli: Cli) -> Result<()> {
         }
         Cmd::Delete { id, yes } => delete(&project()?, &norm_id(&id)?, yes)?,
         Cmd::Next { n } => next(&project()?, n)?,
+        Cmd::Log { id, n, json } => {
+            let p = project()?;
+            let Some(h) = crate::history::History::open(&p)? else {
+                bail!("history is off: git not found");
+            };
+            let path = id
+                .as_deref()
+                .map(|i| norm_id(i).map(|i| format!("items/{}", crate::item_file::file_name(&i))))
+                .transpose()?;
+            let log = h.log(path.as_deref(), n)?;
+            if json {
+                println!("{}", serde_json::to_string_pretty(&log)?);
+            } else {
+                for e in &log {
+                    let date = e.date.get(..16).unwrap_or(&e.date).replace('T', " ");
+                    println!(
+                        "{}  {date}  {}  {}",
+                        e.short,
+                        pad(&truncate(&e.author, 12), 12),
+                        e.message
+                    );
+                }
+            }
+        }
+        Cmd::Sync => print_sync(&crate::sync::sync(&project()?)?, true),
+        Cmd::Resolve { id, field, keep } => resolve(&project()?, &norm_id(&id)?, field, keep)?,
+        Cmd::Remote { cmd } => {
+            let p = project()?;
+            let Some(h) = crate::history::History::open(&p)? else {
+                bail!("history is off: git not found");
+            };
+            match cmd {
+                None => match h.remote()? {
+                    Some(r) => {
+                        let mode = if r.manual { "manual" } else { "auto" };
+                        println!("{}  {}  {mode}", r.url, r.branch);
+                    }
+                    None => println!("no remote"),
+                },
+                Some(RemoteCmd::Set {
+                    url,
+                    branch,
+                    manual,
+                }) => {
+                    let r = h.set_remote(&url, branch.as_deref(), manual)?;
+                    println!("{}  {}", r.url, r.branch);
+                }
+                Some(RemoteCmd::Remove) => h.remove_remote()?,
+            }
+        }
+        Cmd::Clone {
+            url,
+            folder,
+            branch,
+        } => {
+            let folder = folder.unwrap_or_else(|| {
+                let name = url.trim_end_matches('/').trim_end_matches(".git");
+                let name = name.rsplit(['/', ':']).next().unwrap_or("primum");
+                PathBuf::from(name)
+            });
+            let folder = cwd.join(folder);
+            crate::history::clone(&url, branch.as_deref(), &folder)?;
+            let p = projects::add(&folder)?;
+            println!("primum project {} in {}", p.name, p.root.display());
+        }
         Cmd::Serve { port, no_open } => crate::server::serve(port, !no_open)?,
         Cmd::Import { board_dir } => {
             let p = project()?;
@@ -283,7 +409,126 @@ fn dispatch(cli: Cli) -> Result<()> {
             }
         }
     }
+    if changes {
+        history_notice();
+        auto_sync(&project()?);
+    }
     Ok(())
+}
+
+fn parse_keep(k: &str) -> Result<store::Keep> {
+    match k {
+        "1" => Ok(store::Keep::First),
+        "2" => Ok(store::Keep::Second),
+        "both" | "b" => Ok(store::Keep::Both),
+        _ => bail!("keep 1, 2 or both, not {k}"),
+    }
+}
+
+/// `primum resolve`: one choice from the flags, else a question per
+/// conflicting field, the text and each document on a terminal.
+fn resolve(p: &Project, id: &str, field: Option<String>, keep: Option<String>) -> Result<()> {
+    if let (Some(f), Some(k)) = (&field, &keep) {
+        store::resolve(p, id, f, parse_keep(k)?)?;
+        println!("{id}: resolved {f}");
+        return Ok(());
+    }
+    let board = store::load(p)?;
+    let c = board
+        .conflicts
+        .get(id)
+        .ok_or_else(|| anyhow!("{id} has no conflict"))?
+        .clone();
+    let who = |i: usize| {
+        let date = c.sides[i].date.get(..16).unwrap_or(&c.sides[i].date);
+        format!("{}, {}", c.sides[i].author, date.replace('T', " "))
+    };
+    let mut questions: Vec<(String, [String; 2], bool)> = c
+        .fields
+        .iter()
+        .map(|f| (f.field.clone(), f.values.clone(), false))
+        .collect();
+    if let Some(b) = &c.body {
+        questions.push(("body".into(), b.values.clone(), false));
+    }
+    for d in &c.documents {
+        questions.push((d.path.clone(), [d.path.clone(), d.other.clone()], true));
+    }
+    let interactive = std::io::stdin().is_terminal();
+    for (what, values, both) in questions {
+        println!("{id} {what}");
+        for (i, v) in values.iter().enumerate() {
+            let shown = if what == "body" {
+                format!("\n{}", v.trim_end())
+            } else {
+                v.clone()
+            };
+            println!("  {}) {shown}  ({})", i + 1, who(i));
+        }
+        if !interactive {
+            continue;
+        }
+        print!("keep [1/2{}]: ", if both { "/both" } else { "" });
+        std::io::stdout().flush()?;
+        let mut answer = String::new();
+        std::io::stdin().read_line(&mut answer)?;
+        store::resolve(p, id, &what, parse_keep(answer.trim())?)?;
+    }
+    if !interactive {
+        bail!("choose with --field F --keep 1|2");
+    }
+    Ok(())
+}
+
+/// Says what a sync did. `verbose` for `primum sync`; automatic syncs say
+/// only what needs attention.
+fn print_sync(r: &crate::sync::Report, verbose: bool) {
+    if r.no_remote {
+        if verbose {
+            println!("no remote: set one with primum remote set URL");
+        }
+        return;
+    }
+    if let Some(why) = &r.offline {
+        eprintln!("primum: offline, changes stay local until the next sync ({why})");
+    }
+    for (old, new) in &r.renumbered {
+        eprintln!("primum: {old} is now {new} (the number was taken on the remote)");
+    }
+    for k in &r.kept {
+        eprintln!("primum: {k}");
+    }
+    for id in &r.conflicts {
+        eprintln!("primum: {id} has a conflict: primum resolve {id}");
+    }
+    if verbose && r.offline.is_none() {
+        let what = match (r.pulled, r.pushed) {
+            (true, true) => "pulled and pushed",
+            (true, false) => "pulled",
+            (false, true) => "pushed",
+            (false, false) => "up to date",
+        };
+        println!("{what}");
+    }
+}
+
+/// Syncs after a change when the project has a remote and sync is not
+/// manual. Never fails the command: problems are said on stderr.
+fn auto_sync(p: &Project) {
+    if !crate::sync::is_auto(p) {
+        return;
+    }
+    match crate::sync::sync(p) {
+        Ok(r) => print_sync(&r, false),
+        Err(e) => eprintln!("primum: sync: {e:#}"),
+    }
+}
+
+/// Says once per command that history is off, when git is missing.
+fn history_notice() {
+    if !crate::history::git_available() {
+        eprintln!("primum: history is off: git not found");
+    }
 }
 
 fn scores_changes(s: &Scores) -> Changes {
@@ -294,23 +539,6 @@ fn scores_changes(s: &Scores) -> Changes {
         effort: s.effort,
         ..Default::default()
     }
-}
-
-fn changed_fields(c: &Changes) -> Vec<&'static str> {
-    [
-        ("title", c.title.is_some()),
-        ("status", c.status.is_some()),
-        ("impact", c.impact.is_some()),
-        ("urgency", c.urgency.is_some()),
-        ("risk", c.risk.is_some()),
-        ("effort", c.effort.is_some()),
-        ("needs", c.needs.is_some()),
-        ("body", c.body.is_some()),
-    ]
-    .into_iter()
-    .filter(|(_, set)| *set)
-    .map(|(name, _)| name)
-    .collect()
 }
 
 fn set_status(p: &Project, id: &str, status: &str) -> Result<()> {
@@ -573,7 +801,7 @@ fn row_line(v: &ItemView, s: &Style) -> String {
         v.needs.join(",")
     };
     let rest = format!(
-        " {} {:>3} {:>3} {:>3} {:>3} {:>5.1} {} {}",
+        " {} {:>3} {:>3} {:>3} {:>3} {:>5.1} {} {}{}",
         pad(&truncate(&v.title, title_width(s)), title_width(s)),
         v.impact,
         v.urgency,
@@ -581,7 +809,9 @@ fn row_line(v: &ItemView, s: &Style) -> String {
         v.effort,
         v.score,
         pad(&truncate(&needs, 16), 16),
-        v.status
+        v.status,
+        // `!`: a sync left a conflict to resolve
+        if v.conflict.is_some() { "!" } else { "" }
     );
     let rest = if v.status == "doing" {
         s.paint(&rest, "1")

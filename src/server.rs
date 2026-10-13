@@ -43,6 +43,8 @@ pub struct ItemView {
     pub docs: Vec<Doc>,
     /// The item's file, relative to the project root.
     pub file: String,
+    /// What a sync could not decide for this item.
+    pub conflict: Option<crate::conflicts::Conflict>,
     /// The start of the item's file names, `TODO-87`; its page is `item/<stem>`.
     pub stem: String,
 }
@@ -71,6 +73,7 @@ impl ItemView {
             docs: board.docs.get(&it.id).cloned().unwrap_or_default(),
             file: format!("items/{}", file_name(&it.id)),
             stem: stem(&it.id),
+            conflict: board.conflicts.get(&it.id).cloned(),
         }
     }
 }
@@ -137,7 +140,10 @@ pub fn router(entries: Vec<Entry>) -> Router {
         .route("/p/{project}/api/items/kind", post(api_kind))
         .route("/p/{project}/api/new", post(api_new))
         .route("/p/{project}/api/delete", post(api_delete))
+        .route("/p/{project}/api/resolve", post(api_resolve))
         .route("/p/{project}/api/doc", get(api_doc))
+        .route("/p/{project}/api/history", get(api_history))
+        .route("/p/{project}/api/history/diff", get(api_history_diff))
         .route("/static/{file}", get(asset))
         .with_state(state)
 }
@@ -163,9 +169,47 @@ pub fn serve(port: u16, open_browser: bool) -> anyhow::Result<()> {
             };
             let _ = std::process::Command::new(opener).arg(&url).spawn();
         }
+        let projects: Vec<Project> = entries
+            .iter()
+            .filter_map(|e| e.project.clone().ok())
+            .collect();
+        tokio::spawn(async move {
+            let mut tick = tokio::time::interval(std::time::Duration::from_secs(60));
+            loop {
+                tick.tick().await;
+                for p in projects.clone() {
+                    let _ = tokio::task::spawn_blocking(move || background_sync(&p)).await;
+                }
+            }
+        });
         axum::serve(listener, router(entries)).await?;
         Ok(())
     })
+}
+
+/// A sync the page did not ask for: only when the project syncs by itself;
+/// problems go to the server's stderr.
+fn background_sync(p: &Project) {
+    if !crate::sync::is_auto(p) {
+        return;
+    }
+    match crate::sync::sync(p) {
+        Ok(r) => {
+            if let Some(why) = r.offline {
+                eprintln!("primum: {}: offline ({why})", p.name);
+            }
+            for id in r.conflicts {
+                eprintln!("primum: {}: {id} has a conflict", p.name);
+            }
+        }
+        Err(e) => eprintln!("primum: {}: sync: {e:#}", p.name),
+    }
+}
+
+/// Syncs `p` in the background after a change; the answer does not wait.
+fn sync_soon(p: &Project) {
+    let p = p.clone();
+    tokio::task::spawn_blocking(move || background_sync(&p));
 }
 
 // ---------------------------------------------------------------- pages
@@ -332,6 +376,40 @@ async fn api_doc(
     })
 }
 
+async fn api_history(
+    State(s): State<Shared>,
+    Path(project): Path<String>,
+    Query(q): Query<HashMap<String, String>>,
+) -> Result<axum::Json<Vec<crate::history::Entry>>, ApiError> {
+    let p = s.project(&project)?;
+    let Some(h) = crate::history::History::open(p)? else {
+        return Ok(axum::Json(vec![]));
+    };
+    let path = match q.get("id") {
+        Some(id) => {
+            let ids = crate::cli::parse_needs(id).map_err(|e| bad(e.to_string()))?;
+            let [id] = ids.as_slice() else {
+                return Err(bad("name one item id"));
+            };
+            Some(format!("items/{}", file_name(id)))
+        }
+        None => None,
+    };
+    Ok(axum::Json(h.log(path.as_deref(), 200)?))
+}
+
+async fn api_history_diff(
+    State(s): State<Shared>,
+    Path(project): Path<String>,
+    Query(q): Query<HashMap<String, String>>,
+) -> Result<Response, ApiError> {
+    let p = s.project(&project)?;
+    let h = crate::history::History::open(p)?.ok_or_else(|| bad("history is off"))?;
+    let arg = |k: &str| q.get(k).map(String::as_str).unwrap_or("");
+    let diff = h.diff(arg("commit"), arg("path"))?;
+    Ok(([(header::CONTENT_TYPE, "text/plain; charset=utf-8")], diff).into_response())
+}
+
 fn text_field(v: &Value, key: &str) -> Result<Option<String>, ApiError> {
     match v.get(key) {
         None | Some(Value::Null) => Ok(None),
@@ -413,6 +491,7 @@ async fn api_update(
         return Err(bad("nothing to update"));
     }
     store::update(p, &id, c)?;
+    sync_soon(p);
     Ok(axum::Json(json!({ "ok": true })))
 }
 
@@ -425,6 +504,7 @@ async fn api_kind(
     let id = id_field(&v)?;
     let kind = text_field(&v, "kind")?.ok_or_else(|| bad("kind required"))?;
     let new = store::set_kind(p, &id, &kind)?;
+    sync_soon(p);
     Ok(axum::Json(
         json!({ "old": id, "new": new, "stem": stem(&new) }),
     ))
@@ -441,6 +521,7 @@ async fn api_new(
     let mut c = changes(&v)?;
     c.title = None;
     let id = store::insert(p, &kind, &title, c)?;
+    sync_soon(p);
     Ok(axum::Json(json!({ "id": id, "stem": stem(&id) })))
 }
 
@@ -451,7 +532,27 @@ async fn api_delete(
 ) -> Result<axum::Json<Value>, ApiError> {
     let p = s.project(&project)?;
     let removed = store::delete(p, &id_field(&v)?)?;
+    sync_soon(p);
     Ok(axum::Json(json!({ "removed": removed })))
+}
+
+async fn api_resolve(
+    State(s): State<Shared>,
+    Path(project): Path<String>,
+    axum::Json(v): axum::Json<Value>,
+) -> Result<axum::Json<Value>, ApiError> {
+    let p = s.project(&project)?;
+    let id = id_field(&v)?;
+    let what = text_field(&v, "field")?.ok_or_else(|| bad("field required"))?;
+    let keep = match v.get("keep") {
+        Some(Value::Number(n)) if n.as_u64() == Some(1) => store::Keep::First,
+        Some(Value::Number(n)) if n.as_u64() == Some(2) => store::Keep::Second,
+        Some(Value::String(s)) if s == "both" => store::Keep::Both,
+        _ => return Err(bad("keep must be 1, 2 or \"both\"")),
+    };
+    store::resolve(p, &id, &what, keep)?;
+    sync_soon(p);
+    Ok(axum::Json(json!({ "ok": true })))
 }
 
 // ---------------------------------------------------------------- static

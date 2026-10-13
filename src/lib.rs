@@ -1,7 +1,11 @@
 pub mod cli;
+pub mod conflicts;
+pub mod history;
 pub mod import;
 pub mod item_file;
+pub mod merge;
 pub mod model;
 pub mod projects;
 pub mod server;
 pub mod store;
+pub mod sync;

@@ -253,5 +253,9 @@ pub fn run(board_dir: &Path, project: &Project) -> Result<Report> {
         fs::write(items_dir.join(file_name(&it.id)), item_file::write(it))?;
     }
     store::settle_all(project)?;
+    if let Some(h) = crate::history::History::open(project)? {
+        let message = format!("import {} items from {}", report.items, board_dir.display());
+        h.commit(&message)?;
+    }
     Ok(report)
 }

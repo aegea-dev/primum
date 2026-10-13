@@ -90,6 +90,29 @@ projects = ["~/projects/my-app", "~/projects/my-lib"]
 project. On the command line, `-p NAME` picks a project; without it primum
 uses the project you are in, else the only one listed.
 
+## History and sync
+
+Every change is a commit in a git repository primum keeps inside the
+project, `.primum/history.git`: the project folder does not need to be a
+git repository, and edits made in a text editor are kept too, as their own
+commit before the next change.
+
+```bash
+primum log TODO:87                             # what happened to an item
+primum remote set git@github.com:me/board.git  # sync this project
+primum clone git@github.com:me/board.git       # the same board on another machine
+```
+
+With a remote, every change syncs by itself, and `primum serve` syncs every
+minute. primum merges for you: different items, or different fields of one
+item, never ask. Only the same field changed differently on two sides is a
+conflict; the board marks it, and you keep one side on the item's page or
+with `primum resolve TODO:87`. Each machine sets its own remote, so `ssh`
+here and `https` there both work; several projects can share one remote on
+different branches (`--branch`).
+
+History needs git 2.28 or later; without git, everything else works.
+
 ## License
 
 Apache-2.0

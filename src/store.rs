@@ -1,6 +1,7 @@
 //! A project's items on disk. Every change takes the project lock, reads the
 //! files, writes only what changed (temporary file, then rename), removes
 //! closed ids from every `needs`, and rewrites BOARD.md.
+use crate::history::History;
 use crate::item_file::{self, file_name, parse_doc_name, parse_item_name, stem};
 use crate::model::{Item, KINDS, STATUSES, clamp_score, id_of, priority_cmp};
 use anyhow::{Context, Result, anyhow, bail};
@@ -37,6 +38,8 @@ pub struct Board {
     /// Every item's documents, its own first (spec, plan, then by name),
     /// then the ones its `docs:` lists.
     pub docs: BTreeMap<String, Vec<Doc>>,
+    /// Items a sync left with a conflict, by id.
+    pub conflicts: BTreeMap<String, crate::conflicts::Conflict>,
 }
 
 impl Board {
@@ -90,14 +93,59 @@ pub struct Changes {
     pub body: Option<String>,
 }
 
+impl Changes {
+    /// The fields this change sets, in a fixed order.
+    pub fn fields(&self) -> Vec<&'static str> {
+        [
+            ("title", self.title.is_some()),
+            ("status", self.status.is_some()),
+            ("impact", self.impact.is_some()),
+            ("urgency", self.urgency.is_some()),
+            ("risk", self.risk.is_some()),
+            ("effort", self.effort.is_some()),
+            ("needs", self.needs.is_some()),
+            ("body", self.body.is_some()),
+        ]
+        .into_iter()
+        .filter(|(_, set)| *set)
+        .map(|(name, _)| name)
+        .collect()
+    }
+
+    /// The commit message for this change to `id`.
+    fn message(&self, id: &str) -> String {
+        match (&self.status, self.fields().as_slice()) {
+            (Some(s), ["status"]) => format!("{id}: status {s}"),
+            (_, fields) => format!("{id}: {}", fields.join(", ")),
+        }
+    }
+}
+
 fn today() -> String {
     chrono::Local::now().format("%Y-%m-%d").to_string()
 }
 
-fn lock(p: &Project) -> Result<File> {
+pub(crate) fn lock(p: &Project) -> Result<File> {
     let f = File::create(p.root.join(".primum.lock")).context("cannot create the project lock")?;
     f.lock_exclusive().context("cannot take the project lock")?;
     Ok(f)
+}
+
+/// Runs one change under the project lock: edits made outside primum are
+/// committed first, then `f` changes the board and names the change, then
+/// one commit records it. Without git, the change still happens.
+fn change<T>(p: &Project, f: impl FnOnce(&mut Board) -> Result<(T, String)>) -> Result<T> {
+    let _l = lock(p)?;
+    let history = History::open(p)?;
+    if let Some(h) = &history {
+        h.record_outside()?;
+    }
+    let mut board = load(p)?;
+    let (out, message) = f(&mut board)?;
+    if let Some(h) = &history {
+        h.commit(&message)?;
+    }
+    Ok(out)
 }
 
 fn write_atomic(path: &Path, text: &str) -> Result<()> {
@@ -154,7 +202,12 @@ pub fn load(p: &Project) -> Result<Board> {
         docs.insert(it.id.clone(), list);
     }
     items.sort_by(priority_cmp);
-    Ok(Board { items, docs })
+    let conflicts = crate::conflicts::read_all(p)?;
+    Ok(Board {
+        items,
+        docs,
+        conflicts,
+    })
 }
 
 fn save(p: &Project, it: &Item) -> Result<()> {
@@ -193,6 +246,11 @@ fn settle(p: &Project, board: &mut Board) -> Result<()> {
 /// written directly (an import).
 pub fn settle_all(p: &Project) -> Result<()> {
     let _l = lock(p)?;
+    settle_locked(p)
+}
+
+/// `settle_all` without taking the lock, for callers that hold it.
+pub(crate) fn settle_locked(p: &Project) -> Result<()> {
     let mut board = load(p)?;
     settle(p, &mut board)
 }
@@ -231,21 +289,22 @@ pub fn insert(p: &Project, kind: &str, title: &str, c: Changes) -> Result<String
     if !KINDS.contains(&kind) {
         bail!("unknown kind {kind}");
     }
-    let _l = lock(p)?;
-    let mut board = load(p)?;
-    let title = if title.trim().is_empty() {
-        "untitled"
-    } else {
-        title
-    };
-    let mut it = Item::new(kind, board.next_num(kind), title);
-    it.source = "primum".into();
-    apply(&mut it, c)?;
-    save(p, &it)?;
-    let id = it.id.clone();
-    board.items.push(it);
-    settle(p, &mut board)?;
-    Ok(id)
+    change(p, |board| {
+        let title = if title.trim().is_empty() {
+            "untitled"
+        } else {
+            title
+        };
+        let mut it = Item::new(kind, board.next_num(kind), title);
+        it.source = "primum".into();
+        apply(&mut it, c)?;
+        save(p, &it)?;
+        let id = it.id.clone();
+        let message = format!("{id}: add {}", serde_json::to_string(&it.title)?);
+        board.items.push(it);
+        settle(p, board)?;
+        Ok((id, message))
+    })
 }
 
 fn update_locked(p: &Project, board: &mut Board, id: &str, c: Changes) -> Result<()> {
@@ -257,28 +316,28 @@ fn update_locked(p: &Project, board: &mut Board, id: &str, c: Changes) -> Result
 }
 
 pub fn update(p: &Project, id: &str, c: Changes) -> Result<()> {
-    let _l = lock(p)?;
-    let mut board = load(p)?;
-    update_locked(p, &mut board, id, c)
+    let message = c.message(id);
+    change(p, |board| Ok((update_locked(p, board, id, c)?, message)))
 }
 
 /// Appends `text` under a dated heading, after a rule when the body already
 /// has text.
 pub fn append_note(p: &Project, id: &str, text: &str) -> Result<()> {
-    let _l = lock(p)?;
-    let mut board = load(p)?;
-    let body = board.get_mut(id)?.body.trim_end().to_string();
-    let note = format!("## {}\n\n{}\n", today(), text.trim());
-    let body = if body.is_empty() {
-        note
-    } else {
-        format!("{body}\n\n---\n\n{note}")
-    };
-    let c = Changes {
-        body: Some(body),
-        ..Default::default()
-    };
-    update_locked(p, &mut board, id, c)
+    change(p, |board| {
+        let body = board.get_mut(id)?.body.trim_end().to_string();
+        let note = format!("## {}\n\n{}\n", today(), text.trim());
+        let body = if body.is_empty() {
+            note
+        } else {
+            format!("{body}\n\n---\n\n{note}")
+        };
+        let c = Changes {
+            body: Some(body),
+            ..Default::default()
+        };
+        update_locked(p, board, id, c)?;
+        Ok(((), format!("{id}: note")))
+    })
 }
 
 /// `## OLD rest` or `## <num>. rest` on the body's first line becomes
@@ -319,31 +378,22 @@ fn rewrite_heading(body: &str, old: &str, new: &str) -> String {
     }
 }
 
-/// Moves an open item to another lane: the next number there, its files and
+/// Moves an item to `kind` and `num` without the lock: its file and own
 /// documents renamed, its heading, and every `needs` and `docs` naming it
-/// rewritten. Returns the new id.
-pub fn set_kind(p: &Project, id: &str, kind: &str) -> Result<String> {
-    if !KINDS.contains(&kind) {
-        bail!("unknown kind {kind}");
-    }
-    let _l = lock(p)?;
+/// rewritten. Shared by `set_kind` and sync's renumbering. Returns the new
+/// id.
+pub(crate) fn move_locked(p: &Project, id: &str, kind: &str, num: u32) -> Result<String> {
     let board = load(p)?;
     let old = board
         .get(id)
         .ok_or_else(|| anyhow!("no item {id}"))?
         .clone();
-    if old.is_closed() {
-        bail!("{id} is closed; reopen it before changing kind");
-    }
-    if old.kind == kind {
-        return Ok(id.to_string());
-    }
-    let new_id = id_of(kind, board.next_num(kind));
+    let new_id = id_of(kind, num);
     let (old_stem, new_stem) = (stem(id), stem(&new_id));
     let mut moved = old.clone();
     moved.id = new_id.clone();
     moved.kind = kind.to_string();
-    moved.num = board.next_num(kind);
+    moved.num = num;
     moved.body = rewrite_heading(&old.body, id, &new_id);
     save(p, &moved)?;
     fs::remove_file(p.items_dir().join(file_name(id)))?;
@@ -351,6 +401,7 @@ pub fn set_kind(p: &Project, id: &str, kind: &str) -> Result<String> {
         let to = d.name.replacen(&old_stem, &new_stem, 1);
         fs::rename(p.items_dir().join(&d.name), p.items_dir().join(to))?;
     }
+    crate::conflicts::rename(p, id, &new_id)?;
     let (old_prefix, new_prefix) = (format!("items/{old_stem}."), format!("items/{new_stem}."));
     for it in board.items.iter().filter(|i| i.id != id) {
         let needs: Vec<String> = it
@@ -373,16 +424,41 @@ pub fn set_kind(p: &Project, id: &str, kind: &str) -> Result<String> {
             save(p, &it)?;
         }
     }
-    let mut board = load(p)?;
-    settle(p, &mut board)?;
+    settle_locked(p)?;
     Ok(new_id)
+}
+
+/// Moves an open item to another lane: the next number there, everything
+/// naming it rewritten (`move_locked`). Returns the new id.
+pub fn set_kind(p: &Project, id: &str, kind: &str) -> Result<String> {
+    if !KINDS.contains(&kind) {
+        bail!("unknown kind {kind}");
+    }
+    change(p, |board| {
+        let old = board
+            .get(id)
+            .ok_or_else(|| anyhow!("no item {id}"))?
+            .clone();
+        if old.is_closed() {
+            bail!("{id} is closed; reopen it before changing kind");
+        }
+        if old.kind == kind {
+            return Ok((id.to_string(), String::new()));
+        }
+        let new_id = move_locked(p, id, kind, board.next_num(kind))?;
+        Ok((new_id.clone(), format!("{id} -> {new_id}")))
+    })
 }
 
 /// Deletes an item and its own documents, and removes its id and documents
 /// from every other item. Returns the files removed.
 pub fn delete(p: &Project, id: &str) -> Result<Vec<String>> {
-    let _l = lock(p)?;
-    let mut board = load(p)?;
+    change(p, |board| {
+        Ok((delete_locked(p, board, id)?, format!("{id}: delete")))
+    })
+}
+
+fn delete_locked(p: &Project, board: &mut Board, id: &str) -> Result<Vec<String>> {
     board.get(id).ok_or_else(|| anyhow!("no item {id}"))?;
     let mut gone = vec![format!("items/{}", file_name(id))];
     fs::remove_file(p.items_dir().join(file_name(id)))?;
@@ -390,6 +466,7 @@ pub fn delete(p: &Project, id: &str) -> Result<Vec<String>> {
         fs::remove_file(p.root.join(&d.path))?;
         gone.push(d.path);
     }
+    crate::conflicts::remove(p, id)?;
     board.items.retain(|i| i.id != id);
     for it in board.items.iter_mut() {
         let needs: Vec<String> = it.needs.iter().filter(|n| *n != id).cloned().collect();
@@ -405,7 +482,7 @@ pub fn delete(p: &Project, id: &str) -> Result<Vec<String>> {
             save(p, it)?;
         }
     }
-    settle(p, &mut board)?;
+    settle(p, board)?;
     Ok(gone)
 }
 
@@ -419,12 +496,15 @@ pub fn set_doc(p: &Project, id: &str, doc_type: &str, text: &str) -> Result<Stri
     {
         bail!("a document type is lowercase letters, digits and -, like spec or plan");
     }
-    let _l = lock(p)?;
-    let board = load(p)?;
-    board.get(id).ok_or_else(|| anyhow!("no item {id}"))?;
-    let name = format!("{}.{doc_type}.md", stem(id));
-    write_atomic(&p.items_dir().join(&name), text)?;
-    Ok(format!("items/{name}"))
+    change(p, |board| {
+        board.get(id).ok_or_else(|| anyhow!("no item {id}"))?;
+        let name = format!("{}.{doc_type}.md", stem(id));
+        write_atomic(&p.items_dir().join(&name), text)?;
+        Ok((
+            format!("items/{name}"),
+            format!("{id}: {doc_type} document"),
+        ))
+    })
 }
 
 /// A document's text, or None for anything that is not a document file
@@ -459,8 +539,19 @@ pub fn board_markdown(board: &Board, name: &str) -> String {
             closed.len(),
             board.items.len()
         ),
-        "## Open items\n".to_string(),
     ];
+    if !board.conflicts.is_empty() {
+        out.push("## Conflicts\n".to_string());
+        for (id, c) in &board.conflicts {
+            out.push(format!(
+                "- [{id}](items/{}): {}",
+                file_name(id),
+                c.what().join(", ")
+            ));
+        }
+        out.push(String::new());
+    }
+    out.push("## Open items\n".to_string());
     for (kind, title) in KIND_TITLES {
         let group: Vec<&&Item> = open.iter().filter(|i| i.kind == kind).collect();
         if group.is_empty() {
@@ -502,4 +593,84 @@ pub fn board_markdown(board: &Board, name: &str) -> String {
         out.push(String::new());
     }
     out.join("\n").trim_end().to_string() + "\n"
+}
+
+/// Which side of a conflict to keep.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Keep {
+    First,
+    Second,
+    /// Documents only: keep both copies.
+    Both,
+}
+
+/// Settles one conflicting field, the body (`body`), or a document (its
+/// path) of `id` with the chosen side, and removes it from the item's
+/// conflict record.
+pub fn resolve(p: &Project, id: &str, what: &str, keep: Keep) -> Result<()> {
+    change(p, |board| {
+        let mut c = board
+            .conflicts
+            .get(id)
+            .cloned()
+            .ok_or_else(|| anyhow!("{id} has no conflict"))?;
+        let pick = |values: &[String; 2]| -> Result<String> {
+            match keep {
+                Keep::First => Ok(values[0].clone()),
+                Keep::Second => Ok(values[1].clone()),
+                Keep::Both => bail!("keep 1 or 2 for {what}"),
+            }
+        };
+        if what == "body" {
+            let b = c
+                .body
+                .clone()
+                .ok_or_else(|| anyhow!("{id} has no conflict on its text"))?;
+            let body = pick(&b.values)?;
+            c.body = None;
+            let ch = Changes {
+                body: Some(body),
+                ..Default::default()
+            };
+            update_locked(p, board, id, ch)?;
+        } else if let Some(i) = c.documents.iter().position(|d| d.path == what) {
+            let d = c.documents.remove(i);
+            match keep {
+                Keep::First => fs::remove_file(p.root.join(&d.other))?,
+                Keep::Second => fs::rename(p.root.join(&d.other), p.root.join(&d.path))?,
+                Keep::Both => {}
+            }
+        } else {
+            let i = c
+                .fields
+                .iter()
+                .position(|f| f.field == what)
+                .ok_or_else(|| anyhow!("{id} has no conflict on {what}"))?;
+            let v = pick(&c.fields[i].values)?;
+            c.fields.remove(i);
+            let num = || v.parse::<i64>().map_err(|_| anyhow!("{v} is not a score"));
+            let mut ch = Changes::default();
+            match what {
+                "title" => ch.title = Some(v.clone()),
+                "status" => ch.status = Some(v.clone()),
+                "impact" => ch.impact = Some(num()?),
+                "urgency" => ch.urgency = Some(num()?),
+                "risk" => ch.risk = Some(num()?),
+                "effort" => ch.effort = Some(num()?),
+                "source" => {
+                    let it = board.get_mut(id)?;
+                    it.source = v.clone();
+                    let it = it.clone();
+                    save(p, &it)?;
+                }
+                other => bail!("cannot resolve {other}"),
+            }
+            if what != "source" {
+                update_locked(p, board, id, ch)?;
+            }
+        }
+        crate::conflicts::write(p, &c)?;
+        settle_locked(p)?;
+        Ok(((), format!("{id}: resolve {what}")))
+    })
 }
