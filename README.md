@@ -4,8 +4,8 @@ Prioritized work items for any number of projects, kept as plain markdown
 files, with a command line and a local web board.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/board-dark.png">
-  <img alt="The primum board: items in priority order, lanes as filters, next up above the table" src="docs/board-light.png">
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/erhangundogan/primum/main/docs/board-dark.png">
+  <img alt="The primum board: items in priority order, lanes as filters, next up above the table" src="https://raw.githubusercontent.com/erhangundogan/primum/main/docs/board-light.png">
 </picture>
 
 ## Install
