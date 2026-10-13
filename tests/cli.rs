@@ -22,6 +22,7 @@ impl T {
             .args(args)
             .current_dir(self.dir.path().join("işler"))
             .env_clear()
+            .env("PATH", std::env::var("PATH").unwrap())
             .env("HOME", self.dir.path())
             .env("XDG_CONFIG_HOME", self.dir.path().join("config"))
             .env("NO_COLOR", "1")
@@ -273,4 +274,31 @@ fn project_flag_and_projects_commands() {
     assert!(!t.out(&["projects"]).contains("ödev"));
     t.out(&["projects", "add", &o]);
     assert!(t.out(&["projects"]).contains("ödev"));
+}
+
+#[test]
+fn history_is_kept_and_off_without_git() {
+    let t = T::new();
+    t.out(&["add", "TODO", "Işıl"]);
+    assert!(
+        t.dir
+            .path()
+            .join("işler/.primum/history.git/HEAD")
+            .is_file()
+    );
+    let o = Command::new(env!("CARGO_BIN_EXE_primum"))
+        .args(["add", "BUG", "gitsiz"])
+        .current_dir(t.dir.path().join("işler"))
+        .env_clear()
+        .env("HOME", t.dir.path())
+        .env("XDG_CONFIG_HOME", t.dir.path().join("config"))
+        .env("PRIMUM_GIT", "/yok/git")
+        .output()
+        .unwrap();
+    assert!(o.status.success(), "{o:?}");
+    assert_eq!(String::from_utf8_lossy(&o.stdout).trim(), "BUG:1");
+    assert_eq!(
+        String::from_utf8_lossy(&o.stderr).trim(),
+        "primum: history is off: git not found"
+    );
 }

@@ -29,6 +29,9 @@ fn init_writes_the_project_and_lists_it() {
         let l = projects::list().unwrap();
         assert_eq!(l.len(), 1);
         assert_eq!(l[0].project.as_ref().unwrap().name, "videre");
+        let h = primum::history::History::open(&p).unwrap().unwrap();
+        let log = h.git(&["log", "--format=%s"]).unwrap();
+        assert_eq!(log.trim(), "primum project videre");
         assert!(projects::init(&dir, None).is_err(), "init twice is refused");
         assert_eq!(projects::list().unwrap().len(), 1);
     });

@@ -177,6 +177,18 @@ pub fn run(args: Vec<String>) -> i32 {
 fn dispatch(cli: Cli) -> Result<()> {
     let cwd = std::env::current_dir().context("no working directory")?;
     let project = || projects::resolve(cli.project.as_deref(), &cwd);
+    let changes = matches!(
+        cli.cmd,
+        Cmd::Add { .. }
+            | Cmd::Set { .. }
+            | Cmd::Start { .. }
+            | Cmd::Done { .. }
+            | Cmd::Note { .. }
+            | Cmd::Doc { .. }
+            | Cmd::Kind { .. }
+            | Cmd::Delete { .. }
+            | Cmd::Import { .. }
+    );
     match cli.cmd {
         Cmd::Init { name } => {
             let p = projects::init(&cwd, name.as_deref())?;
@@ -239,7 +251,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 body: body_file.as_ref().map(read_text).transpose()?,
                 ..scores_changes(&scores)
             };
-            let named = changed_fields(&c);
+            let named = c.fields();
             if named.is_empty() {
                 bail!("nothing to change: name a field, like --status done");
             }
@@ -283,7 +295,17 @@ fn dispatch(cli: Cli) -> Result<()> {
             }
         }
     }
+    if changes {
+        history_notice();
+    }
     Ok(())
+}
+
+/// Says once per command that history is off, when git is missing.
+fn history_notice() {
+    if !crate::history::git_available() {
+        eprintln!("primum: history is off: git not found");
+    }
 }
 
 fn scores_changes(s: &Scores) -> Changes {
@@ -294,23 +316,6 @@ fn scores_changes(s: &Scores) -> Changes {
         effort: s.effort,
         ..Default::default()
     }
-}
-
-fn changed_fields(c: &Changes) -> Vec<&'static str> {
-    [
-        ("title", c.title.is_some()),
-        ("status", c.status.is_some()),
-        ("impact", c.impact.is_some()),
-        ("urgency", c.urgency.is_some()),
-        ("risk", c.risk.is_some()),
-        ("effort", c.effort.is_some()),
-        ("needs", c.needs.is_some()),
-        ("body", c.body.is_some()),
-    ]
-    .into_iter()
-    .filter(|(_, set)| *set)
-    .map(|(name, _)| name)
-    .collect()
 }
 
 fn set_status(p: &Project, id: &str, status: &str) -> Result<()> {

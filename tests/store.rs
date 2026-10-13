@@ -229,3 +229,68 @@ fn board_md_lists_open_by_lane_and_closed() {
     assert!(md.contains("## Closed"));
     assert!(!md.contains("### TODOs"));
 }
+
+#[test]
+fn every_change_is_one_commit_with_its_message() {
+    let d = tempfile::tempdir().unwrap();
+    let p = common::project(d.path());
+    insert(&p, "TODO", "Özgür'ün listesi", ch()).unwrap();
+    let doing = Changes {
+        status: Some("doing".into()),
+        ..ch()
+    };
+    update(&p, "TODO:1", doing).unwrap();
+    let scores = Changes {
+        impact: Some(7),
+        effort: Some(3),
+        ..ch()
+    };
+    update(&p, "TODO:1", scores).unwrap();
+    append_note(&p, "TODO:1", "Ölçüldü.").unwrap();
+    set_doc(&p, "TODO:1", "spec", "# S\n").unwrap();
+    set_kind(&p, "TODO:1", "BUG").unwrap();
+    delete(&p, "BUG:1").unwrap();
+    assert_eq!(
+        common::subjects(&p),
+        [
+            "BUG:1: delete",
+            "TODO:1 -> BUG:1",
+            "TODO:1: spec document",
+            "TODO:1: note",
+            "TODO:1: impact, effort",
+            "TODO:1: status doing",
+            "TODO:1: add \"Özgür'ün listesi\"",
+        ],
+        "an empty project has nothing for a first commit"
+    );
+}
+
+#[test]
+fn an_outside_edit_is_committed_before_the_next_change() {
+    let d = tempfile::tempdir().unwrap();
+    let p = common::project(d.path());
+    insert(&p, "TODO", "x", ch()).unwrap();
+    let f = d.path().join("items/TODO-1.md");
+    let edited = std::fs::read_to_string(&f)
+        .unwrap()
+        .replace("risk: 3", "risk: 9");
+    std::fs::write(&f, edited).unwrap();
+    let done = Changes {
+        status: Some("done".into()),
+        ..ch()
+    };
+    update(&p, "TODO:1", done).unwrap();
+    assert_eq!(
+        common::subjects(&p)[..2],
+        ["TODO:1: status done", "edited outside primum"]
+    );
+}
+
+#[test]
+fn a_failed_change_commits_nothing() {
+    let d = tempfile::tempdir().unwrap();
+    let p = common::project(d.path());
+    insert(&p, "TODO", "x", ch()).unwrap();
+    assert!(update(&p, "TODO:9", ch()).is_err());
+    assert_eq!(common::subjects(&p).len(), 1);
+}

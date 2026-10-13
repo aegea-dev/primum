@@ -167,6 +167,8 @@ pub fn init(dir: &Path, name: Option<&str>) -> Result<Project> {
         dir.join("primum.toml"),
         toml::to_string(&ProjectFile { name })?,
     )?;
+    let p = open(dir).map_err(|e| anyhow!(e))?;
+    crate::history::History::open_with(&p, &format!("primum project {}", p.name))?;
     add(dir)
 }
 
