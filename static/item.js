@@ -31,7 +31,11 @@ function draw(){
     try{await api('/items',{id:IT.id,[el.dataset.f]:v});}catch(e){alert(e.message);}
     await load();
   });
-  $('#item-meta').innerHTML=`<span class=docpath>${esc(IT.file)}</span>`;
+  const issue=IT.github&&window.GITHUB
+    ?` <a class=issue href="https://github.com/${GITHUB}/issues/${IT.github}" target=_blank rel=noopener>#${IT.github}</a> <button type=button id=copy-fixes title="copy for a pull request">copy Fixes #${IT.github}</button>`:'';
+  $('#item-meta').innerHTML=`<span class=docpath>${esc(IT.file)}</span>${issue}`;
+  const copy=$('#copy-fixes');
+  if(copy)copy.onclick=()=>navigator.clipboard.writeText(`Fixes #${IT.github}`).then(()=>{copy.textContent='copied';});
   $('#view').innerHTML=IT.body.trim()?md(IT.body):'<p class=empty>(no text yet)</p>';
   $('#edit').classList.toggle('hide',closed);
   $('#kind').classList.toggle('hide',closed);

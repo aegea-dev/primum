@@ -113,6 +113,29 @@ different branches (`--branch`).
 
 History needs git 2.28 or later; without git, everything else works.
 
+## GitHub Issues (optional)
+
+A project can keep its items and a GitHub repository's issues in step, both
+ways, through the [`gh`](https://cli.github.com) CLI (log in once with
+`gh auth login`; primum never stores a token):
+
+```bash
+primum github connect owner/repo     # open items become issues, open issues become items
+primum github status
+primum github disconnect             # stop; links in items stay
+```
+
+From then on every sync carries changes both ways: title, text, status
+(`done` is closed as completed, `wontfix` closed as not planned, `doing` a
+label), kind (a `kind:bug` label) and needs. Scores and needs live in a
+hidden block at the end of the issue body. A field changed on both sides is
+a conflict, settled like any other.
+
+GitHub's closing keywords work as always: a pull request saying
+`Fixes #123` closes the issue when it merges, and the item becomes `done`.
+primum's ids work too: `Fixes TODO:87` in a merged pull request closes
+TODO:87. Deleting an item closes its issue as not planned.
+
 ## License
 
 Apache-2.0

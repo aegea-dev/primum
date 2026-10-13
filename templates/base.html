@@ -7,7 +7,10 @@
 <script>
 // The theme is chosen before the first paint, so a dark page never flashes
 // light: the saved choice, else the system's.
-try{var t=localStorage.getItem('primum-theme');if(t)document.documentElement.dataset.theme=t;}catch(e){}
+try {
+  const theme = localStorage.getItem('primum-theme');
+  if (theme) document.documentElement.dataset.theme = theme;
+} catch {}
 </script>
 <link rel="stylesheet" href="/static/chrome.css">
 <link rel="stylesheet" href="/static/primum.css">

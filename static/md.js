@@ -13,6 +13,9 @@ function mdInline(s){
      .replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>')
      .replace(/(^|[^*\w])\*([^*\n]+)\*(?![*\w])/g,'$1<em>$2</em>')
      .replace(/:([a-z_+0-9]+):/g,(m,n)=>MDEMOJI[n]||m);
+  // #45 and owner/repo#45 link to GitHub when the project is connected
+  if(window.GITHUB)s=s.replace(/(^|[\s(])([\w.-]+\/[\w.-]+)?#(\d+)\b/g,(m,pre,repo,n)=>
+    `${pre}<a href="https://github.com/${repo||window.GITHUB}/issues/${n}" target=_blank rel=noopener>${repo||''}#${n}</a>`);
   return s.replace(/\u0000(\d+)\u0000/g,(_,i)=>'<code>'+codes[+i]+'</code>');
 }
 function md(src){
