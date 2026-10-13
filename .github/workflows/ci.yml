@@ -1,0 +1,103 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A second push to the same branch cancels the first.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+# Every job sets timeout-minutes: the default is six hours, and a hung job
+# would hold a runner and the PR's checks that long.
+jobs:
+  fmt:
+    name: rustfmt
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The version comes from rust-toolchain.toml, the one place it is written.
+      - name: Install the pinned toolchain
+        run: |
+          rustup toolchain install --profile minimal --component rustfmt \
+            "$(sed -n 's/^channel *= *"\(.*\)"/\1/p' rust-toolchain.toml)"
+
+      - name: Check formatting
+        run: make fmt-check
+
+  clippy:
+    name: clippy
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+
+      - name: Install the pinned toolchain
+        run: |
+          rustup toolchain install --profile minimal --component clippy \
+            "$(sed -n 's/^channel *= *"\(.*\)"/\1/p' rust-toolchain.toml)"
+
+      # -D warnings: every lint is fixed or given a justified #[allow].
+      - name: Lint
+        run: make lint-check
+
+  test:
+    name: test (${{ matrix.os }})
+    strategy:
+      # Do not let a macOS failure hide the Linux result, or the reverse.
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+
+      - name: Install the pinned toolchain
+        run: |
+          rustup toolchain install --profile minimal \
+            "$(sed -n 's/^channel *= *"\(.*\)"/\1/p' rust-toolchain.toml)"
+
+      # --no-fail-fast: one failing test binary must not hide every later one.
+      - name: Test
+        run: cargo test --no-fail-fast
+
+  # Builds against the newest versions the `~` requirements allow, ignoring
+  # Cargo.lock, which is what a user of `cargo install primum` (without
+  # --locked) gets. A dependency's patch release that breaks the build shows
+  # here before a user reports it.
+  unlocked:
+    name: build (unlocked)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install the pinned toolchain
+        run: |
+          rustup toolchain install --profile minimal \
+            "$(sed -n 's/^channel *= *"\(.*\)"/\1/p' rust-toolchain.toml)"
+
+      - name: Build with the newest allowed dependencies
+        run: |
+          cargo update
+          cargo build -p primum --bin primum
