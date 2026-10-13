@@ -154,6 +154,11 @@ pub enum Cmd {
     },
     /// Pull, merge and push now
     Sync,
+    /// Keep this project's items and a GitHub repository's issues in step
+    Github {
+        #[command(subcommand)]
+        cmd: GithubCmd,
+    },
     /// Settle a conflict a sync left: asks per field on a terminal
     Resolve {
         id: String,
@@ -179,6 +184,21 @@ pub enum Cmd {
     },
     /// Import a videre-board board into this (empty) project, once
     Import { board_dir: PathBuf },
+}
+
+#[derive(Subcommand)]
+pub enum GithubCmd {
+    /// Connect to OWNER/REPO: open items become issues, open issues become items
+    Connect {
+        repo: String,
+        /// Also file closed items, and take in closed issues
+        #[arg(long)]
+        all: bool,
+    },
+    /// Stop syncing with GitHub; links in items stay
+    Disconnect,
+    /// The repository, whether gh is ready, and the last sync
+    Status,
 }
 
 #[derive(Subcommand)]
@@ -351,6 +371,7 @@ fn dispatch(cli: Cli) -> Result<()> {
         }
         Cmd::Sync => print_sync(&crate::sync::sync(&project()?)?, true),
         Cmd::Resolve { id, field, keep } => resolve(&project()?, &norm_id(&id)?, field, keep)?,
+        Cmd::Github { cmd } => github(&project()?, cmd)?,
         Cmd::Remote { cmd } => {
             let p = project()?;
             let Some(h) = crate::history::History::open(&p)? else {
@@ -412,6 +433,58 @@ fn dispatch(cli: Cli) -> Result<()> {
     if changes {
         history_notice();
         auto_sync(&project()?);
+    }
+    Ok(())
+}
+
+fn github(p: &Project, cmd: GithubCmd) -> Result<()> {
+    let h = crate::history::History::open(p)?;
+    let config = |key: &str| {
+        h.as_ref()
+            .and_then(|h| h.run(&["config", "--get", key]).ok())
+            .filter(|o| o.status.success())
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+    };
+    match cmd {
+        GithubCmd::Connect { repo, all } => {
+            crate::github::Gh::available().map_err(|why| anyhow!("{why}"))?;
+            projects::set_github(p, Some(&repo))?;
+            crate::github::Api::ensure_labels(&crate::github::Gh { repo: repo.clone() })?;
+            if let Some(h) = &h {
+                if all {
+                    h.git(&["config", "primum.github-all", "true"])?;
+                }
+                h.commit(&format!("connect GitHub {repo}"))?;
+            }
+            println!("{} is connected to {repo}", p.name);
+            print_sync(&crate::sync::sync(p)?, true);
+        }
+        GithubCmd::Disconnect => {
+            projects::set_github(p, None)?;
+            if let Some(h) = &h {
+                let _ = h.run(&["config", "--unset", "primum.github-since"]);
+                let _ = h.run(&["config", "--unset", "primum.github-all"]);
+                h.commit("disconnect GitHub")?;
+            }
+            println!("{} is no longer synced with GitHub", p.name);
+        }
+        GithubCmd::Status => {
+            let Some(repo) = projects::github_repo(p)? else {
+                println!("not connected: primum github connect OWNER/REPO");
+                return Ok(());
+            };
+            let gh = match crate::github::Gh::available() {
+                Ok(()) => "gh ready".to_string(),
+                Err(why) => why,
+            };
+            let linked = store::load(p)?
+                .items
+                .iter()
+                .filter(|i| i.github.is_some())
+                .count();
+            let since = config("primum.github-since").unwrap_or_else(|| "never".into());
+            println!("{repo}  {gh}  {linked} linked items  last sync {since}");
+        }
     }
     Ok(())
 }
@@ -483,7 +556,7 @@ fn resolve(p: &Project, id: &str, field: Option<String>, keep: Option<String>) -
 /// Says what a sync did. `verbose` for `primum sync`; automatic syncs say
 /// only what needs attention.
 fn print_sync(r: &crate::sync::Report, verbose: bool) {
-    if r.no_remote {
+    if r.no_remote && r.github.is_none() && r.github_off.is_none() {
         if verbose {
             println!("no remote: set one with primum remote set URL");
         }
@@ -491,6 +564,22 @@ fn print_sync(r: &crate::sync::Report, verbose: bool) {
     }
     if let Some(why) = &r.offline {
         eprintln!("primum: offline, changes stay local until the next sync ({why})");
+    }
+    if let Some(why) = &r.github_off {
+        eprintln!("primum: GitHub sync is off: {why}");
+    }
+    if let Some(g) = &r.github {
+        for (id, pr) in &g.closed_by {
+            eprintln!("primum: {id} closed by #{pr}");
+        }
+        if verbose {
+            for id in &g.created {
+                println!("{id}: filed as an issue");
+            }
+            for id in &g.added {
+                println!("{id}: added from an issue");
+            }
+        }
     }
     for (old, new) in &r.renumbered {
         eprintln!("primum: {old} is now {new} (the number was taken on the remote)");
@@ -501,7 +590,7 @@ fn print_sync(r: &crate::sync::Report, verbose: bool) {
     for id in &r.conflicts {
         eprintln!("primum: {id} has a conflict: primum resolve {id}");
     }
-    if verbose && r.offline.is_none() {
+    if verbose && r.offline.is_none() && !r.no_remote {
         let what = match (r.pulled, r.pushed) {
             (true, true) => "pulled and pushed",
             (true, false) => "pulled",
@@ -646,6 +735,9 @@ fn show(p: &Project, id: &str, json: bool) -> Result<()> {
         "{}",
         s.paint(&format!("{}/{}", p.root.display(), v.file), "2")
     );
+    if let (Some(n), Some(repo)) = (it.github, projects::github_repo(p)?) {
+        println!("issue #{n}  https://github.com/{repo}/issues/{n}");
+    }
     if !v.body.trim().is_empty() {
         println!();
         print!("{}", render_markdown(&v.body, &s));

@@ -1,0 +1,60 @@
+#!/usr/bin/env python3
+# A fake gh for primum's tests: `gh auth status` and the `gh api` calls
+# primum makes, against issues kept in the JSON file named by FAKE_GH_STATE.
+import json, os, sys
+
+state_file = os.environ["FAKE_GH_STATE"]
+state = (json.load(open(state_file)) if os.path.exists(state_file)
+         else {"issues": [], "labels": [], "clock": 0})
+args = sys.argv[1:]
+if args[:2] == ["auth", "status"]:
+    sys.exit(0)
+if not args or args[0] != "api":
+    sys.exit("fake gh: unsupported " + " ".join(args))
+method = args[args.index("-X") + 1] if "-X" in args else "GET"
+path = [a for a in args[1:] if a.startswith("repos/")][0]
+body = json.load(sys.stdin) if "--input" in args else None
+slurp = "--slurp" in args
+
+
+def tick():
+    state["clock"] += 1
+    return "2026-10-14T00:%02d:%02dZ" % divmod(state["clock"], 60)
+
+
+def answer(out):
+    json.dump(state, open(state_file, "w"))
+    print(json.dumps([out] if slurp else out))
+    sys.exit(0)
+
+
+parts = path.split("?")[0].split("/")  # repos, owner, repo, kind, ...
+query = dict(q.split("=", 1) for q in path.split("?")[1].split("&")) if "?" in path else {}
+if parts[3] == "labels":
+    if method == "POST":
+        state["labels"].append(body)
+        answer(body)
+    answer(state["labels"])
+if parts[3] == "issues" and len(parts) == 4:
+    if method == "GET":
+        since = query.get("since")
+        answer([i for i in state["issues"] if since is None or i["updated_at"] > since])
+    n = len(state["issues"]) + 1
+    issue = {"number": n, "title": body["title"], "body": body["body"], "state": "open",
+             "state_reason": None, "labels": [{"name": l} for l in body.get("labels", [])],
+             "updated_at": tick(), "closed_at": None, "user": {"login": "ozgur"}}
+    state["issues"].append(issue)
+    answer(issue)
+if parts[3] == "issues" and len(parts) == 5 and method == "PATCH":
+    issue = [i for i in state["issues"] if i["number"] == int(parts[4])][0]
+    for k in ("title", "body", "state", "state_reason"):
+        if k in body:
+            issue[k] = body[k]
+    if "labels" in body:
+        issue["labels"] = [{"name": l} for l in body["labels"]]
+    issue["updated_at"] = tick()
+    issue["closed_at"] = issue["updated_at"] if issue["state"] == "closed" else None
+    answer(issue)
+if parts[3] == "issues" and len(parts) == 6 and parts[5] == "comments":
+    answer({"body": body["body"]})
+sys.exit("fake gh: unsupported " + " ".join(args))
