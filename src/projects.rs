@@ -230,6 +230,9 @@ fn read_project_file(p: &Project) -> Result<ProjectFile> {
 
 /// The GitHub repository the project is kept in step with, if any.
 pub fn github_repo(p: &Project) -> Result<Option<String>> {
+    if !p.root.join("primum.toml").exists() {
+        return Ok(None);
+    }
     Ok(read_project_file(p)?.github.map(|g| g.repo))
 }
 
