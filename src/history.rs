@@ -448,3 +448,46 @@ pub fn clone(url: &str, branch: Option<&str>, folder: &std::path::Path) -> Resul
     }
     Ok(())
 }
+
+impl History {
+    /// A path's text at merge stage `n` (1 base, 2 ours, 3 theirs), None
+    /// when that side has no such file.
+    pub fn stage(&self, n: u8, path: &str) -> Result<Option<String>> {
+        let out = self.run(&["show", &format!(":{n}:{path}")])?;
+        Ok(out
+            .status
+            .success()
+            .then(|| String::from_utf8_lossy(&out.stdout).to_string()))
+    }
+
+    /// git merge-file on three texts: the merge, or None on a conflict.
+    pub fn merge_text(&self, base: &str, ours: &str, theirs: &str) -> Result<Option<String>> {
+        let dir = self.git_dir.join("primum-merge");
+        std::fs::create_dir_all(&dir)?;
+        let (o, b, t) = (dir.join("ours"), dir.join("base"), dir.join("theirs"));
+        std::fs::write(&o, ours)?;
+        std::fs::write(&b, base)?;
+        std::fs::write(&t, theirs)?;
+        let out = Command::new(git_binary())
+            .args(["merge-file", "-p", "--quiet"])
+            .args([&o, &b, &t])
+            .stdin(Stdio::null())
+            .output()?;
+        let _ = std::fs::remove_dir_all(&dir);
+        match out.status.code() {
+            Some(0) => Ok(Some(String::from_utf8_lossy(&out.stdout).to_string())),
+            Some(n) if n > 0 => Ok(None),
+            _ => bail!("git merge-file failed: {}", stderr_of(&out)),
+        }
+    }
+
+    /// Who last changed `path` on `rev`, and when.
+    pub fn side(&self, rev: &str, path: &str) -> Result<crate::conflicts::Side> {
+        let out = self.git(&["log", "-1", "--format=%an%x1f%aI", rev, "--", path])?;
+        let (author, date) = out.trim().split_once('\x1f').unwrap_or(("", ""));
+        Ok(crate::conflicts::Side {
+            author: author.into(),
+            date: date.into(),
+        })
+    }
+}

@@ -152,6 +152,8 @@ pub enum Cmd {
         #[arg(long)]
         json: bool,
     },
+    /// Pull, merge and push now
+    Sync,
     /// This machine's remote for the project, or set or remove it
     Remote {
         #[command(subcommand)]
@@ -336,6 +338,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 }
             }
         }
+        Cmd::Sync => print_sync(&crate::sync::sync(&project()?)?, true),
         Cmd::Remote { cmd } => {
             let p = project()?;
             let Some(h) = crate::history::History::open(&p)? else {
@@ -398,6 +401,38 @@ fn dispatch(cli: Cli) -> Result<()> {
         history_notice();
     }
     Ok(())
+}
+
+/// Says what a sync did. `verbose` for `primum sync`; automatic syncs say
+/// only what needs attention.
+fn print_sync(r: &crate::sync::Report, verbose: bool) {
+    if r.no_remote {
+        if verbose {
+            println!("no remote: set one with primum remote set URL");
+        }
+        return;
+    }
+    if let Some(why) = &r.offline {
+        eprintln!("primum: offline, changes stay local until the next sync ({why})");
+    }
+    for (old, new) in &r.renumbered {
+        eprintln!("primum: {old} is now {new} (the number was taken on the remote)");
+    }
+    for k in &r.kept {
+        eprintln!("primum: {k}");
+    }
+    for id in &r.conflicts {
+        eprintln!("primum: {id} has a conflict: primum resolve {id}");
+    }
+    if verbose && r.offline.is_none() {
+        let what = match (r.pulled, r.pushed) {
+            (true, true) => "pulled and pushed",
+            (true, false) => "pulled",
+            (false, true) => "pushed",
+            (false, false) => "up to date",
+        };
+        println!("{what}");
+    }
 }
 
 /// Says once per command that history is off, when git is missing.

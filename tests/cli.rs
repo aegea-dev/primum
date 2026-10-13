@@ -317,7 +317,6 @@ fn log_lists_an_items_changes() {
 }
 
 #[test]
-#[ignore = "needs primum sync (Task 7)"]
 fn remote_and_clone_commands() {
     let t = T::new();
     t.out(&["add", "TODO", "Özgür"]);

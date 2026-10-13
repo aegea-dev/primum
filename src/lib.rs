@@ -8,3 +8,4 @@ pub mod model;
 pub mod projects;
 pub mod server;
 pub mod store;
+pub mod sync;
