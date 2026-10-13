@@ -17,6 +17,9 @@ plain JavaScript). This file is for contributing to primum.
 - **Every change leaves a project consistent.** A change takes the project
   lock, writes files through a temporary file and a rename, removes closed
   ids from every `needs`, and rewrites `BOARD.md` before it returns.
+- **Every `git` call goes through `history`**, with primum's fixed flags
+  (no hooks, no signing, no prompts). Merging items is `merge`'s job, never
+  git's line merge.
 - **Item files have one form.** `item_file::write` writes it and
   `item_file::parse` reads only it; anything else is an error naming the
   file and line, never a silent default.
@@ -42,6 +45,10 @@ src/model.rs       items, lanes, score, priority order
 src/item_file.rs   an item's file: names, front matter
 src/store.rs       a project's items on disk: load and every change
 src/projects.rs    primum.toml and the machine's projects.toml
+src/history.rs     the project's bare git repository; every git call
+src/merge.rs       three-way merge of one item, field by field
+src/conflicts.rs   conflicts/<STEM>.json: what a sync could not decide
+src/sync.rs        fetch, renumber, merge, settle, push
 src/import.rs      one-time import of a board.py board
 src/cli.rs         the command line
 src/server.rs      axum routes, JSON API, askama pages
