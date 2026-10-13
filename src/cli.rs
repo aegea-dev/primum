@@ -399,6 +399,7 @@ fn dispatch(cli: Cli) -> Result<()> {
     }
     if changes {
         history_notice();
+        auto_sync(&project()?);
     }
     Ok(())
 }
@@ -432,6 +433,18 @@ fn print_sync(r: &crate::sync::Report, verbose: bool) {
             (false, false) => "up to date",
         };
         println!("{what}");
+    }
+}
+
+/// Syncs after a change when the project has a remote and sync is not
+/// manual. Never fails the command: problems are said on stderr.
+fn auto_sync(p: &Project) {
+    if !crate::sync::is_auto(p) {
+        return;
+    }
+    match crate::sync::sync(p) {
+        Ok(r) => print_sync(&r, false),
+        Err(e) => eprintln!("primum: sync: {e:#}"),
     }
 }
 

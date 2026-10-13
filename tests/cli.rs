@@ -343,3 +343,25 @@ fn remote_and_clone_commands() {
     let list = std::fs::read_to_string(cfg2.join("primum/projects.toml")).unwrap();
     assert!(list.contains("kopya"), "{list}");
 }
+
+#[test]
+fn changes_sync_by_themselves() {
+    let t = T::new();
+    let url = t.dir.path().join("remote.git");
+    let made = Command::new("git")
+        .args(["init", "--quiet", "--bare", "-b", "main"])
+        .arg(&url)
+        .status()
+        .unwrap();
+    assert!(made.success());
+    t.out(&["remote", "set", &url.to_string_lossy()]);
+    t.out(&["add", "TODO", "Gökçe"]);
+    let log = Command::new("git")
+        .arg("--git-dir")
+        .arg(&url)
+        .args(["log", "--format=%s", "main"])
+        .output()
+        .unwrap();
+    let log = String::from_utf8_lossy(&log.stdout);
+    assert!(log.contains("TODO:1: add \"Gökçe\""), "{log}");
+}

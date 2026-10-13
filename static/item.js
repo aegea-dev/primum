@@ -120,3 +120,7 @@ $('#del').onclick=async()=>{
 };
 window.addEventListener('hashchange',()=>{if(IT)drawDocs();});
 load();
+// Others' changes arrive by sync; reload every minute unless editing.
+setInterval(()=>{
+  if(document.visibilityState==='visible'&&$('#editor').classList.contains('hide')&&!document.activeElement.closest('input,select'))load();
+},60000);

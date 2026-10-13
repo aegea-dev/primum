@@ -25,6 +25,16 @@ pub struct Report {
     pub no_remote: bool,
 }
 
+/// Whether changes to `p` sync by themselves: it has a remote, and sync
+/// is not manual.
+pub fn is_auto(p: &Project) -> bool {
+    History::open(p)
+        .ok()
+        .flatten()
+        .and_then(|h| h.remote().ok().flatten())
+        .is_some_and(|r| !r.manual)
+}
+
 pub fn sync(p: &Project) -> Result<Report> {
     let _l = store::lock(p)?;
     let Some(h) = History::open(p)? else {

@@ -182,3 +182,8 @@ $('#newform').onsubmit=async e=>{
   $('#ntitle').value=''; $('#newform').classList.remove('on'); await load();
 };
 load();
+// Others' changes arrive by sync; reload every minute while the page is
+// visible and nothing is being edited.
+setInterval(()=>{
+  if(document.visibilityState==='visible'&&!document.activeElement.closest('input,select,textarea'))load();
+},60000);

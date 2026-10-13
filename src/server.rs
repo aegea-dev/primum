@@ -168,9 +168,47 @@ pub fn serve(port: u16, open_browser: bool) -> anyhow::Result<()> {
             };
             let _ = std::process::Command::new(opener).arg(&url).spawn();
         }
+        let projects: Vec<Project> = entries
+            .iter()
+            .filter_map(|e| e.project.clone().ok())
+            .collect();
+        tokio::spawn(async move {
+            let mut tick = tokio::time::interval(std::time::Duration::from_secs(60));
+            loop {
+                tick.tick().await;
+                for p in projects.clone() {
+                    let _ = tokio::task::spawn_blocking(move || background_sync(&p)).await;
+                }
+            }
+        });
         axum::serve(listener, router(entries)).await?;
         Ok(())
     })
+}
+
+/// A sync the page did not ask for: only when the project syncs by itself;
+/// problems go to the server's stderr.
+fn background_sync(p: &Project) {
+    if !crate::sync::is_auto(p) {
+        return;
+    }
+    match crate::sync::sync(p) {
+        Ok(r) => {
+            if let Some(why) = r.offline {
+                eprintln!("primum: {}: offline ({why})", p.name);
+            }
+            for id in r.conflicts {
+                eprintln!("primum: {}: {id} has a conflict", p.name);
+            }
+        }
+        Err(e) => eprintln!("primum: {}: sync: {e:#}", p.name),
+    }
+}
+
+/// Syncs `p` in the background after a change; the answer does not wait.
+fn sync_soon(p: &Project) {
+    let p = p.clone();
+    tokio::task::spawn_blocking(move || background_sync(&p));
 }
 
 // ---------------------------------------------------------------- pages
@@ -452,6 +490,7 @@ async fn api_update(
         return Err(bad("nothing to update"));
     }
     store::update(p, &id, c)?;
+    sync_soon(p);
     Ok(axum::Json(json!({ "ok": true })))
 }
 
@@ -464,6 +503,7 @@ async fn api_kind(
     let id = id_field(&v)?;
     let kind = text_field(&v, "kind")?.ok_or_else(|| bad("kind required"))?;
     let new = store::set_kind(p, &id, &kind)?;
+    sync_soon(p);
     Ok(axum::Json(
         json!({ "old": id, "new": new, "stem": stem(&new) }),
     ))
@@ -480,6 +520,7 @@ async fn api_new(
     let mut c = changes(&v)?;
     c.title = None;
     let id = store::insert(p, &kind, &title, c)?;
+    sync_soon(p);
     Ok(axum::Json(json!({ "id": id, "stem": stem(&id) })))
 }
 
@@ -490,6 +531,7 @@ async fn api_delete(
 ) -> Result<axum::Json<Value>, ApiError> {
     let p = s.project(&project)?;
     let removed = store::delete(p, &id_field(&v)?)?;
+    sync_soon(p);
     Ok(axum::Json(json!({ "removed": removed })))
 }
 
