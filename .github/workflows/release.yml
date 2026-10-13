@@ -1,0 +1,249 @@
+name: Release
+
+# Separate from ci.yml on purpose: a tag push must not be blocked by, or
+# entangled with, the test matrix. CI gates `main`; this gates the artifacts.
+on:
+  push:
+    tags: ["v*"]
+
+# Read-only by default; each job that writes to the release says so.
+permissions:
+  contents: read
+
+jobs:
+  # upload-rust-binary-action uploads to an existing release; pushing a tag
+  # does not create one. Created as a draft so a failing smoke job can stop it
+  # going public.
+  create-release:
+    name: create draft release
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # creates the draft release
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The notes live in a tracked file rather than a heredoc: a YAML block
+      # scalar cannot hold a column-0 heredoc terminator.
+      - name: Create or reuse the draft release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eux
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "release already exists, reusing it"
+          else
+            gh release create "$GITHUB_REF_NAME" --draft --title "$GITHUB_REF_NAME" \
+              --notes-file .github/release-notes.md
+          fi
+
+  build:
+    needs: create-release
+    name: build ${{ matrix.target }}
+    strategy:
+      # One target failing must not cancel the others.
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            os: macos-latest
+          # primum has no native dependencies, so the Apple Silicon runner
+          # cross-compiles for Intel Macs with the target added below.
+          - target: x86_64-apple-darwin
+            os: macos-latest
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-24.04-arm
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write # uploads the archives to the draft release
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Add the target
+        shell: bash
+        run: rustup target add ${{ matrix.target }}
+
+      - name: Build the release binary
+        shell: bash
+        run: cargo build --release --locked --target ${{ matrix.target }}
+
+      - uses: taiki-e/upload-rust-binary-action@f0d45ae91ee7b8ee928de7a9d04d893a08bcbec6 # v1.30.2
+        with:
+          bin: primum
+          target: ${{ matrix.target }}
+          archive: $bin-$tag-$target
+          checksum: sha256
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Report dynamic dependencies
+        shell: bash
+        run: |
+          bin="target/${{ matrix.target }}/release/primum"
+          ls -lh "$bin"
+          if command -v otool >/dev/null; then otool -L "$bin"; else ldd "$bin" || true; fi
+
+  smoke:
+    name: smoke ${{ matrix.target }}
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            os: macos-latest
+          # Runs under Rosetta 2 on the Apple Silicon runner.
+          - target: x86_64-apple-darwin
+            os: macos-latest
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-24.04-arm
+    runs-on: ${{ matrix.os }}
+    # Write, although this job only downloads: the release is still a draft,
+    # and the API shows drafts only to a token with write access.
+    permissions:
+      contents: write
+    timeout-minutes: 15
+    steps:
+      - name: Download the built artifact
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eux
+          gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+            --pattern "primum-$GITHUB_REF_NAME-${{ matrix.target }}.tar.gz" \
+            --output primum.tar.gz
+          tar xzf primum.tar.gz
+          chmod +x primum
+
+      # Exercise the real binary on a runner that never compiled it, in a
+      # temporary project with a temporary config, so nothing touches the
+      # runner's home.
+      - name: Run it
+        shell: bash
+        run: |
+          set -eux
+          bin="$PWD/primum"
+          work="$(mktemp -d)"
+          export XDG_CONFIG_HOME="$work/config"
+          mkdir "$work/deneme"
+          cd "$work/deneme"
+          "$bin" --version
+          "$bin" init
+          test "$("$bin" add TODO "Gökçe'nin denemesi")" = "TODO:1"
+          "$bin" list | grep -q "TODO:1"
+          test -f items/TODO-1.md
+          grep -q "TODO:1" BOARD.md
+
+  # The gate: only a release whose artifacts have run on a clean runner
+  # becomes visible.
+  publish:
+    name: publish the release
+    timeout-minutes: 10
+    needs: smoke
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # undrafts the release
+    steps:
+      - name: Undraft
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false
+
+  # Writes Formula/primum.rb in the tap, so the tap can never lag the release.
+  # Needs TAP_TOKEN, a fine-grained PAT with contents:write on
+  # erhangundogan/homebrew-tap. Fails loudly without it: a silently stale tap
+  # is the failure being prevented.
+  tap:
+    name: bump the homebrew formula
+    needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Write and push the formula
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAP_TOKEN: ${{ secrets.TAP_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${TAP_TOKEN:-}" ]; then
+            echo "TAP_TOKEN is not set; the tap cannot be updated." >&2
+            exit 1
+          fi
+          tag="$GITHUB_REF_NAME"
+          version="${tag#v}"
+          # Checksums come from the release's own .sha256 files.
+          gh release download "$tag" --repo "$GITHUB_REPOSITORY" \
+            --pattern '*.sha256' --dir /tmp/sums
+          sha() { awk '{print $1}' "/tmp/sums/primum-$tag-$1.sha256"; }
+          git clone "https://x-access-token:${TAP_TOKEN}@github.com/erhangundogan/homebrew-tap.git" /tmp/tap
+          mkdir -p /tmp/tap/Formula
+          url="https://github.com/erhangundogan/primum/releases/download/v#{version}/primum-v#{version}"
+          {
+            echo '# Homebrew formula for primum, written by primum'"'"'s release workflow.'
+            echo '#'
+            echo '# Ships the prebuilt binaries from the GitHub release; each was run on a'
+            echo '# clean machine before the release was published.'
+            echo 'class Primum < Formula'
+            echo '  desc "Prioritized work items as plain markdown files, with a CLI and a local web board"'
+            echo '  homepage "https://github.com/erhangundogan/primum"'
+            echo "  version \"$version\""
+            echo '  license "Apache-2.0"'
+            echo ''
+            echo '  on_macos do'
+            echo '    on_arm do'
+            echo "      url \"$url-aarch64-apple-darwin.tar.gz\""
+            echo "      sha256 \"$(sha aarch64-apple-darwin)\""
+            echo '    end'
+            echo '    on_intel do'
+            echo "      url \"$url-x86_64-apple-darwin.tar.gz\""
+            echo "      sha256 \"$(sha x86_64-apple-darwin)\""
+            echo '    end'
+            echo '  end'
+            echo ''
+            echo '  on_linux do'
+            echo '    on_intel do'
+            echo "      url \"$url-x86_64-unknown-linux-gnu.tar.gz\""
+            echo "      sha256 \"$(sha x86_64-unknown-linux-gnu)\""
+            echo '    end'
+            echo '    on_arm do'
+            echo "      url \"$url-aarch64-unknown-linux-gnu.tar.gz\""
+            echo "      sha256 \"$(sha aarch64-unknown-linux-gnu)\""
+            echo '    end'
+            echo '  end'
+            echo ''
+            echo '  def install'
+            echo '    bin.install "primum"'
+            echo '  end'
+            echo ''
+            echo '  def caveats'
+            echo '    <<~EOS'
+            echo '      primum serve opens the board in your browser.'
+            echo '    EOS'
+            echo '  end'
+            echo ''
+            echo '  test do'
+            echo '    assert_match "primum #{version}", shell_output("#{bin}/primum --version")'
+            echo '  end'
+            echo 'end'
+          } > /tmp/tap/Formula/primum.rb
+          cd /tmp/tap
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/primum.rb
+          if git diff --cached --quiet; then
+            echo "formula already current"
+          else
+            git commit -m "primum $version"
+            git push
+          fi

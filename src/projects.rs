@@ -42,8 +42,9 @@ fn expand(p: &str) -> PathBuf {
     }
 }
 
-/// A path as the list writes it: under the home folder as `~/...`.
-fn contract(p: &Path) -> String {
+/// A path as the list writes it and the board shows it: under the home
+/// folder as `~/...`.
+pub fn contract(p: &Path) -> String {
     let home = home();
     match p.strip_prefix(&home) {
         Ok(rest) if !home.as_os_str().is_empty() => format!("~/{}", rest.display()),

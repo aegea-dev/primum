@@ -248,7 +248,7 @@ fn common(s: &AppState, p: &Project, board: &Board) -> PageCommon {
     let api = format!("/p/{}/api", url_part(&p.name));
     PageCommon {
         project: p.name.clone(),
-        path: p.root.display().to_string(),
+        path: projects::contract(&p.root),
         open: board.items.iter().filter(|i| !i.is_closed()).count(),
         doing: board.items.iter().filter(|i| i.status == "doing").count(),
         nav,
