@@ -1,0 +1,14 @@
+{
+  "name": "primum-e2e",
+  "private": true,
+  "type": "module",
+  "packageManager": "yarn@4.12.0",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "~1.63.0",
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.0"
+  }
+}
