@@ -1,0 +1,7 @@
+[
+  {"id": "BUG:1", "kind": "BUG", "num": 1, "title": "Gökçe'nin galerisi boş açılıyor", "crit": 7, "cplx": 2, "impact": 7, "urgency": 6, "risk": 4, "effort": 2, "status": "open", "needs": "", "body": ["## BUG:1 Gökçe'nin galerisi boş açılıyor", "", "Işıl gördü.", ""], "finished": null, "source": "board"},
+  {"id": "BUG:2", "kind": "BUG", "num": 2, "title": "Kapalı hata", "crit": 5, "cplx": 5, "impact": 5, "urgency": 3, "risk": 3, "effort": 5, "status": "done", "needs": "", "body": [], "finished": "2026-09-30", "source": "board"},
+  {"id": "TODO:1", "kind": "TODO", "num": 1, "title": "Özgür'ün dışa aktarımı", "crit": 6, "cplx": 4, "impact": 6, "urgency": 3, "risk": 3, "effort": 4, "status": "doing", "needs": "BUG:2, BUG:1 (galeri önce)", "body": ["## TODO:1 Özgür'ün dışa aktarımı", "", "Ayrıntılar 2026-10-05-govde-design.md içinde.", "", "---", "", "## 2026-10-07", "", "Başladı."], "finished": null, "source": "TODOs.md"},
+  {"id": "TODO:2", "kind": "TODO", "num": 2, "title": "Galeri temeli", "crit": 8, "cplx": 2, "impact": null, "urgency": 3, "risk": 3, "effort": null, "status": "open", "needs": "", "body": "Tek satır gövde", "finished": null, "source": "board"},
+  {"id": "TODO:3", "kind": "TODO", "num": 3, "title": "Arama", "crit": 5, "cplx": 5, "impact": 5, "urgency": 3, "risk": 3, "effort": 5, "status": "wontfix", "needs": "", "body": [], "finished": "2026-10-01", "source": "board"}
+]

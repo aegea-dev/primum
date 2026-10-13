@@ -1,0 +1,3 @@
+# Galeri planı
+
+Adımlar.

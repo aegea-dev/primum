@@ -1,0 +1,3 @@
+# Sahipsiz
+
+Kimseye bağlı değil.
