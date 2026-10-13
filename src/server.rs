@@ -43,6 +43,8 @@ pub struct ItemView {
     pub docs: Vec<Doc>,
     /// The item's file, relative to the project root.
     pub file: String,
+    /// What a sync could not decide for this item.
+    pub conflict: Option<crate::conflicts::Conflict>,
     /// The start of the item's file names, `TODO-87`; its page is `item/<stem>`.
     pub stem: String,
 }
@@ -71,6 +73,7 @@ impl ItemView {
             docs: board.docs.get(&it.id).cloned().unwrap_or_default(),
             file: format!("items/{}", file_name(&it.id)),
             stem: stem(&it.id),
+            conflict: board.conflicts.get(&it.id).cloned(),
         }
     }
 }

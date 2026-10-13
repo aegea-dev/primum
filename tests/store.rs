@@ -294,3 +294,44 @@ fn a_failed_change_commits_nothing() {
     assert!(update(&p, "TODO:9", ch()).is_err());
     assert_eq!(common::subjects(&p).len(), 1);
 }
+
+#[test]
+fn conflicts_show_on_the_board_and_follow_their_item() {
+    use primum::conflicts::*;
+    let d = tempfile::tempdir().unwrap();
+    let p = common::project(d.path());
+    insert(&p, "TODO", "Özgür", ch()).unwrap();
+    let side = |a: &str| Side {
+        author: a.into(),
+        date: "2026-10-14T09:00:00+01:00".into(),
+    };
+    let c = Conflict {
+        id: "TODO:1".into(),
+        sides: [side("Özgür"), side("Işıl")],
+        fields: vec![FieldValues {
+            field: "status".into(),
+            values: ["done".into(), "wontfix".into()],
+        }],
+        body: None,
+        documents: vec![],
+    };
+    write(&p, &c).unwrap();
+    assert!(d.path().join("conflicts/TODO-1.json").is_file());
+    let b = load(&p).unwrap();
+    assert_eq!(b.conflicts["TODO:1"].fields[0].values[1], "wontfix");
+    let risk = Changes {
+        risk: Some(4),
+        ..ch()
+    };
+    update(&p, "TODO:1", risk).unwrap();
+    let md = common::read(d.path(), "BOARD.md");
+    assert!(
+        md.contains("## Conflicts\n\n- [TODO:1](items/TODO-1.md): status"),
+        "{md}"
+    );
+    set_kind(&p, "TODO:1", "BUG").unwrap();
+    assert!(d.path().join("conflicts/BUG-1.json").is_file());
+    assert_eq!(load(&p).unwrap().conflicts["BUG:1"].id, "BUG:1");
+    delete(&p, "BUG:1").unwrap();
+    assert!(!d.path().join("conflicts/BUG-1.json").exists());
+}

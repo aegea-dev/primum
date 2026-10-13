@@ -38,6 +38,8 @@ pub struct Board {
     /// Every item's documents, its own first (spec, plan, then by name),
     /// then the ones its `docs:` lists.
     pub docs: BTreeMap<String, Vec<Doc>>,
+    /// Items a sync left with a conflict, by id.
+    pub conflicts: BTreeMap<String, crate::conflicts::Conflict>,
 }
 
 impl Board {
@@ -200,7 +202,12 @@ pub fn load(p: &Project) -> Result<Board> {
         docs.insert(it.id.clone(), list);
     }
     items.sort_by(priority_cmp);
-    Ok(Board { items, docs })
+    let conflicts = crate::conflicts::read_all(p)?;
+    Ok(Board {
+        items,
+        docs,
+        conflicts,
+    })
 }
 
 fn save(p: &Project, it: &Item) -> Result<()> {
@@ -394,6 +401,7 @@ pub(crate) fn move_locked(p: &Project, id: &str, kind: &str, num: u32) -> Result
         let to = d.name.replacen(&old_stem, &new_stem, 1);
         fs::rename(p.items_dir().join(&d.name), p.items_dir().join(to))?;
     }
+    crate::conflicts::rename(p, id, &new_id)?;
     let (old_prefix, new_prefix) = (format!("items/{old_stem}."), format!("items/{new_stem}."));
     for it in board.items.iter().filter(|i| i.id != id) {
         let needs: Vec<String> = it
@@ -458,6 +466,7 @@ fn delete_locked(p: &Project, board: &mut Board, id: &str) -> Result<Vec<String>
         fs::remove_file(p.root.join(&d.path))?;
         gone.push(d.path);
     }
+    crate::conflicts::remove(p, id)?;
     board.items.retain(|i| i.id != id);
     for it in board.items.iter_mut() {
         let needs: Vec<String> = it.needs.iter().filter(|n| *n != id).cloned().collect();
@@ -530,8 +539,19 @@ pub fn board_markdown(board: &Board, name: &str) -> String {
             closed.len(),
             board.items.len()
         ),
-        "## Open items\n".to_string(),
     ];
+    if !board.conflicts.is_empty() {
+        out.push("## Conflicts\n".to_string());
+        for (id, c) in &board.conflicts {
+            out.push(format!(
+                "- [{id}](items/{}): {}",
+                file_name(id),
+                c.what().join(", ")
+            ));
+        }
+        out.push(String::new());
+    }
+    out.push("## Open items\n".to_string());
     for (kind, title) in KIND_TITLES {
         let group: Vec<&&Item> = open.iter().filter(|i| i.kind == kind).collect();
         if group.is_empty() {
