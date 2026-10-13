@@ -1,0 +1,123 @@
+/* The board and item pages: board.py's table, lanes, row states, chips,
+ * badges and markdown, on chrome.css's tokens so both themes work. */
+:root{
+  --stripe:#f7f7f8;--hover:#ececf0;--doing:#e8efff;--doing-bar:#2a6db5;
+  --selected:#fff3b0;--selected-bar:#d97706;--warn:#c2410c;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme=light]){--stripe:#1f1f26;--hover:#2a2a33;--doing:#1d2a40;--doing-bar:#5b9be6;--selected:#3a321b;--selected-bar:#facc15;--warn:#fb923c}
+}
+:root[data-theme=dark]{--stripe:#1f1f26;--hover:#2a2a33;--doing:#1d2a40;--doing-bar:#5b9be6;--selected:#3a321b;--selected-bar:#facc15;--warn:#fb923c}
+
+.kind-urgent{--kind-color:#B63F3F}
+.kind-bug{--kind-color:#9A6A16}
+.kind-debt{--kind-color:#4F6F99}
+.kind-killer{--kind-color:#3F7E69}
+.kind-todo{--kind-color:#75689A}
+
+.hide{display:none!important}
+.warn{color:var(--warn)}
+.id{font-family:ui-monospace,Menlo,monospace;font-size:12px;white-space:nowrap}
+
+/* Lane chips in the settings bar. */
+button.chip{padding:3px 11px;border:1px solid var(--bar-line);border-radius:99px;background:transparent;color:var(--bar-fg);cursor:pointer}
+button.chip:hover{background:var(--button-hover)}
+button.chip.on{background:var(--accent);border-color:var(--accent);color:#fff}
+button.chip.on[class*=kind-]{background:var(--kind-color);border-color:var(--kind-color)}
+.counts{color:var(--mut)}
+.counts .doing-count{color:var(--doing-bar);margin-left:8px}
+
+/* The board. */
+main.board{padding:0 0 48px}
+#next{margin:14px 16px 0;padding:12px 14px;border:1px solid var(--accent);border-radius:10px;background:var(--surface)}
+#next b{color:var(--accent)}
+#next .mut{color:var(--mut)}
+#newform{display:none;margin:12px 16px 0;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:var(--surface);gap:8px;flex-wrap:wrap;align-items:center}
+#newform.on{display:flex}
+#newform label{color:var(--mut);font-size:12px;display:inline-flex;align-items:center;gap:4px}
+#newform input,#newform select{font:inherit;background:var(--input);color:var(--fg);border:1px solid var(--line-strong);border-radius:6px;padding:5px 8px}
+#newform input[type=text]{flex:1;min-width:240px}
+#newform input[type=number]{width:56px}
+
+table.items{width:100%;border-collapse:collapse;margin-top:12px;background:var(--surface)}
+table.items th,table.items td{padding:7px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+table.items th{font-size:12px;font-weight:500;color:var(--mut);cursor:pointer;user-select:none;white-space:nowrap;position:sticky;top:var(--chrome-h,100px);background:var(--surface);z-index:2}
+table.items th.sorted{color:var(--fg)}
+table.items td.n,table.items th.n{text-align:right;font-variant-numeric:tabular-nums;width:56px}
+tr.item{cursor:pointer;background:var(--surface)}
+tr.item.alt{background:var(--stripe)}
+tr.item:hover{background:var(--hover)}
+tr.item.doing,tr.item.doing.alt{background:var(--doing)}
+tr.item.doing td:first-child{box-shadow:inset 3px 0 0 var(--doing-bar)}
+tr.item.doing .id{font-weight:700}
+td.id{color:#fff;font-weight:700}
+td.id[class*=kind-]{background:var(--kind-color)}
+.score{font-weight:700}
+tr.item.blocked{color:var(--mut)}
+tr.item.blocked .score{opacity:.45}
+/* Finished work stays readable but stops competing: grey, struck through,
+   its scores locked. The status stays live, so a done item can be reopened. */
+tr.item.done,tr.item.done.alt{background:var(--surface)}
+tr.item.done td{color:var(--mut)}
+tr.item.done td.title{text-decoration:line-through}
+tr.item.done td.id{background:transparent;color:var(--mut);font-weight:400}
+tr.item.done .score{opacity:.5}
+tr.item.selected,tr.item.selected.alt,tr.item.selected.doing,tr.item.selected.done{background:var(--selected)}
+tr.item.selected td:first-child{box-shadow:inset 4px 0 0 var(--selected-bar)}
+td.title a{color:inherit;text-decoration:none}
+td.title a:hover{text-decoration:underline}
+select,input.num{font:inherit;background:var(--input);color:var(--fg);border:1px solid var(--line-strong);border-radius:6px;padding:2px 4px}
+input.num{width:46px;text-align:right}
+input.num:disabled{opacity:.4;cursor:not-allowed;border-color:transparent;background:transparent}
+input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+input[type=number]{-moz-appearance:textfield}
+.docbadge,.doctabs button{font-size:12px;padding:2px 9px;border:1px solid var(--line-strong);border-radius:99px;background:transparent;color:var(--fg);cursor:pointer}
+.docbadge{margin:0 4px 2px 0}
+.docbadge:hover{border-color:var(--accent)}
+
+/* An item's page: its text on the left, its documents beside it, stacked on
+   a narrow window. */
+main.itempage{padding:16px 16px 48px}
+.split{display:grid;grid-template-columns:minmax(0,74ch) minmax(0,1fr);gap:28px;align-items:start}
+.split.single{grid-template-columns:minmax(0,74ch)}
+.docpane{border-left:1px solid var(--line);padding-left:24px;max-height:calc(100vh - var(--chrome-h,100px) - 24px);overflow:auto;position:sticky;top:calc(var(--chrome-h,100px) + 12px)}
+@media (max-width:1100px){
+  .split,.split.single{grid-template-columns:minmax(0,1fr)}
+  .docpane{border-left:0;border-top:1px solid var(--line);padding:16px 0 0;max-height:none;position:static}
+}
+.item-title{font-size:18px;line-height:1.35;margin:0 0 10px;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+.item-title .id{color:#fff;background:var(--kind-color);padding:2px 8px;border-radius:5px;font-size:13px}
+.controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:0 0 14px;color:var(--mut);font-size:12px}
+.controls label{display:inline-flex;align-items:center;gap:4px}
+.controls .score{color:var(--fg);font-size:14px}
+.itempage textarea{width:100%;min-height:360px;background:var(--input);color:var(--fg);border:1px solid var(--line-strong);border-radius:8px;padding:12px;font:12px/1.6 ui-monospace,Menlo,monospace;resize:vertical}
+.bar{display:flex;gap:8px;align-items:center;margin-top:14px;flex-wrap:wrap}
+.bar .ok{color:var(--mut);font-size:12px}
+.bar .spacer{flex:1}
+.doctabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px}
+.doctabs button.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.docpath{font:11px ui-monospace,Menlo,monospace;color:var(--mut);margin-bottom:10px;overflow-wrap:anywhere}
+
+/* Markdown, for bodies and documents. */
+.md{font:15px/1.65 -apple-system,system-ui,sans-serif;color:var(--fg);max-width:74ch;overflow-wrap:anywhere}
+.md>*:first-child{margin-top:0}
+.md h1,.md h2,.md h3,.md h4,.md h5,.md h6{margin:1em 0 .35em;line-height:1.25}
+.md h1{font-size:19px}.md h2{font-size:17px}.md h3{font-size:15.5px}.md h4,.md h5,.md h6{font-size:14.5px;color:var(--mut)}
+.md p{margin:.5em 0}
+.md ul,.md ol{margin:.4em 0;padding-left:1.4em}
+.md li{margin:.15em 0}
+.md code{font:13px/1.5 ui-monospace,Menlo,monospace;background:var(--stripe);border:1px solid var(--line);border-radius:4px;padding:.5px 4px}
+.md pre{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px 12px;overflow:auto;margin:.6em 0}
+.md pre code{background:none;border:0;padding:0}
+.md blockquote{margin:.5em 0;padding:.1em 0 .1em 12px;border-left:3px solid var(--accent)}
+.md table{border-collapse:collapse;margin:.6em 0;border:1px solid var(--line)}
+.md th,.md td{border:1px solid var(--line);padding:5px 10px;font-size:13.5px;vertical-align:top;text-align:left}
+.md th{background:var(--stripe)}
+.md hr{border:0;border-top:1px solid var(--line);margin:1.1em 0}
+.md a{color:var(--accent)}
+.md .wl{font-family:ui-monospace,Menlo,monospace;font-size:13px;color:var(--accent)}
+.md .empty{color:var(--mut);font-style:italic}
+
+@media (max-width:700px){
+  table.items th:nth-child(n+3):nth-child(-n+6),table.items td:nth-child(n+3):nth-child(-n+6){display:none}
+}

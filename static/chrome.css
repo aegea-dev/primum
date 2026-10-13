@@ -1,0 +1,77 @@
+/* Page chrome shared by every primum page, from videre's gallery: the dark
+ * header, the nav strip, the settings bar under it, buttons, and the light
+ * and dark themes. Page-specific rules live in primum.css.
+ *
+ * Colors are tokens on :root, redefined for dark. The theme follows the
+ * system unless the nav's toggle saved a choice (data-theme on <html>).
+ */
+:root{
+  --bg:#f4f4f5;--surface:#fff;--fg:#18181b;--mut:#71717a;--line:#e4e4e7;--line-strong:#d4d4d8;
+  --bar-bg:#d4d4d8;--bar-fg:#27272a;--bar-line:#a1a1aa;
+  --button:#fff;--button-hover:#f4f4f5;--input:#fff;
+  --accent:#2a6db5;--accent-hover:#1f5a99;--danger:#b91c1c;
+  --header-bg:#18181b;--header-fg:#e4e4e7;--header-mut:#a1a1aa;
+  --nav-bg:#1a1a1f;--nav-line:#2a2a33;--nav-fg:#9a9aa8;--nav-hover:#25252d;--nav-hover-fg:#d8d8e0;--nav-on:#3b82f6;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme=light]){
+    --bg:#121216;--surface:#1b1b21;--fg:#e4e4e7;--mut:#9a9aa8;--line:#2a2a33;--line-strong:#3a3a45;
+    --bar-bg:#24242c;--bar-fg:#d4d4d8;--bar-line:#33333d;
+    --button:#24242c;--button-hover:#2e2e38;--input:#16161b;
+    --accent:#5b9be6;--accent-hover:#79aeee;--danger:#f87171;
+    --header-bg:#0d0d10;
+    color-scheme:dark;
+  }
+}
+:root[data-theme=dark]{
+  --bg:#121216;--surface:#1b1b21;--fg:#e4e4e7;--mut:#9a9aa8;--line:#2a2a33;--line-strong:#3a3a45;
+  --bar-bg:#24242c;--bar-fg:#d4d4d8;--bar-line:#33333d;
+  --button:#24242c;--button-hover:#2e2e38;--input:#16161b;
+  --accent:#5b9be6;--accent-hover:#79aeee;--danger:#f87171;
+  --header-bg:#0d0d10;
+  color-scheme:dark;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--fg);font-size:14px;line-height:1.5}
+
+/* The nav strip: the brand, then one link per project. */
+.secnav{display:flex;align-items:center;gap:2px;padding:10px 16px;background:var(--nav-bg);border-bottom:1px solid var(--nav-line);position:sticky;top:0;z-index:50;flex-wrap:wrap}
+.secnav a:not(.secnav-brand),.secnav-off{padding:6px 14px;border-radius:6px;color:var(--nav-fg);text-decoration:none;font:500 14px/1.2 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+.secnav a:not(.secnav-brand):hover{background:var(--nav-hover);color:var(--nav-hover-fg)}
+.secnav a.on{background:var(--nav-on);color:#fff}
+.secnav-off{opacity:.45;cursor:not-allowed;text-decoration:line-through}
+.secnav-brand{padding:2px 12px 2px 0;margin-right:4px;color:#f4f4f5;text-decoration:none;font:700 16px/1.2 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.02em}
+.secnav-spacer{flex:1}
+.secnav-theme{padding:4px 10px;border:0;border-radius:6px;background:transparent;color:var(--nav-fg);font-size:16px;line-height:1;cursor:pointer}
+.secnav-theme:hover{background:var(--nav-hover);color:var(--nav-hover-fg)}
+
+/* The header under the nav: the project's name, path and counts. */
+.header{background:var(--header-bg);color:#fff;padding:10px 16px}
+.header h1{font-size:16px;font-weight:700;margin-bottom:1px}
+.header .hmeta{font-size:12px;line-height:1.5;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--header-fg);overflow-wrap:anywhere}
+.header .hlabel{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:var(--header-mut);margin-right:4px}
+
+/* Each page's settings bar, directly under the header: the controls that
+   change how the page shows its content. It sticks under the nav. */
+.gallery-toolbar{padding:8px 16px;display:flex;align-items:center;flex-wrap:wrap;gap:12px;background:var(--bar-bg);color:var(--bar-fg);border-bottom:1px solid var(--bar-line);position:sticky;top:var(--secnav-h,53px);z-index:45}
+.gallery-toolbar :where(a,strong,span,button,input,select,label){font:500 13px/1.2 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+.gallery-toolbar :where(a){color:var(--accent);text-decoration:none}
+.gallery-toolbar :where(a):hover{text-decoration:underline}
+.gallery-toolbar:is([data-features])>:not(:first-child):not(button):not(.toolbar-end):not(:empty){border-left:1px solid var(--bar-line);padding-left:12px}
+.toolbar-group{display:inline-flex;gap:6px;flex-wrap:wrap;align-items:center}
+.gallery-toolbar .toolbar-end{margin-left:auto}
+.view-toggle{display:inline-flex;align-items:center;gap:6px}
+.view-toggle select{font:inherit;color:var(--fg);background:var(--input);border:1px solid var(--line-strong);border-radius:6px;padding:4px 8px}
+
+button{padding:5px 12px;border:1px solid var(--line-strong);background:var(--button);border-radius:6px;cursor:pointer;font-size:12px;color:var(--fg)}
+button:hover{background:var(--button-hover);border-color:var(--mut)}
+button.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+button.primary:hover{background:var(--accent-hover);border-color:var(--accent-hover)}
+button.danger{color:var(--danger)}
+button:disabled{opacity:.4;cursor:not-allowed}
+
+.empty-state{max-width:640px;margin:64px auto;padding:32px;text-align:center;background:var(--surface);border:1px solid var(--line);border-radius:12px}
+.empty-state h2{margin:0 0 12px;font-size:20px}
+.empty-state p{margin:0 0 10px;color:var(--mut)}
+.empty-state code{background:var(--bg);padding:2px 6px;border-radius:4px;font-size:13px}

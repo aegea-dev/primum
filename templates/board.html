@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}{{ page.project }} · primum{% endblock %}
+{% block bar %}<div class="gallery-toolbar" data-features>
+<span class="toolbar-group" id="filters"></span>
+<label class="view-toggle"><input type="checkbox" id="hide-done" checked> hide done</label>
+<label class="view-toggle">Sort <select id="sort-select">
+<option value="priority">priority</option><option value="id">id</option><option value="score">score</option>
+<option value="impact">impact</option><option value="urgency">urgency</option><option value="risk">risk</option>
+<option value="effort">effort</option><option value="title">title</option><option value="status">status</option>
+</select></label>
+<span class="toolbar-end"><button type="button" class="primary" id="nnew">+ new</button></span>
+</div>{% endblock %}
+{% block main %}<main class="board">
+<div id="next"></div>
+<form id="newform" autocomplete="off">
+<select id="nkind"><option>URGENT</option><option>BUG</option><option>DEBT</option><option>KILLER</option><option selected>TODO</option></select>
+<input type="text" id="ntitle" placeholder="title" required>
+<label>impact <input type="number" id="nimpact" value="5" min="1" max="10"></label>
+<label>urgency <input type="number" id="nurgency" value="3" min="1" max="10"></label>
+<label>risk <input type="number" id="nrisk" value="3" min="1" max="10"></label>
+<label>effort <input type="number" id="neffort" value="5" min="1" max="10"></label>
+<button type="submit" class="primary" id="nadd">add</button>
+<button type="button" id="ncancel">cancel</button>
+</form>
+<table class="items"><thead><tr>
+<th data-s="id">id</th><th data-s="title">title</th>
+<th data-s="impact" class="n">impact</th><th data-s="urgency" class="n">urgency</th>
+<th data-s="risk" class="n">risk</th><th data-s="effort" class="n">effort</th>
+<th data-s="score" class="n" title="(impact + urgency + risk) x 10 / effort">score</th>
+<th data-s="needs">needs first</th><th>docs</th><th data-s="status">status</th>
+</tr></thead><tbody id="rows"></tbody></table>
+</main>{% endblock %}
+{% block scripts %}<script src="/static/md.js"></script>
+<script src="/static/board.js"></script>{% endblock %}

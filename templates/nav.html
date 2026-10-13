@@ -1,0 +1,36 @@
+{# The project strip, shared by every page: one tab per listed project, in
+   the order of ~/.config/primum/projects.toml. A project that cannot be read
+   is shown disabled, its reason as the tooltip, so one broken path does not
+   hide the others. #}
+<nav class="secnav">
+<a class="secnav-brand" href="/">primum</a>
+{% for link in page.nav %}{% if let Some(why) = link.reason %}<span class="secnav-off" title="{{ why }}">{{ link.name }}</span>{% else %}<a href="{{ link.href }}"{% if link.on %} class="on" aria-current="page"{% endif %}>{{ link.name }}</a>{% endif %}
+{% endfor %}<span class="secnav-spacer"></span>
+<button type="button" class="secnav-theme" id="theme-toggle" title="Light or dark">&#9680;</button>
+</nav>
+<script>
+document.getElementById('theme-toggle').onclick=function(){
+  var root=document.documentElement;
+  var dark=root.dataset.theme?root.dataset.theme==='dark':matchMedia('(prefers-color-scheme: dark)').matches;
+  root.dataset.theme=dark?'light':'dark';
+  try{localStorage.setItem('primum-theme',root.dataset.theme);}catch(e){}
+};
+// The heights of the sticky chrome, for what sticks below it: --secnav-h, the
+// nav's, and --chrome-h, the nav's plus the settings bar's. Measured, since
+// both wrap on a narrow window.
+(function(){
+  function measure(){
+    var nav=document.querySelector('nav.secnav'),bar=document.querySelector('.gallery-toolbar');
+    var n=nav?nav.offsetHeight:0,b=bar?bar.offsetHeight:0,root=document.documentElement.style;
+    root.setProperty('--secnav-h',n+'px');
+    root.setProperty('--chrome-h',(n+b)+'px');
+  }
+  function watch(){
+    measure();
+    if(!('ResizeObserver' in window))return window.addEventListener('resize',measure);
+    var ro=new ResizeObserver(measure);
+    document.querySelectorAll('nav.secnav,.gallery-toolbar').forEach(function(el){ro.observe(el);});
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',watch);else watch();
+})();
+</script>

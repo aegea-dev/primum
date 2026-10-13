@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}{{ id }} {{ title }} · primum{% endblock %}
+{% block bar %}<div class="gallery-toolbar" data-features>
+<a href="../" id="back">&larr; {{ page.project }}</a>
+<span class="toolbar-group" id="item-meta"></span>
+</div>{% endblock %}
+{% block main %}<main class="itempage">
+<div class="split" id="split">
+<section class="left">
+<h2 class="item-title"><span class="id" id="item-id">{{ id }}</span> <span id="item-title">{{ title }}</span></h2>
+<div class="controls" id="controls"></div>
+<div class="md" id="view"></div>
+<textarea class="hide" id="editor" spellcheck="false"></textarea>
+<div class="bar">
+<button type="button" id="edit">edit</button>
+<button type="button" class="primary hide" id="save">save</button>
+<button type="button" class="hide" id="cancel">cancel</button>
+<span class="ok" id="msg"></span>
+<span class="spacer"></span>
+<select id="kind"></select><button type="button" id="kindsave">change kind</button>
+<button type="button" class="danger" id="del">delete {{ id }}</button>
+</div>
+</section>
+<aside class="docpane" id="docpane">
+<div class="doctabs" id="doctabs"></div>
+<div class="docpath" id="docpath"></div>
+<div class="md" id="doc"></div>
+</aside>
+</div>
+</main>{% endblock %}
+{% block scripts %}<script>window.ITEM_ID={{ item_json|safe }};</script>
+<script src="/static/md.js"></script>
+<script src="/static/item.js"></script>{% endblock %}

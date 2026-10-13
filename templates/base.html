@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{% block title %}{% endblock %}</title>
+<script>
+// The theme is chosen before the first paint, so a dark page never flashes
+// light: the saved choice, else the system's.
+try{var t=localStorage.getItem('primum-theme');if(t)document.documentElement.dataset.theme=t;}catch(e){}
+</script>
+<link rel="stylesheet" href="/static/chrome.css">
+<link rel="stylesheet" href="/static/primum.css">
+</head>
+<body>
+{% include "nav.html" %}
+<div class="header">
+<h1>{{ page.project }}</h1>
+<p class="hmeta"><span class="hlabel">Project:</span> {{ page.path }}</p>
+<p class="hmeta"><span class="hlabel">Items:</span> {{ page.open }} open, {{ page.doing }} in progress</p>
+</div>
+{% block bar %}{% endblock %}
+{% block main %}{% endblock %}
+<script>Object.assign(window,{{ page.globals|safe }});</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>
