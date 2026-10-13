@@ -69,6 +69,16 @@ impl Item {
         (raw * 10.0).round_ties_even() / 10.0
     }
 
+    /// This item's id, kind and number with `other`'s fields.
+    pub fn with_fields_of(&self, other: &Item) -> Item {
+        Item {
+            id: self.id.clone(),
+            kind: self.kind.clone(),
+            num: self.num,
+            ..other.clone()
+        }
+    }
+
     pub fn is_closed(&self) -> bool {
         self.status == "done" || self.status == "wontfix"
     }
