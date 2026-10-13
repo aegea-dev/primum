@@ -49,7 +49,6 @@ templates/         askama templates (nav.html shared)
 static/            CSS and JavaScript, embedded with include_str!
 tests/             integration tests; tests/common/ is shared
 e2e/               Playwright tests for the board
-items/             primum's own work, tracked with primum
 ```
 
 ## The commit guard
