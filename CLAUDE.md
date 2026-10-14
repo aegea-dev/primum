@@ -12,8 +12,9 @@ plain JavaScript). This file is for contributing to primum.
 - **Test first when fixing a bug.** Write the test, run it, watch it fail.
 - **Verify before claiming done.** Run the commands below and read their
   output.
-- **Fixtures** use Turkish names (`Özgür`, `Işıl`, `Gökçe`), never `Alice`
-  and `Bob`.
+- **Fixtures cover non-ASCII text.** Titles, bodies and paths in tests
+  include letters such as `ı`, `ş`, `ğ`, `ü` and `é`, so Unicode handling
+  stays tested. Keep them in neutral titles and words, not personal names.
 - **Every change leaves a project consistent.** A change takes the project
   lock, writes files through a temporary file and a rename, removes closed
   ids from every `needs`, and rewrites `BOARD.md` before it returns.

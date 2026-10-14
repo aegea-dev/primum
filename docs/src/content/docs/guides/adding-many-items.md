@@ -13,7 +13,7 @@ dir=$(mktemp -d)
 cat > "$dir/csv.md" <<'END'
 ## Why
 
-Işıl wants the open items as CSV for the weekly review.
+Sam wants the open items as CSV for the weekly review.
 END
 
 cat > "$dir/crash.md" <<'END'
