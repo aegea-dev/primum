@@ -97,3 +97,55 @@ fn conflict_records_follow_their_items() {
     assert_eq!(c.documents[0].other, "items/1.spec.abc.md");
     assert!(!d.path().join("conflicts/BUG-4.json").exists());
 }
+
+#[test]
+fn documents_of_items_not_on_the_board_get_numbers_too() {
+    let d = tempfile::tempdir().unwrap();
+    let p = common::project(d.path());
+    let items = d.path().join("items");
+    // KILLER:36 was left behind (closed); its spec is still shown by BUG:2
+    fs::write(
+        items.join("BUG-2.md"),
+        old_item("Çay", "", "See KILLER:36.\n"),
+    )
+    .unwrap();
+    let shown = fs::read_to_string(items.join("BUG-2.md")).unwrap().replace(
+        "needs: []\n",
+        "needs: []\ndocs: [items/KILLER-36.spec.md]\n",
+    );
+    fs::write(items.join("BUG-2.md"), shown).unwrap();
+    fs::write(items.join("KILLER-36.spec.md"), "# Gölge\n").unwrap();
+    let moved = migrate(&p).unwrap();
+    assert_eq!(moved, [("BUG:2".to_string(), "1".to_string())]);
+    assert_eq!(
+        fs::read_to_string(items.join("2.spec.md")).unwrap(),
+        "# Gölge\n"
+    );
+    let one = fs::read_to_string(items.join("1.md")).unwrap();
+    assert!(
+        one.contains("docs: [items/2.spec.md]") && one.contains("See #2."),
+        "{one}"
+    );
+    let b = primum::store::load(&p).unwrap();
+    assert_eq!(b.docs["1"][0].path, "items/2.spec.md");
+    // a number a document holds is taken: a new item never inherits it
+    let id = primum::store::insert(&p, "TODO", "Yeni", Default::default()).unwrap();
+    assert_eq!(id, "3");
+}
+
+#[test]
+fn a_failed_migration_changes_nothing() {
+    let d = tempfile::tempdir().unwrap();
+    let p = common::project(d.path());
+    let items = d.path().join("items");
+    fs::write(items.join("TODO-1.md"), old_item("Çay", "", "")).unwrap();
+    fs::write(items.join("TODO-2.md"), "not front matter\n").unwrap();
+    fs::write(items.join("TODO-1.spec.md"), "# Çay\n").unwrap();
+    assert!(migrate(&p).is_err());
+    let mut names: Vec<String> = fs::read_dir(&items)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().into_string().unwrap())
+        .collect();
+    names.sort();
+    assert_eq!(names, ["TODO-1.md", "TODO-1.spec.md", "TODO-2.md"]);
+}

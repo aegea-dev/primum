@@ -40,6 +40,9 @@ pub struct Board {
     pub docs: BTreeMap<String, Vec<Doc>>,
     /// Items a sync left with a conflict, by id.
     pub conflicts: BTreeMap<String, crate::conflicts::Conflict>,
+    /// The highest number any document file carries, item or not: such a
+    /// number is taken, so a new item never inherits stray documents.
+    pub doc_max: u32,
 }
 
 impl Board {
@@ -61,6 +64,7 @@ impl Board {
             .iter()
             .map(|i| i.num)
             .chain(deleted.iter().copied())
+            .chain([self.doc_max])
             .max()
             .unwrap_or(0)
             + 1
@@ -239,10 +243,16 @@ pub fn load(p: &Project) -> Result<Board> {
     }
     items.sort_by(priority_cmp);
     let conflicts = crate::conflicts::read_all(p)?;
+    let doc_max = own
+        .keys()
+        .filter_map(|id| crate::model::parse_id(id))
+        .max()
+        .unwrap_or(0);
     Ok(Board {
         items,
         docs,
         conflicts,
+        doc_max,
     })
 }
 

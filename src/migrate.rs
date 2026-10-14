@@ -110,11 +110,31 @@ pub fn migrate(p: &Project) -> Result<Vec<(String, String)>> {
             .then(kind_rank(&a.1.0).cmp(&kind_rank(&b.1.0)))
             .then(a.1.1.cmp(&b.1.1))
     });
+    // documents whose item is not on the board (left behind) keep their
+    // owner's place: a number after the items, so references still work
+    let mut orphans: Vec<(String, u32)> = names
+        .iter()
+        .filter(|n| old_style_name(n) && n.matches('.').count() > 1)
+        .filter_map(|n| old_parts(n))
+        .filter(|(k, num)| {
+            !old_items
+                .iter()
+                .any(|(_, (ik, inum), _)| ik == k && inum == num)
+        })
+        .collect();
+    orphans.sort_by(|a, b| kind_rank(&a.0).cmp(&kind_rank(&b.0)).then(a.1.cmp(&b.1)));
+    orphans.dedup();
     let map: BTreeMap<String, String> = old_items
         .iter()
+        .map(|(_, (kind, num), _)| format!("{kind}:{num}"))
+        .chain(orphans.iter().map(|(kind, num)| format!("{kind}:{num}")))
         .enumerate()
-        .map(|(i, (_, (kind, num), _))| (format!("{kind}:{num}"), id_of(i as u32 + 1)))
+        .map(|(i, old)| (old, id_of(i as u32 + 1)))
         .collect();
+
+    // read and convert everything first: an error leaves the board as it was
+    let mut writes: Vec<(String, String)> = vec![]; // (new name, text)
+    let mut removes: Vec<String> = vec![];
     let mut moved = vec![];
     for (name, (kind, num), _) in &old_items {
         let old = format!("{kind}:{num}");
@@ -137,8 +157,8 @@ pub fn migrate(p: &Project) -> Result<Vec<(String, String)>> {
             .collect();
         it.docs = it.docs.iter().map(|d| rewrite_refs(d, &map)).collect();
         it.body = rewrite_refs(&it.body, &map);
-        fs::write(p.items_dir().join(file_name(&new)), item_file::write(&it))?;
-        fs::remove_file(p.items_dir().join(name))?;
+        writes.push((file_name(&new), item_file::write(&it)));
+        removes.push(name.clone());
         moved.push((old, new));
     }
     for name in names
@@ -148,17 +168,13 @@ pub fn migrate(p: &Project) -> Result<Vec<(String, String)>> {
         let Some((kind, num)) = old_parts(name) else {
             continue;
         };
-        let Some(new) = map.get(&format!("{kind}:{num}")) else {
-            continue;
-        };
+        let new = &map[&format!("{kind}:{num}")];
         let rest = &name[name.find('.').expect("a document name has a dot")..];
         let text = fs::read_to_string(p.items_dir().join(name))?;
-        fs::write(
-            p.items_dir().join(format!("{new}{rest}")),
-            rewrite_refs(&text, &map),
-        )?;
-        fs::remove_file(p.items_dir().join(name))?;
+        writes.push((format!("{new}{rest}"), rewrite_refs(&text, &map)));
+        removes.push(name.clone());
     }
+    let mut conflicts = vec![];
     for (old, new) in &moved {
         let file = p
             .root
@@ -174,8 +190,19 @@ pub fn migrate(p: &Project) -> Result<Vec<(String, String)>> {
             d.path = rewrite_refs(&d.path, &map);
             d.other = rewrite_refs(&d.other, &map);
         }
-        fs::remove_file(&file)?;
-        crate::conflicts::write(p, &c)?;
+        conflicts.push((file, c));
+    }
+
+    // then write
+    for (name, text) in &writes {
+        store::write_atomic(&p.items_dir().join(name), text)?;
+    }
+    for name in &removes {
+        fs::remove_file(p.items_dir().join(name))?;
+    }
+    for (file, c) in &conflicts {
+        fs::remove_file(file)?;
+        crate::conflicts::write(p, c)?;
     }
     store::settle_locked(p)?;
     if let Some(h) = &history {
