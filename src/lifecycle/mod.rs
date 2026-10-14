@@ -1,6 +1,7 @@
 //! Lifecycles: what a ticket goes through, step by step, as a TOML file in
 //! the project (`lifecycles/<name>.toml`). This module reads, checks and
 //! versions them; running them is the engine's job.
+pub mod expr;
 pub mod format;
 
 use crate::store::Project;

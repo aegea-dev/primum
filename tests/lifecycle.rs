@@ -52,3 +52,26 @@ fn unknown_keys_are_errors() {
     assert!(e.to_string().starts_with("lifecycles/x.toml: "), "{e}");
     assert!(e.to_string().contains("renk"), "{e}");
 }
+
+#[test]
+fn expressions_templates_and_durations() {
+    use primum::lifecycle::expr;
+    assert!(expr::compile("output.status >= 200 && output.status < 300").is_ok());
+    assert!(expr::compile("input.source == 'http' &&").is_err());
+    assert_eq!(
+        expr::templates("${needs.api_url}/updates/${ticket.id}").unwrap(),
+        ["needs.api_url", "ticket.id"]
+    );
+    assert!(expr::templates("open ${ticket.id").is_err());
+    assert_eq!(
+        expr::templates("no templates, ışık").unwrap(),
+        Vec::<String>::new()
+    );
+    assert_eq!(expr::duration("30s").unwrap().as_secs(), 30);
+    assert_eq!(expr::duration("7d").unwrap().as_secs(), 7 * 86_400);
+    assert_eq!(expr::duration("1h 30m").unwrap().as_secs(), 5_400);
+    assert_eq!(expr::duration("2w").unwrap().as_secs(), 14 * 86_400);
+    for bad in ["", "7", "-1s", "soon"] {
+        assert!(expr::duration(bad).is_err(), "{bad}");
+    }
+}
