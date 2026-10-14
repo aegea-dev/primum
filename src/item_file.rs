@@ -16,7 +16,7 @@
 //!
 //! body
 //! ```
-use crate::model::{Item, KINDS, STATUSES, parse_id};
+use crate::model::{Item, KINDS, parse_id};
 use std::fmt;
 
 #[derive(Debug, PartialEq)]
@@ -155,8 +155,12 @@ fn set_field(item: &mut Item, key: &str, raw: &str) -> Result<(), String> {
             item.kind = raw.to_string();
         }
         "status" => {
-            if !STATUSES.contains(&raw) {
-                return Err(format!("unknown status `{raw}`"));
+            let word = raw.starts_with(|c: char| c.is_ascii_lowercase())
+                && raw
+                    .chars()
+                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
+            if !word {
+                return Err(format!("status must be a lowercase word, not `{raw}`"));
             }
             item.status = raw.to_string();
         }

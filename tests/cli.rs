@@ -423,7 +423,7 @@ fn a_closed_pipe_ends_quietly() {
     let items = t.dir.path().join("café/items");
     for n in 1..=2000 {
         let text = format!(
-            "---\ntitle: \"Satır {n}\"\nkind: TODO\nstatus: open\nimpact: 5\nurgency: 3\nrisk: 3\neffort: 5\nneeds: []\n---\n"
+            "---\ntitle: \"Satır {n}\"\nkind: TODO\nstatus: idle\nimpact: 5\nurgency: 3\nrisk: 3\neffort: 5\nneeds: []\n---\n"
         );
         std::fs::write(items.join(format!("{n}.md")), text).unwrap();
     }

@@ -55,7 +55,7 @@ fn status_change_stamps_and_clears_finished_and_frees_dependents() {
         "a closed id leaves every needs"
     );
     let open = Changes {
-        status: Some("open".into()),
+        status: Some("idle".into()),
         ..ch()
     };
     update(&p, "1", open).unwrap();
@@ -66,7 +66,7 @@ fn status_change_stamps_and_clears_finished_and_frees_dependents() {
     };
     assert_eq!(
         update(&p, "1", bad).unwrap_err().to_string(),
-        "unknown status bitti"
+        "#1: status \"bitti\" is not one of idle, doing, done, wontfix"
     );
     assert_eq!(update(&p, "9", ch()).unwrap_err().to_string(), "no item 9");
 }
@@ -192,7 +192,7 @@ fn board_md_lists_open_by_lane_and_closed() {
     assert!(md.contains("1 open, 1 closed, 2 total."));
     assert!(md.contains("### Bugs (1)"));
     assert!(
-        md.contains("| [#2](items/2.md) | 5 | 3 | 3 | 5 | 22.0 | open | Çay hatası |"),
+        md.contains("| [#2](items/2.md) | 5 | 3 | 3 | 5 | 22.0 | idle | Çay hatası |"),
         "{md}"
     );
     assert!(md.contains("## Closed"));
@@ -392,4 +392,38 @@ fn a_missing_title_comes_from_the_first_heading() {
     );
     assert!(insert(&p, "TODO", "", ch()).is_err());
     assert_eq!(load(&p).unwrap().items.len(), 1, "nothing added");
+}
+
+#[test]
+fn statuses_come_from_the_lifecycle() {
+    let d = tempfile::tempdir().unwrap();
+    let p = common::project(d.path());
+    let id = insert(&p, "TODO", "Çay", ch()).unwrap();
+    assert_eq!(load(&p).unwrap().get(&id).unwrap().status, "idle");
+    for s in ["doing", "done", "idle", "wontfix", "idle"] {
+        let c = Changes {
+            status: Some(s.into()),
+            ..ch()
+        };
+        update(&p, &id, c).unwrap();
+    }
+    let open = Changes {
+        status: Some("open".into()),
+        ..ch()
+    };
+    assert_eq!(
+        update(&p, &id, open).unwrap_err().to_string(),
+        "#1: status \"open\" is not one of idle, doing, done, wontfix"
+    );
+    // a board from before lifecycles says how to convert it
+    let f = d.path().join("items/1.md");
+    let text = std::fs::read_to_string(&f)
+        .unwrap()
+        .replace("status: idle", "status: open");
+    std::fs::write(&f, text).unwrap();
+    let e = load(&p).unwrap_err().to_string();
+    assert!(
+        e.contains("items/1.md") && e.contains("run primum migrate"),
+        "{e}"
+    );
 }

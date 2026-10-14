@@ -4,7 +4,6 @@ use serde::Serialize;
 use std::cmp::Ordering;
 
 pub const KINDS: [&str; 5] = ["URGENT", "BUG", "DEBT", "KILLER", "TODO"];
-pub const STATUSES: [&str; 4] = ["open", "doing", "done", "wontfix"];
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Item {
@@ -52,7 +51,7 @@ impl Item {
             kind: kind.to_string(),
             num,
             title: title.to_string(),
-            status: "open".into(),
+            status: "idle".into(),
             impact: 5,
             urgency: 3,
             risk: 3,
@@ -83,8 +82,9 @@ impl Item {
         }
     }
 
-    pub fn is_closed(&self) -> bool {
-        self.status == "done" || self.status == "wontfix"
+    /// Closed in a lifecycle whose closed states are `closed`.
+    pub fn is_closed_in(&self, closed: &[String]) -> bool {
+        closed.contains(&self.status)
     }
 }
 
@@ -111,10 +111,10 @@ pub fn priority_cmp(a: &Item, b: &Item) -> Ordering {
 
 /// The ids in `needs` that still block: everything but closed items. An id
 /// naming no item still blocks, as on the old board.
-pub fn blockers(item: &Item, all: &[Item]) -> Vec<String> {
+pub fn blockers(item: &Item, all: &[Item], closed: impl Fn(&Item) -> bool) -> Vec<String> {
     item.needs
         .iter()
-        .filter(|n| !all.iter().any(|i| &i.id == *n && i.is_closed()))
+        .filter(|n| !all.iter().any(|i| &i.id == *n && closed(i)))
         .cloned()
         .collect()
 }

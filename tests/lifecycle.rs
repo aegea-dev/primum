@@ -168,3 +168,19 @@ fn versions_follow_steps_not_formatting() {
     // the version is stable: the same text, the same hash, every time
     assert_eq!(a.version, lifecycle::load_text(&p, &text).unwrap().version);
 }
+
+#[test]
+fn states_and_closed_states_of_a_lifecycle() {
+    let m = lifecycle::manual();
+    assert_eq!(lifecycle::states(&m), ["idle", "doing", "done", "wontfix"]);
+    assert_eq!(lifecycle::closed_states(&m), ["done", "wontfix"]);
+    assert_eq!(lifecycle::first_state(&m), "idle");
+    let (p, text) = fixture("stakeholder-update");
+    let f = parse(&p, &text).unwrap();
+    assert_eq!(
+        lifecycle::states(&f),
+        ["effects", "waiting", "processing"],
+        "the states its steps name, in order"
+    );
+    assert_eq!(lifecycle::first_state(&f), "effects");
+}

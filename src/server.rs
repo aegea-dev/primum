@@ -39,6 +39,10 @@ pub struct ItemView {
     pub kind_rank: usize,
     pub blockers: Vec<String>,
     pub blocked: bool,
+    /// Closed in its lifecycle.
+    pub closed: bool,
+    /// Its lifecycle's states, in order: what a person can set.
+    pub states: Vec<String>,
     /// The item's own documents and the ones it lists.
     pub docs: Vec<Doc>,
     /// The item's file, relative to the project root.
@@ -51,7 +55,7 @@ pub struct ItemView {
 
 impl ItemView {
     pub fn new(it: &Item, board: &Board) -> ItemView {
-        let blockers = blockers(it, &board.items);
+        let blockers = blockers(it, &board.items, |i| board.is_closed(i));
         ItemView {
             id: it.id.clone(),
             kind: it.kind.clone(),
@@ -69,6 +73,8 @@ impl ItemView {
             score: it.score(),
             kind_rank: kind_rank(&it.kind),
             blocked: !blockers.is_empty(),
+            closed: board.is_closed(it),
+            states: board.rules_of(it).states.clone(),
             blockers,
             docs: board.docs.get(&it.id).cloned().unwrap_or_default(),
             file: format!("items/{}", file_name(&it.id)),
@@ -294,7 +300,7 @@ fn common(s: &AppState, p: &Project, board: &Board) -> PageCommon {
     PageCommon {
         project: p.name.clone(),
         path: projects::contract(&p.root),
-        open: board.items.iter().filter(|i| !i.is_closed()).count(),
+        open: board.items.iter().filter(|i| !board.is_closed(i)).count(),
         doing: board.items.iter().filter(|i| i.status == "doing").count(),
         nav,
         globals: script_json(&json!({

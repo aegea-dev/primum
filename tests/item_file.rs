@@ -45,8 +45,11 @@ fn hand_written_plain_title_is_accepted() {
 
 #[test]
 fn errors_name_the_line() {
-    let e = parse("1.md", "---\ntitle: \"x\"\nstatus: bitti\n---\n").unwrap_err();
-    assert_eq!(e.to_string(), "1.md:3: unknown status `bitti`");
+    let e = parse("1.md", "---\ntitle: \"x\"\nstatus: Bitti!\n---\n").unwrap_err();
+    assert_eq!(
+        e.to_string(),
+        "1.md:3: status must be a lowercase word, not `Bitti!`"
+    );
     let e = parse("1.md", "---\ntitle: \"x\"\nstatus: open\n---\n").unwrap_err();
     assert_eq!(e.to_string(), "1.md:1: front matter has no `kind`");
     let e = parse("1.md", "---\ntitle: \"x\"\nkind: EPIC\n---\n").unwrap_err();

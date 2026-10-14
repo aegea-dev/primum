@@ -1,7 +1,7 @@
 //! The command line. Writes go through `store`, reads through `store::load`
 //! and the same `ItemView` the web page gets, so the terminal and the page
 //! always agree.
-use crate::model::{KINDS, STATUSES, id_of, label, parse_id};
+use crate::model::{KINDS, id_of, label, parse_id};
 use crate::projects;
 use crate::server::{ItemView, views};
 use crate::store::{self, Changes, Project};
@@ -320,11 +320,15 @@ fn dispatch(cli: Cli) -> Result<()> {
         Cmd::Migrate => {
             let p = project()?;
             let moved = crate::migrate::migrate(&p)?;
-            if moved.is_empty() {
+            let statuses = crate::migrate::migrate_statuses(&p)?;
+            if moved.is_empty() && statuses == 0 {
                 println!("nothing to migrate");
             }
             for (old, new) in moved {
                 println!("{old} -> {}", label(&new));
+            }
+            if statuses > 0 {
+                println!("{statuses} items: open -> idle");
             }
         }
         Cmd::Workspace {
@@ -336,6 +340,10 @@ fn dispatch(cli: Cli) -> Result<()> {
                     let n = crate::migrate::migrate(&p)?.len();
                     if n > 0 {
                         done.push(format!("{}: numbered {n} items", p.name));
+                    }
+                    let s = crate::migrate::migrate_statuses(&p)?;
+                    if s > 0 {
+                        done.push(format!("{}: {s} items open -> idle", p.name));
                     }
                 }
             }
@@ -810,14 +818,9 @@ fn list(
     all: bool,
     json: bool,
 ) -> Result<()> {
-    let statuses: Vec<String> = match (&status, all) {
-        (Some(s), _) => s.split(',').map(|x| x.trim().to_lowercase()).collect(),
-        (None, true) => STATUSES.iter().map(|s| s.to_string()).collect(),
-        (None, false) => vec!["open".into(), "doing".into()],
-    };
-    if let Some(bad) = statuses.iter().find(|s| !STATUSES.contains(&s.as_str())) {
-        bail!("unknown status {bad}");
-    }
+    let statuses: Option<Vec<String>> = status
+        .as_ref()
+        .map(|s| s.split(',').map(|x| x.trim().to_lowercase()).collect());
     let kind = kind.map(|k| k.to_uppercase());
     if let Some(k) = &kind
         && !KINDS.contains(&k.as_str())
@@ -828,7 +831,10 @@ fn list(
     let rows: Vec<ItemView> = views(&board)
         .into_iter()
         .filter(|v| kind.as_ref().is_none_or(|k| &v.kind == k))
-        .filter(|v| statuses.contains(&v.status))
+        .filter(|v| match &statuses {
+            Some(s) => s.contains(&v.status),
+            None => all || !v.closed,
+        })
         .collect();
     if json {
         println!("{}", serde_json::to_string_pretty(&rows)?);
@@ -933,7 +939,7 @@ fn next(p: &Project, n: usize) -> Result<()> {
     let style = Style::detect();
     let open: Vec<&ItemView> = rows
         .iter()
-        .filter(|v| v.status == "open" && !v.blocked)
+        .filter(|v| v.states.first() == Some(&v.status) && !v.blocked)
         .take(n)
         .collect();
     if open.is_empty() {

@@ -24,7 +24,7 @@ function draw(){
   document.title=label(IT.id)+' '+IT.title+' · primum';
   const score=f=>`<label>${f} <input class=num type=number min=1 max=10 value="${IT[f]}" data-f=${f} ${closed?'disabled':''}></label>`;
   $('#controls').innerHTML=
-    `<label>status <select data-f=status>${STATUSES.map(s=>`<option ${s===IT.status?'selected':''}>${s}</option>`).join('')}</select></label>`
+    `<label>status <select data-f=status>${IT.states.map(s=>`<option ${s===IT.status?'selected':''}>${s}</option>`).join('')}</select></label>`
     +['impact','urgency','risk','effort'].map(score).join('')
     +`<span>score <span class=score>${IT.score}</span></span>`
     +(IT.needs.length?`<span>needs ${IT.blockers.length?'<span class=warn>'+IT.blockers.map(label).join(', ')+'</span>':IT.needs.map(label).join(', ')}</span>`:'')

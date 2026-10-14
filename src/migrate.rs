@@ -80,6 +80,39 @@ fn created(h: Option<&History>, name: &str) -> String {
     .unwrap_or_default()
 }
 
+/// Turns `open` into `idle` on every ticket without a lifecycle (boards
+/// made before lifecycles), once, in one commit. Returns how many changed.
+pub fn migrate_statuses(p: &Project) -> Result<usize> {
+    let _l = store::lock(p)?;
+    let history = History::open(p)?;
+    if let Some(h) = &history {
+        h.record_outside()?;
+    }
+    let mut changed = 0;
+    for e in fs::read_dir(p.items_dir())? {
+        let name = e?.file_name().into_string().unwrap_or_default();
+        if item_file::parse_item_name(&name).is_none() {
+            continue;
+        }
+        let path = p.items_dir().join(&name);
+        let text = fs::read_to_string(&path)?;
+        let front = text.split("\n---\n").next().unwrap_or("");
+        if front.contains("\nlifecycle:") || !front.contains("\nstatus: open\n") {
+            continue;
+        }
+        let text = text.replacen("\nstatus: open\n", "\nstatus: idle\n", 1);
+        store::write_atomic(&path, &text)?;
+        changed += 1;
+    }
+    if changed > 0 {
+        store::settle_locked(p)?;
+        if let Some(h) = &history {
+            h.commit("statuses for lifecycles")?;
+        }
+    }
+    Ok(changed)
+}
+
 /// Numbers a board's items once, in creation order, and rewrites every
 /// reference. Returns (old id, new id) per item; nothing when the board is
 /// already numbered.
@@ -157,6 +190,10 @@ pub fn migrate(p: &Project) -> Result<Vec<(String, String)>> {
             .collect();
         it.docs = it.docs.iter().map(|d| rewrite_refs(d, &map)).collect();
         it.body = rewrite_refs(&it.body, &map);
+        // statuses for lifecycles: `manual` calls open idle
+        if it.status == "open" {
+            it.status = "idle".into();
+        }
         writes.push((file_name(&new), item_file::write(&it)));
         removes.push(name.clone());
         moved.push((old, new));

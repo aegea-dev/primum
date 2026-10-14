@@ -129,7 +129,7 @@ async fn update_writes_the_file_and_reopening_clears_finished() {
     post(
         &app,
         &format!("{API}/items"),
-        json!({"id": "2", "status": "open"}),
+        json!({"id": "2", "status": "idle"}),
     )
     .await;
     assert!(!common::read(&p.root, "items/2.md").contains("finished:"));
@@ -141,7 +141,10 @@ async fn update_writes_the_file_and_reopening_clears_finished() {
     .await;
     assert_eq!(
         (code, v["error"].as_str()),
-        (StatusCode::BAD_REQUEST, Some("unknown status bitti"))
+        (
+            StatusCode::BAD_REQUEST,
+            Some("#2: status \"bitti\" is not one of idle, doing, done, wontfix")
+        )
     );
     let (code, _) = post(&app, &format!("{API}/items"), json!({"id": "9", "risk": 2})).await;
     assert_eq!(code, StatusCode::NOT_FOUND);
