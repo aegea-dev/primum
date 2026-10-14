@@ -502,3 +502,25 @@ fn a_lifecycle_conflict_is_resolved_to_one_side() {
     let it = load(&p).unwrap().get(&id).unwrap().clone();
     assert_eq!((it.lifecycle, it.step), (None, None));
 }
+
+#[test]
+fn computed_context_counts_by_status() {
+    let d = tempfile::tempdir().unwrap();
+    let p = common::project(d.path());
+    for t in ["a", "b", "c"] {
+        insert(&p, "TODO", t, ch()).unwrap();
+    }
+    let s = |v: &str| Changes {
+        status: Some(v.into()),
+        ..ch()
+    };
+    update(&p, "2", s("doing")).unwrap();
+    update(&p, "3", s("done")).unwrap();
+    let c = computed_context(&load(&p).unwrap());
+    assert_eq!(c["items"], 3);
+    assert_eq!(c["open"], 2);
+    assert_eq!(c["closed"], 1);
+    assert_eq!(c["status.idle"], 1);
+    assert_eq!(c["status.doing"], 1);
+    assert_eq!(c["status.done"], 1);
+}

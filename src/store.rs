@@ -539,6 +539,24 @@ pub fn set_kind(p: &Project, id: &str, kind: &str) -> Result<()> {
     )
 }
 
+/// Context variables derived from the board: items, open, closed, and a
+/// count per status (`status.idle`, ...).
+pub fn computed_context(board: &Board) -> serde_json::Map<String, serde_json::Value> {
+    let mut m = serde_json::Map::new();
+    let closed = board.items.iter().filter(|i| board.is_closed(i)).count();
+    m.insert("items".into(), board.items.len().into());
+    m.insert("open".into(), (board.items.len() - closed).into());
+    m.insert("closed".into(), closed.into());
+    let mut by: BTreeMap<&str, usize> = BTreeMap::new();
+    for it in &board.items {
+        *by.entry(it.status.as_str()).or_default() += 1;
+    }
+    for (s, n) in by {
+        m.insert(format!("status.{s}"), n.into());
+    }
+    m
+}
+
 /// Attaches an item to a lifecycle at its current version: its step is the
 /// lifecycle's start, its status the start's state. Returns the version.
 pub fn attach(p: &Project, id: &str, name: &str) -> Result<String> {

@@ -66,6 +66,65 @@ impl Settings {
     pub fn name(&self) -> Option<&str> {
         self.0.get("name").and_then(|v| v.as_str())
     }
+
+    /// The project's stored context variables.
+    pub fn context(&self) -> Map<String, Value> {
+        match self.0.get("context") {
+            Some(Value::Object(m)) => m.clone(),
+            _ => Map::new(),
+        }
+    }
+
+    /// Stores a context variable, or removes it with None.
+    pub fn set_context(&mut self, key: &str, value: Option<Value>) {
+        let mut c = self.context();
+        match value {
+            Some(v) => {
+                c.insert(key.to_string(), v);
+            }
+            None => {
+                c.remove(key);
+            }
+        }
+        if c.is_empty() {
+            self.0.remove("context");
+        } else {
+            self.0.insert("context".into(), Value::Object(c));
+        }
+    }
+
+    /// The lifecycle the project itself follows, `<name>@<version>`.
+    pub fn lifecycle(&self) -> Option<String> {
+        self.0
+            .get("lifecycle")
+            .and_then(|v| v.as_str())
+            .map(str::to_string)
+    }
+}
+
+/// A project's stored context variables (`project.json`'s `context`).
+pub fn context(p: &Project) -> Result<Map<String, Value>> {
+    Ok(Settings::read(&p.root)?
+        .map(|s| s.context())
+        .unwrap_or_default())
+}
+
+/// Stores (or with None removes) a context variable, as one commit.
+pub fn set_context(p: &Project, key: &str, value: Option<Value>) -> Result<()> {
+    let message = match &value {
+        Some(_) => format!("context: set {key}"),
+        None => format!("context: unset {key}"),
+    };
+    crate::store::change_settings(p, &message, || {
+        let mut s = Settings::read(&p.root)?.unwrap_or_else(|| Settings::new(&p.name));
+        s.set_context(key, value);
+        s.write(&p.root)
+    })
+}
+
+/// The lifecycle the project follows, if any.
+pub fn project_lifecycle(p: &Project) -> Result<Option<String>> {
+    Ok(Settings::read(&p.root)?.and_then(|s| s.lifecycle()))
 }
 
 /// `primum.toml` in `dir` is a project's file from an earlier version.

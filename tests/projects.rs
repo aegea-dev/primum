@@ -231,3 +231,24 @@ fn migrate_converts_legacy_boards_once() {
         "twice changes nothing"
     );
 }
+
+#[test]
+fn project_context_is_stored_beside_other_settings() {
+    let d = tempfile::tempdir().unwrap();
+    let p = projects::init(&d.path().join("kampanya"), None).unwrap();
+    let json = p.root.join("project.json");
+    let mut v: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&json).unwrap()).unwrap();
+    v["later"] = "kept".into();
+    fs::write(&json, v.to_string()).unwrap();
+    projects::set_context(&p, "start", Some("2026-11-01".into())).unwrap();
+    projects::set_context(&p, "budget", Some(1500.into())).unwrap();
+    let c = projects::context(&p).unwrap();
+    assert_eq!(c["start"], "2026-11-01");
+    assert_eq!(c["budget"], 1500);
+    projects::set_context(&p, "budget", None).unwrap();
+    assert!(!projects::context(&p).unwrap().contains_key("budget"));
+    let v: serde_json::Value = serde_json::from_str(&fs::read_to_string(&json).unwrap()).unwrap();
+    assert_eq!(v["later"], "kept", "other keys survive");
+    assert_eq!(projects::project_lifecycle(&p).unwrap(), None);
+}

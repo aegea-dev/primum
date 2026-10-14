@@ -154,6 +154,7 @@ pub fn router(entries: Vec<Entry>) -> Router {
         .route("/p/{project}/api/delete", post(api_delete))
         .route("/p/{project}/api/resolve", post(api_resolve))
         .route("/p/{project}/api/doc", get(api_doc))
+        .route("/p/{project}/api/context", get(api_context))
         .route("/p/{project}/api/history", get(api_history))
         .route("/p/{project}/api/history/diff", get(api_history_diff))
         .route("/static/{file}", get(asset))
@@ -377,6 +378,20 @@ async fn api_items(
 ) -> Result<axum::Json<Vec<ItemView>>, ApiError> {
     let board = store::load(s.project(&project)?)?;
     Ok(axum::Json(views(&board)))
+}
+
+/// The project's context: stored variables, computed ones, its lifecycle.
+async fn api_context(
+    State(s): State<Shared>,
+    Path(project): Path<String>,
+) -> Result<axum::Json<Value>, ApiError> {
+    let p = s.project(&project)?;
+    let board = store::load(p)?;
+    Ok(axum::Json(json!({
+        "stored": projects::context(p)?,
+        "computed": store::computed_context(&board),
+        "lifecycle": projects::project_lifecycle(p)?,
+    })))
 }
 
 async fn api_doc(

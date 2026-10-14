@@ -495,3 +495,23 @@ fn attach_and_detach_on_the_command_line() {
     assert_eq!(t.out(&["lifecycle", "detach", "#1"]).trim(), "#1: manual");
     assert!(!t.out(&["show", "1"]).contains("lifecycle "));
 }
+
+#[test]
+fn context_on_the_command_line() {
+    let t = T::new();
+    t.out(&["add", "TODO", "Çay"]);
+    t.out(&["context", "set", "start", "2026-11-01"]);
+    t.out(&["context", "set", "owner", "\"Ada\""]);
+    let out = t.out(&["context"]);
+    assert!(out.contains("start = \"2026-11-01\""), "{out}");
+    assert!(out.contains("owner = \"Ada\""), "{out}");
+    assert!(
+        out.contains("items = 1") && out.contains("status.idle = 1"),
+        "{out}"
+    );
+    t.out(&["context", "set", "owner", "--unset"]);
+    assert!(!t.out(&["context"]).contains("owner"));
+    let json: serde_json::Value = serde_json::from_str(&t.out(&["context", "--json"])).unwrap();
+    assert_eq!(json["stored"]["start"], "2026-11-01");
+    assert_eq!(json["computed"]["items"], 1);
+}

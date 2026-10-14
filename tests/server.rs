@@ -296,3 +296,16 @@ async fn a_conflict_shows_and_resolves() {
     );
     assert!(common::read(&p.root, "items/2.md").contains("effort: 2"));
 }
+
+#[tokio::test]
+async fn context_is_served() {
+    let d = tempfile::tempdir().unwrap();
+    let (p, app) = setup(d.path());
+    primum::projects::set_context(&p, "start", Some("2026-11-01".into())).unwrap();
+    let (code, text) = get(&app, &format!("{API}/context")).await;
+    assert_eq!(code, StatusCode::OK);
+    let v: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(v["stored"]["start"], "2026-11-01");
+    assert_eq!(v["computed"]["items"], 2);
+    assert_eq!(v["lifecycle"], Value::Null);
+}

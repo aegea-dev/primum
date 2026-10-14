@@ -189,10 +189,28 @@ pub enum Cmd {
     Import { board_dir: PathBuf },
     /// Bring a board made by an earlier version up to date, once
     Migrate,
+    /// The project's context variables, stored and computed, or set one
+    Context {
+        #[command(subcommand)]
+        cmd: Option<ContextCmd>,
+        #[arg(long)]
+        json: bool,
+    },
     /// The project's lifecycles: check, show or list them
     Lifecycle {
         #[command(subcommand)]
         cmd: LifecycleCmd,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum ContextCmd {
+    /// Store KEY (VALUE as JSON, else as text), or remove it with --unset
+    Set {
+        key: String,
+        value: Option<String>,
+        #[arg(long)]
+        unset: bool,
     },
 }
 
@@ -321,6 +339,7 @@ fn dispatch(cli: Cli) -> Result<()> {
             }
         }
         Cmd::Lifecycle { cmd } => lifecycle_cmd(&project()?, cmd)?,
+        Cmd::Context { cmd, json } => context_cmd(&project()?, cmd, json)?,
         Cmd::Migrate => {
             let p = project()?;
             let moved = crate::migrate::migrate(&p)?;
@@ -689,6 +708,38 @@ fn set_status(p: &Project, id: &str, status: &str) -> Result<()> {
     };
     store::update(p, &id, c)?;
     println!("{}: {status}", label(&id));
+    Ok(())
+}
+
+fn context_cmd(p: &Project, cmd: Option<ContextCmd>, json: bool) -> Result<()> {
+    match cmd {
+        Some(ContextCmd::Set { key, value, unset }) => {
+            let value = match (value, unset) {
+                (_, true) => None,
+                (Some(v), false) => {
+                    Some(serde_json::from_str(&v).unwrap_or(serde_json::Value::String(v)))
+                }
+                (None, false) => bail!("give a value, or --unset"),
+            };
+            projects::set_context(p, &key, value)?;
+        }
+        None => {
+            let stored = projects::context(p)?;
+            let computed = store::computed_context(&store::load(p)?);
+            if json {
+                let v = serde_json::json!({
+                    "stored": stored,
+                    "computed": computed,
+                    "lifecycle": projects::project_lifecycle(p)?,
+                });
+                println!("{}", serde_json::to_string_pretty(&v)?);
+                return Ok(());
+            }
+            for (k, v) in stored.iter().chain(computed.iter()) {
+                println!("{k} = {v}");
+            }
+        }
+    }
     Ok(())
 }
 
