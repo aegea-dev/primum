@@ -2,7 +2,10 @@
 
 Prioritized work items as one markdown file per item, for any number of
 projects, with a clap command line and a local web board (axum, askama,
-plain JavaScript). This file is for contributing to primum.
+plain JavaScript). Every ticket follows a lifecycle (the steps it goes
+through, from created to closed), and a lifecycle engine that moves tickets
+through them by itself is being built around this ledger. This file is for
+contributing to primum.
 
 ## Working here
 
@@ -42,6 +45,26 @@ plain JavaScript). This file is for contributing to primum.
   it.
 - **Getting a change in.** Stage files by name, never `git add -A`. Open a
   PR against `main`; checks must be green.
+
+## The lifecycle engine (being built)
+
+Three processes in the one binary, around the ledger. These rules hold for
+all engine code:
+
+- **The ledger stays simple.** The engine uses the ledger (its library and
+  files), never the other way round.
+- **The daemon decides nothing.** It stores every event in the project's
+  journal (SQLite, local, never synced), starts managers and workers, and
+  saves their answers exactly as returned, one transaction per answer.
+- **The lifecycle manager is pure.** JSON in, JSON out: no IO, no clock,
+  no randomness. The same input always gives the same output.
+- **A worker runs one action and exits.** No action ever runs inside the
+  daemon.
+- **Every event handler copes with the same event twice** (delivery is at
+  least once), keyed by the event's id.
+- **Secrets never appear** in events, the journal, logs or command lines.
+- **Outside the workspace**, primum keeps only what the person asks for:
+  the daemon's service registration and secrets in the OS secret store.
 
 ## Build and test
 

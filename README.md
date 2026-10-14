@@ -1,8 +1,10 @@
 # primum
 
 Prioritized work items as plain markdown files, from the command line, for
-any number of projects. primum is changing fast; the documentation follows
-the current release.
+any number of projects. Every ticket follows a lifecycle, the steps it goes
+through from created to closed; an engine that runs lifecycles by
+themselves is in progress. primum is changing fast; the documentation
+follows the current release.
 
 Documentation: <https://erhangundogan.github.io/primum/>
 
