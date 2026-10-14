@@ -58,14 +58,14 @@ cd docs && yarn build   # the documentation site, when docs/ changed
 ## Layout
 
 ```
-src/model.rs       items, lanes, score, priority order
+src/model.rs       items, ids, lanes, score, priority order
 src/item_file.rs   an item's file: names, front matter
 src/store.rs       a project's items on disk: load and every change
 src/projects.rs    the workspace (primum.toml) and each project's project.json
 src/history.rs     the project's bare git repository; every git call
 src/merge.rs       three-way merge of one item, field by field
 src/migrate.rs     converting a board to one counter; rewriting references
-src/conflicts.rs   conflicts/<STEM>.json: what a sync could not decide
+src/conflicts.rs   conflicts/<n>.json: what a sync could not decide
 src/sync.rs        fetch, renumber, merge, settle, push
 src/import.rs      one-time import of a board.py board
 src/cli.rs         the command line
@@ -75,6 +75,8 @@ static/            CSS and JavaScript, embedded with include_str!
 tests/             integration tests; tests/common/ is shared
 e2e/               Playwright tests for the board
 docs/              the documentation site (Astro + Starlight); see docs/README.md
+hooks/             the commit guard (below)
+.claude/worktrees/ one worktree per change (ignored)
 ```
 
 ## The commit guard
