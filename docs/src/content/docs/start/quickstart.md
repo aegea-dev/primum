@@ -22,19 +22,20 @@ primum init my-app && cd my-app
 ```bash
 primum add BUG "Empty board crashes on + new" --urgency 8
 primum add TODO "Export open items as CSV" --impact 6 --effort 3
-primum add DEBT "Split server.rs into routes and pages" --effort 6 --needs TODO:1
+primum add DEBT "Split server.rs into routes and pages" --effort 6 --needs 2
 ```
 
-Each prints its id: `BUG:1`, `TODO:1`, `DEBT:1`. `DEBT:1` waits for `TODO:1`
-and is blocked until that is closed.
+Each prints its number: `1`, `2`, `3`. One counter numbers every item, in
+any lane, and `#3` is how you refer to an item. `#3` waits for `#2` and is
+blocked until that is closed.
 
 ## Decide what to do
 
 ```bash
 primum list      # open items, highest priority first
 primum next      # the top unblocked items
-primum start BUG:1
-primum done BUG:1
+primum start 1
+primum done 1
 ```
 
 ## Open the board

@@ -19,8 +19,8 @@ who changed it and when; keep one.
 On the command line:
 
 ```bash
-primum resolve TODO:87                           # asks per field
-primum resolve TODO:87 --field impact --keep 2   # without asking
+primum resolve 87                           # asks per field
+primum resolve 87 --field impact --keep 2   # without asking
 ```
 
 For a document changed on both sides, `--keep both` keeps both texts, one

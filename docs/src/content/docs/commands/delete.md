@@ -4,8 +4,8 @@ description: Delete an item and its documents.
 ---
 
 ```bash
-primum delete TODO:87
-primum delete TODO:87 --yes     # do not ask
+primum delete 87
+primum delete 87 --yes     # do not ask
 ```
 
 Removes the item's file and its own documents, and its id and documents from

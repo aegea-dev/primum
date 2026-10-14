@@ -5,14 +5,13 @@ description: What an item is, the five lanes, the four statuses, and how priorit
 
 ## Items
 
-An item is one markdown file in `items/`, named for its id: `items/TODO-87.md`
-is `TODO:87`. It has a title, a status, four scores, the ids it needs, and a
-markdown text. See [item files](/reference/item-files/) for the exact format.
+An item is one markdown file in `items/`, named for its id: `items/87.md`
+is `#87`. It has a title, a kind, a status, four scores, the ids it needs,
+and a markdown text. See [item files](/reference/item-files/) for the exact format.
 
 ## Lanes
 
-The part of an id before the colon is its kind, and kinds are lanes, in this
-order:
+Every item has a kind, and kinds are lanes, in this order:
 
 | Lane | For |
 |---|---|
@@ -22,9 +21,14 @@ order:
 | `KILLER` | features that set the project apart |
 | `TODO` | everything else |
 
-Numbers count up within a lane. Moving an item to another lane
-([`primum kind`](/commands/kind/)) gives it that lane's next number and
-rewrites every reference to it.
+## Numbers
+
+One counter numbers every item in a project, in any lane: `1`, `2`, `3`...
+The number is the item's address: its file is `items/3.md`, the command
+line takes `3` or `#3`, the board's page is `item/3`, and `#3` in any item's
+text or document links to it. A number is never reused, even after a
+delete. Moving an item to another lane ([`primum kind`](/commands/kind/))
+changes its `kind:` line and nothing else.
 
 ## Statuses
 
@@ -91,7 +95,7 @@ velocity; primum is a backlog and a flow, not a sprint planner.
 
 ## Needs and blocked items
 
-`needs: [TODO:1, BUG:2]` says an item waits for others. While any of them is
+`needs: [#1, #2]` says an item waits for others. While any of them is
 open, the item is blocked: the board marks it and `primum next` skips it.
 Closing an item removes its id from every `needs`, so nothing stays blocked
 by finished work.

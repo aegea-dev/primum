@@ -89,6 +89,7 @@ export default defineConfig({
 						{ label: 'sync', slug: 'commands/sync' },
 						{ label: 'resolve', slug: 'commands/resolve' },
 						{ label: 'import', slug: 'commands/import' },
+						{ label: 'migrate', slug: 'commands/migrate' },
 					],
 				},
 				{

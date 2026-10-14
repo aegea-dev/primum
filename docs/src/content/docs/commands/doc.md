@@ -4,12 +4,12 @@ description: Add or replace a document beside an item, like a spec or a plan.
 ---
 
 ```bash
-primum doc TODO:87 spec --file spec.md
-primum doc TODO:87 plan --file plan.md
-primum doc TODO:87 report --file - < report.md
+primum doc 87 spec --file spec.md
+primum doc 87 plan --file plan.md
+primum doc 87 report --file - < report.md
 ```
 
-Writes `items/TODO-87.spec.md` (any type: `spec`, `plan`, `report`, ...),
+Writes `items/87.spec.md` (any type: `spec`, `plan`, `report`, ...),
 replacing it if it exists. The board shows it as a tab beside the item's text.
 
 | Argument | Meaning |

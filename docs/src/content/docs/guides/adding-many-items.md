@@ -28,12 +28,12 @@ primum add BUG "Empty board crashes on + new" --urgency 8 --body-file "$dir/cras
 rm -r "$dir"
 ```
 
-Each `add` takes the next number in its lane, writes `items/<ID>.md`,
+Each `add` takes the next number, writes `items/<n>.md`,
 rewrites `BOARD.md`, and is one commit in the history. Specs and plans go
 beside an item the same way:
 
 ```bash
-primum doc TODO:7 spec --file "$dir/spec.md"
+primum doc 7 spec --file "$dir/spec.md"
 ```
 
 ## From standard input

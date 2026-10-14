@@ -1,20 +1,22 @@
 ---
 title: Item files
-description: The exact format of items/<ID>.md.
+description: The exact format of items/<n>.md.
 ---
 
-An item is `items/<KIND>-<N>.md`: a flat YAML front matter, then the text.
+An item is `items/<n>.md`, named for its number: a flat YAML front matter,
+then the text.
 
 ```markdown
 ---
 title: "Adoption metrics: daily snapshot job and a Metrics page"
+kind: TODO
 status: doing
 impact: 7
 urgency: 6
 risk: 2
 effort: 4
-needs: [TODO:64]
-docs: [items/TODO-80.spec.md]
+needs: [64]
+docs: [items/80.spec.md]
 finished: 2026-10-13
 source: "imported from board.py"
 ---
@@ -25,6 +27,7 @@ The item's text, as markdown.
 | Field | Value | Written |
 |---|---|---|
 | `title` | JSON-style quoted text, so any characters are safe | always |
+| `kind` | `URGENT`, `BUG`, `DEBT`, `KILLER` or `TODO` | always |
 | `status` | `open`, `doing`, `done` or `wontfix` | always |
 | `impact`, `urgency`, `risk`, `effort` | 1 to 10 | always |
 | `needs` | ids it waits for | always, `[]` when empty |
@@ -39,5 +42,5 @@ again.
 
 ## Documents
 
-`items/<KIND>-<N>.<type>.md`, any markdown. See
+`items/<n>.<type>.md`, any markdown. See
 [documents](/guides/documents/).

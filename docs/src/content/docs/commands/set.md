@@ -4,12 +4,12 @@ description: Change an item's title, scores, status, needs or text.
 ---
 
 ```bash
-primum set TODO:87 --impact 8 --effort 2
-primum set TODO:87 --title "Export open and closed items as CSV"
-primum set TODO:87 --needs BUG:4,DEBT:2
-primum set TODO:87 --needs ""            # needs nothing
-primum set TODO:87 --status wontfix
-primum set TODO:87 --body-file new.md
+primum set 87 --impact 8 --effort 2
+primum set 87 --title "Export open and closed items as CSV"
+primum set 87 --needs 4,2
+primum set 87 --needs ""            # needs nothing
+primum set 87 --status wontfix
+primum set 87 --body-file new.md
 ```
 
 Only the fields given change. Prints the id and the fields changed.
