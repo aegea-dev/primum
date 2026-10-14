@@ -19,7 +19,10 @@ async function htmlFiles(root) {
 	return files;
 }
 
-export async function checkLocalAssets(outputDirectory) {
+// `base` is the path the site is served under (Astro's `base`): a root link
+// `/primum/_astro/x.css` is `_astro/x.css` in the output.
+export async function checkLocalAssets(outputDirectory, base = '/') {
+	const prefix = base.endsWith('/') ? base : `${base}/`;
 	const root = resolve(outputDirectory);
 	const pages = await htmlFiles(root);
 	const missing = [];
@@ -34,8 +37,9 @@ export async function checkLocalAssets(outputDirectory) {
 			const pathname = decodeURIComponent(reference.split(/[?#]/, 1)[0]);
 			if (!['.css', '.js'].includes(extname(pathname))) continue;
 
+			const fromBase = pathname.startsWith(prefix) ? `/${pathname.slice(prefix.length)}` : pathname;
 			const assetPath = pathname.startsWith('/')
-				? resolve(root, `.${pathname}`)
+				? resolve(root, `.${fromBase}`)
 				: resolve(dirname(htmlPath), pathname);
 			const fromRoot = relative(root, assetPath);
 			if (fromRoot.startsWith('..') || fromRoot === '') continue;
@@ -58,6 +62,6 @@ export async function checkLocalAssets(outputDirectory) {
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
 	const outputDirectory = process.argv[2] ?? fileURLToPath(new URL('../dist/', import.meta.url));
-	const result = await checkLocalAssets(outputDirectory);
+	const result = await checkLocalAssets(outputDirectory, process.argv[3] ?? '/');
 	console.log(`Verified ${result.references} local CSS/JS references across ${result.htmlFiles} pages.`);
 }

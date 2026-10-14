@@ -3,11 +3,32 @@ import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
 
 const REPO = 'https://github.com/erhangundogan/primum';
+// Served by GitHub Pages at https://erhangundogan.github.io/primum/. With a
+// custom domain later, set SITE to it and BASE to '/'.
+const SITE = 'https://erhangundogan.github.io';
+const BASE = '/primum';
+
+// Starlight prefixes BASE onto sidebar and asset links, but not onto links
+// written in pages, so `[add](/commands/add/)` would leave the site. Pages keep
+// writing root links and this adds the prefix, so a move to a domain of its
+// own changes nothing but the two constants above.
+function remarkBase() {
+	const walk = (node) => {
+		if (node.type === 'link' && /^\/(?!\/)/.test(node.url) && BASE !== '/') {
+			node.url = BASE + node.url;
+		}
+		for (const child of node.children ?? []) walk(child);
+	};
+	return walk;
+}
 
 // https://astro.build/config
 export default defineConfig({
-	// Set `site` to the deployed origin once it has one: canonical URLs and the
-	// sitemap are built from it, and without it Starlight skips the sitemap.
+	// Canonical URLs, the sitemap and the search index are built from these.
+	site: SITE,
+	base: BASE,
+	trailingSlash: 'always',
+	markdown: { remarkPlugins: [remarkBase] },
 	integrations: [
 		starlight({
 			title: 'primum',

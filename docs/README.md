@@ -38,18 +38,18 @@ site.
 
 ## Deploying
 
-`yarn build` writes plain static files to `dist/`; any static host works.
-`wrangler.jsonc` describes a Cloudflare assets-only Worker:
+The site is served by GitHub Pages at <https://erhangundogan.github.io/primum/>.
+`.github/workflows/docs.yml` builds it on every pull request that touches
+`docs/`, and publishes it from `main`. The repository's Pages setting must be
+"GitHub Actions".
 
-| Setting | Value |
-|---|---|
-| Root directory | `docs` |
-| Build command | `corepack enable && yarn install --immutable && yarn build` |
-| Build output directory | `dist` |
-| Node version | from `.node-version` |
-
-Once the site has a domain, set `site` in `astro.config.mjs` (canonical URLs
-and the sitemap) and add a `Sitemap:` line to `public/robots.txt`.
+Under Pages the site lives at `/primum/`: `base` in `astro.config.mjs` says
+so, and a small remark plugin there prefixes it onto root links written in
+pages, so pages keep writing `[add](/commands/add/)`. Links in front matter
+(the landing page's hero) are relative instead. To move to a domain of its
+own, set `SITE` and `BASE` in `astro.config.mjs`, the base argument of the
+build check in `package.json`, and the `Sitemap:` line in
+`public/robots.txt`.
 
 ## Where things belong
 
