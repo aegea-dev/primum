@@ -7,8 +7,7 @@ use std::path::PathBuf;
 use std::process::{Command, Output, Stdio};
 
 /// What the history tracks: primum's files and nothing else.
-const EXCLUDE: &str =
-    "/*\n!/primum.toml\n!/BOARD.md\n!/items/\n/items/*\n!/items/*.md\n!/conflicts/\n!/github/\n";
+const EXCLUDE: &str = "/*\n!/project.json\n!/primum.toml\n!/BOARD.md\n!/items/\n/items/*\n!/items/*.md\n!/conflicts/\n!/github/\n";
 
 pub fn git_binary() -> String {
     std::env::var("PRIMUM_GIT").unwrap_or_else(|_| "git".into())
@@ -64,6 +63,13 @@ impl History {
         if !h.git_dir.join("HEAD").exists() {
             h.create()?;
             h.commit(first_message)?;
+        } else if std::fs::read_to_string(h.git_dir.join("info/exclude"))
+            .ok()
+            .as_deref()
+            != Some(EXCLUDE)
+        {
+            // a history made by an earlier version tracks what this one does
+            h.write_exclude()?;
         }
         Ok(Some(h))
     }
@@ -181,14 +187,18 @@ pub struct Entry {
     pub path: Option<String>,
 }
 
-/// A path the history API may name: primum.toml, BOARD.md, or a file
+/// A path the history API may name: project.json, primum.toml, BOARD.md, or a file
 /// directly in items/ or conflicts/.
 fn tracked_path(path: &str) -> bool {
     let in_dir = |d: &str| {
         path.strip_prefix(d)
             .is_some_and(|n| !n.is_empty() && !n.contains('/') && !n.contains(".."))
     };
-    path == "primum.toml" || path == "BOARD.md" || in_dir("items/") || in_dir("conflicts/")
+    path == "project.json"
+        || path == "primum.toml"
+        || path == "BOARD.md"
+        || in_dir("items/")
+        || in_dir("conflicts/")
 }
 
 impl History {
@@ -412,7 +422,10 @@ impl History {
 /// Makes `folder` a project from a remote: a bare clone of its history and
 /// the files written from it. The caller lists the project.
 pub fn clone(url: &str, branch: Option<&str>, folder: &std::path::Path) -> Result<()> {
-    if folder.join(".primum").exists() || folder.join("primum.toml").exists() {
+    if folder.join(".primum").exists()
+        || folder.join("project.json").exists()
+        || folder.join("primum.toml").exists()
+    {
         bail!("{} is already a primum project", folder.display());
     }
     std::fs::create_dir_all(folder.join(".primum"))?;
@@ -443,8 +456,8 @@ pub fn clone(url: &str, branch: Option<&str>, folder: &std::path::Path) -> Resul
     h.git(&["config", "primum.sync", "auto"])?;
     h.git(&["fetch", "--quiet", "origin"])?;
     h.git(&["read-tree", "-u", "--reset", "HEAD"])?;
-    if !folder.join("primum.toml").is_file() {
-        bail!("{url} has no primum.toml on {branch}: not a primum project");
+    if !folder.join("project.json").is_file() && !folder.join("primum.toml").is_file() {
+        bail!("{url} has no project.json on {branch}: not a primum project");
     }
     Ok(())
 }

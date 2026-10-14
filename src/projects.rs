@@ -1,60 +1,133 @@
-//! Which projects exist (each one's `primum.toml`) and which this machine
-//! shows (`~/.config/primum/projects.toml`, paths only, in tab order).
+//! Where projects are, found from the folder primum runs in: nothing is
+//! machine-wide.
+//!
+//! - A **project** is a folder with `project.json` (its name and settings,
+//!   written by primum, tracked in its history) and `items/`.
+//! - A **workspace** is a folder with `primum.toml` (written by people)
+//!   whose subfolders are projects, optionally listed in tab order.
+//!
+//! Projects made by earlier versions keep their settings in a `primum.toml`
+//! holding `name`; they are read as projects until `primum workspace
+//! migrate` (or the next settings change) moves them to `project.json`.
 use crate::store::Project;
 use anyhow::{Context, Result, anyhow, bail};
 use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
 use std::path::{Path, PathBuf};
 
-#[derive(Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ProjectFile {
-    name: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    github: Option<GithubTable>,
+/// A project's settings: `project.json`, a JSON object whose unknown keys
+/// are kept, so a newer primum's settings survive an older one.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Settings(Map<String, Value>);
+
+impl Settings {
+    pub fn new(name: &str) -> Settings {
+        let mut m = Map::new();
+        m.insert("name".into(), name.into());
+        Settings(m)
+    }
+
+    /// `project.json`, else a legacy `primum.toml` with `name` (converted),
+    /// else None.
+    pub fn read(dir: &Path) -> Result<Option<Settings>> {
+        let json = dir.join("project.json");
+        if json.is_file() {
+            let text = std::fs::read_to_string(&json)?;
+            let v: Value = serde_json::from_str(&text)
+                .with_context(|| format!("{} is not valid JSON", json.display()))?;
+            let Value::Object(m) = v else {
+                bail!("{} must hold a JSON object", json.display());
+            };
+            return Ok(Some(Settings(m)));
+        }
+        let legacy = dir.join("primum.toml");
+        let Ok(text) = std::fs::read_to_string(&legacy) else {
+            return Ok(None);
+        };
+        let t: toml::Table =
+            toml::from_str(&text).with_context(|| format!("{} is not valid", legacy.display()))?;
+        let Some(name) = t.get("name").and_then(|v| v.as_str()) else {
+            return Ok(None); // a workspace file, not a project
+        };
+        let mut s = Settings::new(name);
+        if let Some(g) = t.get("github").and_then(|g| g.as_table()) {
+            let g: Map<String, Value> = g
+                .iter()
+                .filter_map(|(k, v)| v.as_str().map(|v| (k.clone(), Value::from(v))))
+                .collect();
+            s.0.insert("github".into(), Value::Object(g));
+        }
+        Ok(Some(s))
+    }
+
+    /// Writes `project.json`, and removes a legacy `primum.toml` holding
+    /// `name`, so there is one source.
+    pub fn write(&self, dir: &Path) -> Result<()> {
+        let text = serde_json::to_string_pretty(&self.0)? + "\n";
+        crate::store::write_atomic(&dir.join("project.json"), &text)?;
+        if is_legacy(dir) {
+            std::fs::remove_file(dir.join("primum.toml"))?;
+        }
+        Ok(())
+    }
+
+    pub fn name(&self) -> Option<&str> {
+        self.0.get("name").and_then(|v| v.as_str())
+    }
+
+    fn github(&self, key: &str) -> Option<String> {
+        self.0.get("github")?.get(key)?.as_str().map(str::to_string)
+    }
+
+    pub fn github_repo(&self) -> Option<String> {
+        self.github("repo")
+    }
+
+    /// How ids show on GitHub issues: `none` or `title`.
+    pub fn github_ids(&self) -> Option<String> {
+        self.github("ids")
+    }
+
+    /// Connects to `owner/repo` (keeping the other GitHub settings), or with
+    /// None drops every GitHub setting.
+    pub fn set_github_repo(&mut self, repo: Option<&str>) {
+        match repo {
+            Some(r) => {
+                let g = self
+                    .0
+                    .entry("github")
+                    .or_insert_with(|| Value::Object(Map::new()));
+                if !g.is_object() {
+                    *g = Value::Object(Map::new());
+                }
+                g["repo"] = r.into();
+            }
+            None => {
+                self.0.remove("github");
+            }
+        }
+    }
 }
 
-#[derive(Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct GithubTable {
-    repo: String,
-    /// How ids show on issues: none or title.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    ids: Option<String>,
+/// `primum.toml` in `dir` is a project's file from an earlier version.
+fn is_legacy(dir: &Path) -> bool {
+    std::fs::read_to_string(dir.join("primum.toml"))
+        .ok()
+        .and_then(|t| toml::from_str::<toml::Table>(&t).ok())
+        .is_some_and(|t| t.contains_key("name"))
 }
 
-#[derive(Serialize, Deserialize, Default)]
-struct ListFile {
-    #[serde(default)]
-    projects: Vec<String>,
-}
-
-/// A listed path, and its project or why it is unavailable.
+/// A workspace's subfolder, and its project or why it is unavailable.
 pub struct Entry {
     pub path: PathBuf,
     pub project: Result<Project, String>,
-}
-
-pub fn config_path() -> PathBuf {
-    let base = std::env::var_os("XDG_CONFIG_HOME")
-        .filter(|v| !v.is_empty())
-        .map(PathBuf::from)
-        .unwrap_or_else(|| home().join(".config"));
-    base.join("primum").join("projects.toml")
 }
 
 fn home() -> PathBuf {
     PathBuf::from(std::env::var_os("HOME").unwrap_or_default())
 }
 
-fn expand(p: &str) -> PathBuf {
-    match p.strip_prefix("~/") {
-        Some(rest) => home().join(rest),
-        None => PathBuf::from(p),
-    }
-}
-
-/// A path as the list writes it and the board shows it: under the home
-/// folder as `~/...`.
+/// A path as the board shows it: under the home folder as `~/...`.
 pub fn contract(p: &Path) -> String {
     let home = home();
     match p.strip_prefix(&home) {
@@ -63,95 +136,275 @@ pub fn contract(p: &Path) -> String {
     }
 }
 
-fn read_list() -> Result<ListFile> {
-    let path = config_path();
-    if !path.exists() {
-        return Ok(ListFile::default());
-    }
-    let text = std::fs::read_to_string(&path)?;
-    toml::from_str(&text).with_context(|| format!("{} is not valid", path.display()))
-}
-
-fn write_list(l: &ListFile) -> Result<()> {
-    let path = config_path();
-    std::fs::create_dir_all(path.parent().expect("the config path has a folder"))?;
-    std::fs::write(&path, toml::to_string(l)?)?;
-    Ok(())
-}
-
 /// The project in `dir`, or why there is none.
 pub fn open(dir: &Path) -> Result<Project, String> {
-    let file = dir.join("primum.toml");
-    let text = std::fs::read_to_string(&file)
-        .map_err(|_| format!("no primum.toml in {}", dir.display()))?;
-    let pf: ProjectFile = toml::from_str(&text).map_err(|e| format!("{}: {e}", file.display()))?;
+    let s = Settings::read(dir)
+        .map_err(|e| format!("{e:#}"))?
+        .ok_or_else(|| format!("no project.json in {}", dir.display()))?;
     if !dir.join("items").is_dir() {
         return Err(format!("no items/ in {}", dir.display()));
     }
+    let name = s
+        .name()
+        .filter(|n| !n.trim().is_empty())
+        .ok_or_else(|| format!("{} has no name", dir.join("project.json").display()))?;
     Ok(Project {
         root: dir.to_path_buf(),
-        name: pf.name,
+        name: name.to_string(),
     })
 }
 
-/// The listed projects in tab order. Two available projects with one name
-/// are refused: the web UI and `-p` tell projects apart by name.
-pub fn list() -> Result<Vec<Entry>> {
-    let entries: Vec<Entry> = read_list()?
-        .projects
-        .iter()
-        .map(|p| {
-            let path = expand(p);
-            Entry {
-                project: open(&path),
-                path,
-            }
-        })
-        .collect();
-    let mut seen = std::collections::HashSet::new();
-    for p in entries.iter().filter_map(|e| e.project.as_ref().ok()) {
-        if !seen.insert(p.name.clone()) {
-            bail!(
-                "two listed projects are both named {}; rename one in its primum.toml",
-                p.name
-            );
-        }
-    }
-    Ok(entries)
+fn is_project_dir(dir: &Path) -> bool {
+    dir.join("items").is_dir() && Settings::read(dir).ok().flatten().is_some()
 }
 
-/// Lists the project in `dir` on this machine.
-pub fn add(dir: &Path) -> Result<Project> {
-    let dir = dir
-        .canonicalize()
-        .with_context(|| format!("no folder {}", dir.display()))?;
-    let p = open(&dir).map_err(|e| anyhow!(e))?;
-    let mut l = read_list()?;
-    if l.projects.iter().any(|x| expand(x) == dir) {
-        return Ok(p);
+/// The subfolders of `root` holding a project, by name.
+fn project_subfolders(root: &Path) -> Vec<String> {
+    let mut v: Vec<String> = std::fs::read_dir(root)
+        .into_iter()
+        .flatten()
+        .filter_map(|e| e.ok())
+        .filter(|e| is_project_dir(&e.path()))
+        .filter_map(|e| e.file_name().into_string().ok())
+        .collect();
+    v.sort();
+    v
+}
+
+fn check_name(name: &str) -> Result<()> {
+    if name.trim().is_empty() || name.contains('/') || name.contains('\\') || name == ".." {
+        bail!("a project name is not empty and has no / or \\");
     }
-    for e in list()? {
-        if let Ok(q) = e.project
-            && q.name == p.name
-        {
+    Ok(())
+}
+
+/// A folder holding `primum.toml` (without `name`): its subfolders are
+/// projects, optionally listed in tab order.
+#[derive(Debug, Clone)]
+pub struct Workspace {
+    pub root: PathBuf,
+    pub listed: Option<Vec<String>>,
+}
+
+#[derive(Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+struct WorkspaceFile {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    projects: Option<Vec<String>>,
+}
+
+impl Workspace {
+    fn read(root: &Path) -> Option<Workspace> {
+        let text = std::fs::read_to_string(root.join("primum.toml")).ok()?;
+        if is_legacy(root) {
+            return None;
+        }
+        let wf: WorkspaceFile = toml::from_str(&text).ok()?;
+        Some(Workspace {
+            root: root.to_path_buf(),
+            listed: wf.projects,
+        })
+    }
+
+    /// The nearest workspace at or above `from`.
+    pub fn find(from: &Path) -> Option<Workspace> {
+        let from = from.canonicalize().unwrap_or_else(|_| from.to_path_buf());
+        from.ancestors().find_map(Workspace::read)
+    }
+
+    /// Makes `root` a workspace listing the projects in its subfolders.
+    pub fn create(root: &Path) -> Result<Workspace> {
+        if Workspace::read(root).is_some() {
+            bail!("{} is already a primum workspace", root.display());
+        }
+        if is_project_dir(root) {
             bail!(
-                "a project named {} is already listed, in {}",
+                "{} is a project; a workspace holds projects in its subfolders",
+                root.display()
+            );
+        }
+        let ws = Workspace {
+            root: root.to_path_buf(),
+            listed: Some(project_subfolders(root)),
+        };
+        ws.save()?;
+        Ok(ws)
+    }
+
+    fn save(&self) -> Result<()> {
+        let wf = WorkspaceFile {
+            projects: self.listed.clone(),
+        };
+        crate::store::write_atomic(&self.root.join("primum.toml"), &toml::to_string(&wf)?)
+    }
+
+    /// The projects in tab order: the list, else every project subfolder by
+    /// name. A listed folder that is missing or broken, or a second project
+    /// with a name already shown, is an `Err` entry.
+    pub fn entries(&self) -> Vec<Entry> {
+        let subs = match &self.listed {
+            Some(l) => l.clone(),
+            None => project_subfolders(&self.root),
+        };
+        let mut seen = std::collections::HashSet::new();
+        subs.iter()
+            .map(|s| {
+                let path = self.root.join(s);
+                let project = open(&path).and_then(|p| {
+                    if seen.insert(p.name.clone()) {
+                        Ok(p)
+                    } else {
+                        Err(format!("another project is named {}; rename one", p.name))
+                    }
+                });
+                Entry { path, project }
+            })
+            .collect()
+    }
+
+    fn taken(&self, name: &str, except: &Path) -> Option<Project> {
+        self.entries()
+            .into_iter()
+            .filter_map(|e| e.project.ok())
+            .find(|q| q.name == name && q.root != except)
+    }
+
+    /// Adds the subfolder `sub` to the list (when the workspace has one).
+    pub fn add(&self, sub: &str) -> Result<Project> {
+        check_name(sub)
+            .map_err(|_| anyhow!("a workspace lists its subfolders by name, not {sub}"))?;
+        let p = open(&self.root.join(sub)).map_err(|e| anyhow!(e))?;
+        if let Some(q) = self.taken(&p.name, &p.root) {
+            bail!(
+                "a project named {} is already in this workspace, in {}",
                 p.name,
                 q.root.display()
             );
         }
+        if let Some(mut l) = self.listed.clone()
+            && !l.iter().any(|x| x == sub)
+        {
+            l.push(sub.to_string());
+            Workspace {
+                listed: Some(l),
+                ..self.clone()
+            }
+            .save()?;
+        }
+        Ok(p)
     }
-    l.projects.push(contract(&dir));
-    write_list(&l)?;
-    Ok(p)
+
+    /// Makes the subfolder `sub` a project named `name` (default: `sub`) and
+    /// adds it.
+    pub fn init_project(&self, sub: &str, name: Option<&str>) -> Result<Project> {
+        check_name(sub)?;
+        let name = name.unwrap_or(sub);
+        let dir = self.root.join(sub);
+        if let Some(q) = self.taken(name, &dir) {
+            bail!(
+                "a project named {name} is already in this workspace, in {}; choose another with --name",
+                q.root.display()
+            );
+        }
+        init(&dir, Some(name))?;
+        self.add(sub)
+    }
+
+    /// Takes a project off the list, by name or subfolder; the project itself
+    /// is never touched.
+    pub fn remove(&self, name: &str) -> Result<()> {
+        let Some(l) = self.listed.clone() else {
+            bail!("this workspace lists no projects: every subfolder with project.json counts");
+        };
+        let kept: Vec<String> = l
+            .iter()
+            .filter(|s| {
+                let named = open(&self.root.join(s)).is_ok_and(|p| p.name == name);
+                !(named || s.as_str() == name)
+            })
+            .cloned()
+            .collect();
+        if kept.len() == l.len() {
+            bail!("no project named {name} in this workspace");
+        }
+        Workspace {
+            listed: Some(kept),
+            ..self.clone()
+        }
+        .save()
+    }
 }
 
-/// Makes `dir` a project (`primum.toml` and an empty `items/`) and lists it.
-/// The name defaults to the folder's.
+/// The nearest project at or above `from`.
+fn project_above(from: &Path) -> Option<Project> {
+    let from = from.canonicalize().unwrap_or_else(|_| from.to_path_buf());
+    from.ancestors()
+        .find(|d| is_project_dir(d))
+        .and_then(|d| open(d).ok())
+}
+
+/// The workspace `cwd` is in: above its project, else above `cwd`.
+pub fn workspace(cwd: &Path) -> Option<Workspace> {
+    match project_above(cwd) {
+        Some(p) => p.root.parent().and_then(Workspace::find),
+        None => Workspace::find(cwd),
+    }
+}
+
+/// The projects a command or the board sees from `cwd`: the workspace's,
+/// else the one project `cwd` is in, else none.
+pub fn entries(cwd: &Path) -> Vec<Entry> {
+    if let Some(ws) = workspace(cwd) {
+        return ws.entries();
+    }
+    project_above(cwd)
+        .map(|p| {
+            vec![Entry {
+                path: p.root.clone(),
+                project: Ok(p),
+            }]
+        })
+        .unwrap_or_default()
+}
+
+/// The project a command works on: the one named (in the workspace), else
+/// the one `cwd` is in, else the workspace's only one.
+pub fn resolve(name: Option<&str>, cwd: &Path) -> Result<Project> {
+    let all: Vec<Project> = entries(cwd)
+        .into_iter()
+        .filter_map(|e| e.project.ok())
+        .collect();
+    if let Some(n) = name {
+        return all.into_iter().find(|p| p.name == n).ok_or_else(|| {
+            anyhow!("no project named {n} here: primum looks in the workspace you are in")
+        });
+    }
+    if let Some(p) = project_above(cwd) {
+        return Ok(p);
+    }
+    match all.len() {
+        1 => Ok(all.into_iter().next().expect("one project")),
+        0 => bail!("no primum project here: cd into a board or a workspace, or run `primum init`"),
+        _ => {
+            let names: Vec<&str> = all.iter().map(|p| p.name.as_str()).collect();
+            bail!("choose a project with -p NAME: {}", names.join(", "))
+        }
+    }
+}
+
+/// Makes `dir` a project: `project.json`, `items/`, its history. The name
+/// defaults to the folder's.
 pub fn init(dir: &Path, name: Option<&str>) -> Result<Project> {
-    if dir.join("primum.toml").exists() {
+    if Settings::read(dir)?.is_some() {
         bail!("{} is already a primum project", dir.display());
     }
+    if Workspace::read(dir).is_some() {
+        bail!(
+            "{} is a workspace; make a project in it with `primum init NAME`",
+            dir.display()
+        );
+    }
+    std::fs::create_dir_all(dir.join("items"))?;
     let name = match name {
         Some(n) => n.to_string(),
         None => dir
@@ -160,83 +413,20 @@ pub fn init(dir: &Path, name: Option<&str>) -> Result<Project> {
             .map(|n| n.to_string_lossy().to_string())
             .ok_or_else(|| anyhow!("name the project with --name"))?,
     };
-    if name.trim().is_empty() || name.contains('/') {
-        bail!("a project name is not empty and has no /");
-    }
-    if let Some(q) = list()?
-        .into_iter()
-        .filter_map(|e| e.project.ok())
-        .find(|q| q.name == name)
-    {
-        bail!(
-            "a project named {name} is already listed, in {}; choose another with --name",
-            q.root.display()
-        );
-    }
-    std::fs::create_dir_all(dir.join("items"))?;
-    std::fs::write(
-        dir.join("primum.toml"),
-        toml::to_string(&ProjectFile { name, github: None })?,
-    )?;
+    check_name(&name)?;
+    Settings::new(&name).write(dir)?;
     let p = open(dir).map_err(|e| anyhow!(e))?;
     crate::history::History::open_with(&p, &format!("primum project {}", p.name))?;
-    add(dir)
+    Ok(p)
 }
 
-/// Takes a project off this machine's list, by name or by its listed path.
-/// The project itself is never touched.
-pub fn remove(name_or_path: &str) -> Result<()> {
-    let mut l = read_list()?;
-    let before = l.projects.len();
-    let as_path = expand(name_or_path);
-    l.projects.retain(|p| {
-        let path = expand(p);
-        let named = open(&path).map(|q| q.name == name_or_path).unwrap_or(false);
-        !(named || path == as_path)
-    });
-    if l.projects.len() == before {
-        bail!("no listed project named {name_or_path}");
-    }
-    write_list(&l)
-}
-
-/// The project a command works on: the one named, else the one containing
-/// `cwd`, else the only one listed.
-pub fn resolve(name: Option<&str>, cwd: &Path) -> Result<Project> {
-    let ok: Vec<Project> = list()?.into_iter().filter_map(|e| e.project.ok()).collect();
-    if let Some(n) = name {
-        return ok
-            .into_iter()
-            .find(|p| p.name == n)
-            .ok_or_else(|| anyhow!("no listed project named {n}"));
-    }
-    let cwd = cwd.canonicalize().unwrap_or_else(|_| cwd.to_path_buf());
-    let inside = ok
-        .iter()
-        .filter(|p| cwd.starts_with(p.root.canonicalize().unwrap_or_else(|_| p.root.clone())))
-        .max_by_key(|p| p.root.components().count());
-    if let Some(p) = inside {
-        return Ok(p.clone());
-    }
-    match ok.len() {
-        1 => Ok(ok.into_iter().next().expect("one project")),
-        0 => bail!("no projects yet: run `primum init` in a folder"),
-        _ => bail!("several projects are listed; choose one with -p NAME"),
-    }
-}
-
-fn read_project_file(p: &Project) -> Result<ProjectFile> {
-    let file = p.root.join("primum.toml");
-    let text = std::fs::read_to_string(&file)?;
-    toml::from_str(&text).with_context(|| format!("{} is not valid", file.display()))
+fn settings(p: &Project) -> Result<Settings> {
+    Ok(Settings::read(&p.root)?.unwrap_or_else(|| Settings::new(&p.name)))
 }
 
 /// The GitHub repository the project is kept in step with, if any.
 pub fn github_repo(p: &Project) -> Result<Option<String>> {
-    if !p.root.join("primum.toml").exists() {
-        return Ok(None);
-    }
-    Ok(read_project_file(p)?.github.map(|g| g.repo))
+    Ok(Settings::read(&p.root)?.and_then(|s| s.github_repo()))
 }
 
 /// Connects the project to `owner/repo`, or disconnects it with None.
@@ -249,25 +439,88 @@ pub fn set_github(p: &Project, repo: Option<&str>) -> Result<()> {
             bail!("name the repository as owner/repo, not {r}");
         }
     }
-    let mut pf = read_project_file(p)?;
-    let ids = pf.github.as_ref().and_then(|g| g.ids.clone());
-    pf.github = repo.map(|r| GithubTable {
-        repo: r.to_string(),
-        ids,
-    });
-    std::fs::write(p.root.join("primum.toml"), toml::to_string(&pf)?)?;
-    Ok(())
+    let mut s = settings(p)?;
+    s.set_github_repo(repo);
+    s.write(&p.root)
 }
 
-/// How the project's ids show on GitHub issues (`[github] ids`).
+/// How the project's ids show on GitHub issues (`github.ids`).
 pub fn github_ids(p: &Project) -> Result<crate::github::IdStyle> {
-    if !p.root.join("primum.toml").exists() {
-        return Ok(Default::default());
-    }
-    let ids = read_project_file(p)?.github.and_then(|g| g.ids);
-    match ids {
+    match Settings::read(&p.root)?.and_then(|s| s.github_ids()) {
         None => Ok(Default::default()),
         Some(s) => crate::github::IdStyle::parse(&s)
-            .ok_or_else(|| anyhow!("[github] ids must be none or title, not {s}")),
+            .ok_or_else(|| anyhow!("github.ids in project.json must be none or title, not {s}")),
     }
+}
+
+/// The order of the machine's old central list, to order a migrated
+/// workspace the way its tabs were. Read by `migrate` only.
+fn old_list_order() -> Vec<PathBuf> {
+    let file = home().join(".config/primum/projects.toml");
+    #[derive(Deserialize)]
+    struct Old {
+        #[serde(default)]
+        projects: Vec<String>,
+    }
+    let Some(old) = std::fs::read_to_string(file)
+        .ok()
+        .and_then(|t| toml::from_str::<Old>(&t).ok())
+    else {
+        return vec![];
+    };
+    old.projects
+        .iter()
+        .map(|p| match p.strip_prefix("~/") {
+            Some(rest) => home().join(rest),
+            None => PathBuf::from(p),
+        })
+        .map(|p| p.canonicalize().unwrap_or(p))
+        .collect()
+}
+
+/// Converts boards made by earlier versions in the subfolders of `root`:
+/// each legacy `primum.toml` becomes `project.json` (committed in that
+/// project's history), and `root` becomes a workspace listing them, in the
+/// old central list's order where it has them, else by name. Returns what
+/// changed; nothing when run twice.
+pub fn migrate(root: &Path) -> Result<Vec<String>> {
+    let mut done = vec![];
+    let mut subs: Vec<String> = std::fs::read_dir(root)?
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().join("items").is_dir())
+        .filter_map(|e| e.file_name().into_string().ok())
+        .collect();
+    subs.sort();
+    for sub in &subs {
+        let dir = root.join(sub);
+        if !is_legacy(&dir) || dir.join("project.json").is_file() {
+            continue;
+        }
+        let Some(s) = Settings::read(&dir)? else {
+            continue;
+        };
+        let p = open(&dir).map_err(|e| anyhow!(e))?;
+        crate::store::change_settings(&p, "move settings to project.json", || s.write(&dir))?;
+        done.push(format!("{sub}: primum.toml -> project.json"));
+    }
+    if Workspace::read(root).is_none() {
+        let order = old_list_order();
+        let rank = |s: &String| {
+            let path = root.join(s).canonicalize().unwrap_or_else(|_| root.join(s));
+            order.iter().position(|o| *o == path).unwrap_or(usize::MAX)
+        };
+        let mut projects: Vec<String> = subs
+            .into_iter()
+            .filter(|s| is_project_dir(&root.join(s)))
+            .collect();
+        projects.sort_by_key(|s| (rank(s), s.clone()));
+        let n = projects.len();
+        Workspace {
+            root: root.to_path_buf(),
+            listed: Some(projects),
+        }
+        .save()?;
+        done.push(format!("primum.toml: a workspace of {n} projects"));
+    }
+    Ok(done)
 }

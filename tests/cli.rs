@@ -1,6 +1,7 @@
 use std::process::{Command, Output, Stdio};
 
-/// A temp HOME with a project made by `primum init` in `işler/`.
+/// A temporary workspace (also HOME) with a project `café`, made by the
+/// command line.
 struct T {
     dir: tempfile::TempDir,
 }
@@ -10,21 +11,26 @@ impl T {
         let t = T {
             dir: tempfile::tempdir().unwrap(),
         };
-        std::fs::create_dir_all(t.dir.path().join("işler")).unwrap();
-        let out = t.run(&["init"]);
-        assert!(out.status.success(), "{out:?}");
+        let ws = t.run_at(&["workspace", "init"], t.dir.path(), "");
+        assert!(ws.status.success(), "{ws:?}");
+        let init = t.run_at(&["init", "café"], t.dir.path(), "");
+        assert!(init.status.success(), "{init:?}");
         t
     }
 
+    /// Runs primum in the project `café`.
     fn run_in(&self, args: &[&str], stdin: &str) -> Output {
+        self.run_at(args, &self.dir.path().join("café"), stdin)
+    }
+
+    fn run_at(&self, args: &[&str], dir: &std::path::Path, stdin: &str) -> Output {
         use std::io::Write;
         let mut c = Command::new(env!("CARGO_BIN_EXE_primum"))
             .args(args)
-            .current_dir(self.dir.path().join("işler"))
+            .current_dir(dir)
             .env_clear()
             .env("PATH", std::env::var("PATH").unwrap())
             .env("HOME", self.dir.path())
-            .env("XDG_CONFIG_HOME", self.dir.path().join("config"))
             .env("NO_COLOR", "1")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -57,11 +63,11 @@ impl T {
 
     fn item(&self, id: &str) -> String {
         let name = format!("{}.md", id.replace(':', "-"));
-        std::fs::read_to_string(self.dir.path().join("işler/items").join(name)).unwrap()
+        std::fs::read_to_string(self.dir.path().join("café/items").join(name)).unwrap()
     }
 
     fn items(&self) -> usize {
-        std::fs::read_dir(self.dir.path().join("işler/items"))
+        std::fs::read_dir(self.dir.path().join("café/items"))
             .unwrap()
             .count()
     }
@@ -71,7 +77,7 @@ impl T {
 fn init_names_the_project_after_its_folder() {
     let t = T::new();
     let out = t.out(&["projects"]);
-    assert!(out.contains("işler") && out.contains("ok"), "{out}");
+    assert!(out.contains("café") && out.contains("ok"), "{out}");
     assert!(t.run(&["init"]).status.code() == Some(1));
 }
 
@@ -249,49 +255,78 @@ fn delete_asks_unless_told() {
 }
 
 #[test]
-fn project_flag_and_projects_commands() {
+fn a_workspace_holds_several_projects() {
     let t = T::new();
-    let other = t.dir.path().join("ödev");
-    std::fs::create_dir_all(&other).unwrap();
-    let o = other.to_string_lossy().to_string();
-    // a second project, made from inside it
-    let made = Command::new(env!("CARGO_BIN_EXE_primum"))
-        .args(["init", "--name", "ödev"])
-        .current_dir(&other)
-        .env_clear()
-        .env("HOME", t.dir.path())
-        .env("XDG_CONFIG_HOME", t.dir.path().join("config"))
-        .output()
-        .unwrap();
+    let root = t.dir.path();
+    let made = t.run_at(&["init", "über"], root, "");
     assert!(made.status.success(), "{made:?}");
+    let list = String::from_utf8(t.run_at(&["projects"], root, "").stdout).unwrap();
+    assert!(list.contains("café") && list.contains("über"), "{list}");
+    // from the workspace root a command needs -p
+    let o = t.run_at(&["add", "TODO", "x"], root, "");
+    assert_eq!(o.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&o.stderr).contains("-p NAME: café, über"));
+    // inside a project, -p reaches the other one
     assert_eq!(
-        t.out(&["-p", "ödev", "add", "TODO", "orada"]).trim(),
+        t.out(&["-p", "über", "add", "TODO", "Işık"]).trim(),
         "TODO:1"
     );
-    assert!(other.join("items/TODO-1.md").is_file());
+    assert!(root.join("über/items/TODO-1.md").is_file());
     assert_eq!(t.items(), 0);
-    t.out(&["projects", "remove", "ödev"]);
-    assert!(!t.out(&["projects"]).contains("ödev"));
-    t.out(&["projects", "add", &o]);
-    assert!(t.out(&["projects"]).contains("ödev"));
+    let ws = std::fs::read_to_string(root.join("primum.toml")).unwrap();
+    assert_eq!(ws, "projects = [\"café\", \"über\"]\n");
+    t.out(&["projects", "remove", "über"]);
+    assert!(!t.out(&["projects"]).contains("über"));
+    t.out(&["projects", "add", "über"]);
+    assert!(t.out(&["projects"]).contains("über"));
+    // the same name twice is refused
+    let o = t.run_at(&["init", "copy", "--name", "café"], root, "");
+    assert_eq!(o.status.code(), Some(1), "{o:?}");
+}
+
+#[test]
+fn the_old_central_list_gets_one_notice() {
+    let t = T::new();
+    std::fs::create_dir_all(t.dir.path().join(".config/primum")).unwrap();
+    std::fs::write(
+        t.dir.path().join(".config/primum/projects.toml"),
+        "projects = []\n",
+    )
+    .unwrap();
+    let first = t.err(&["list"]);
+    assert!(first.contains("no longer used"), "{first}");
+    assert!(!t.err(&["list"]).contains("no longer used"));
+}
+
+#[test]
+fn workspace_migrate_converts_earlier_boards() {
+    let t = T::new();
+    let old = t.dir.path().join("old");
+    std::fs::create_dir_all(old.join("b/items")).unwrap();
+    std::fs::write(old.join("b/primum.toml"), "name = \"eski\"\n").unwrap();
+    let o = t.run_at(&["workspace", "migrate"], &old, "");
+    let out = String::from_utf8_lossy(&o.stdout).to_string();
+    assert!(out.contains("b: primum.toml -> project.json"), "{o:?}");
+    assert!(out.contains("a workspace of 1 projects"), "{out}");
+    let again = t.run_at(&["workspace", "migrate"], &old, "");
+    assert_eq!(
+        String::from_utf8_lossy(&again.stdout),
+        "nothing to migrate\n"
+    );
+    let list = String::from_utf8(t.run_at(&["projects"], &old, "").stdout).unwrap();
+    assert!(list.starts_with("eski\t"), "{list}");
 }
 
 #[test]
 fn history_is_kept_and_off_without_git() {
     let t = T::new();
     t.out(&["add", "TODO", "Işıl"]);
-    assert!(
-        t.dir
-            .path()
-            .join("işler/.primum/history.git/HEAD")
-            .is_file()
-    );
+    assert!(t.dir.path().join("café/.primum/history.git/HEAD").is_file());
     let o = Command::new(env!("CARGO_BIN_EXE_primum"))
         .args(["add", "BUG", "gitsiz"])
-        .current_dir(t.dir.path().join("işler"))
+        .current_dir(t.dir.path().join("café"))
         .env_clear()
         .env("HOME", t.dir.path())
-        .env("XDG_CONFIG_HOME", t.dir.path().join("config"))
         .env("PRIMUM_GIT", "/yok/git")
         .output()
         .unwrap();
@@ -331,16 +366,19 @@ fn remote_and_clone_commands() {
     t.out(&["remote", "set", &url, "--manual"]);
     assert!(t.out(&["remote"]).contains(&url));
     t.out(&["sync"]);
-    let cfg2 = t.dir.path().join("config2");
-    let o = Command::new(env!("CARGO_BIN_EXE_primum"))
-        .args(["clone", &url, "kopya"])
-        .current_dir(t.dir.path())
-        .env("XDG_CONFIG_HOME", &cfg2)
-        .output()
-        .unwrap();
+    // another workspace on another machine
+    let other = t.dir.path().join("elsewhere");
+    std::fs::create_dir_all(&other).unwrap();
+    assert!(
+        t.run_at(&["workspace", "init"], &other, "")
+            .status
+            .success()
+    );
+    let o = t.run_at(&["clone", &url, "kopya"], &other, "");
     assert!(o.status.success(), "{o:?}");
-    assert!(t.dir.path().join("kopya/items/TODO-1.md").is_file());
-    let list = std::fs::read_to_string(cfg2.join("primum/projects.toml")).unwrap();
+    assert!(other.join("kopya/items/TODO-1.md").is_file());
+    assert!(other.join("kopya/project.json").is_file());
+    let list = std::fs::read_to_string(other.join("primum.toml")).unwrap();
     assert!(list.contains("kopya"), "{list}");
 }
 
@@ -375,9 +413,8 @@ fn github_connect_files_issues_through_gh() {
     let gh = |args: &[&str]| {
         Command::new(env!("CARGO_BIN_EXE_primum"))
             .args(args)
-            .current_dir(t.dir.path().join("işler"))
+            .current_dir(t.dir.path().join("café"))
             .env("HOME", t.dir.path())
-            .env("XDG_CONFIG_HOME", t.dir.path().join("config"))
             .env("PRIMUM_GH", &fake)
             .env("FAKE_GH_STATE", &state)
             .output()
@@ -391,8 +428,8 @@ fn github_connect_files_issues_through_gh() {
     assert_eq!(s["issues"][0]["title"], "Gökçe'nin hatası");
     assert_eq!(s["labels"].as_array().unwrap().len(), 6);
     assert!(t.item("BUG:1").contains("github: 1"));
-    let toml = std::fs::read_to_string(t.dir.path().join("işler/primum.toml")).unwrap();
-    assert!(toml.contains("repo = \"ozgur/isler\""));
+    let json = std::fs::read_to_string(t.dir.path().join("café/project.json")).unwrap();
+    assert!(json.contains("\"repo\": \"ozgur/isler\""), "{json}");
     let status = gh(&["github", "status"]);
     let status = String::from_utf8_lossy(&status.stdout).to_string();
     assert!(

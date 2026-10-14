@@ -42,13 +42,20 @@ pub struct Scores {
 
 #[derive(Subcommand)]
 pub enum Cmd {
-    /// Make this folder a project (primum.toml and items/) and list it
+    /// Make a project: FOLDER in this workspace, or this folder
     Init {
+        /// A subfolder of the workspace to make the project in
+        folder: Option<String>,
         /// The project's name; default: the folder's
         #[arg(long)]
         name: Option<String>,
     },
-    /// The projects this machine shows, or add or remove one
+    /// Make this folder a workspace, or migrate boards made by earlier versions
+    Workspace {
+        #[command(subcommand)]
+        cmd: WorkspaceCmd,
+    },
+    /// The workspace's projects, or add or remove one
     Projects {
         #[command(subcommand)]
         cmd: Option<ProjectsCmd>,
@@ -174,7 +181,7 @@ pub enum Cmd {
         #[command(subcommand)]
         cmd: Option<RemoteCmd>,
     },
-    /// Make a project from a remote and list it
+    /// Make a project from a remote, in this workspace when there is one
     Clone {
         url: String,
         /// Default: the remote's name without .git
@@ -218,10 +225,40 @@ pub enum RemoteCmd {
 
 #[derive(Subcommand)]
 pub enum ProjectsCmd {
-    /// List the project in PATH on this machine
-    Add { path: PathBuf },
-    /// Take a project off this machine's list (the project is not touched)
+    /// Add the project in the workspace's subfolder FOLDER to its list
+    Add { folder: String },
+    /// Take a project off the workspace's list (the project is not touched)
     Remove { name: String },
+}
+
+#[derive(Subcommand)]
+pub enum WorkspaceCmd {
+    /// Make this folder a workspace: primum.toml listing the projects below it
+    Init,
+    /// Convert boards made by earlier versions in this folder's subfolders
+    Migrate,
+}
+
+const NOTICE: &str = "primum: ~/.config/primum/projects.toml is no longer used; boards are found from the folder you are in (see primum workspace)";
+
+/// Says once that the old central list is no longer read: a marker beside
+/// it remembers that the notice was shown.
+fn central_list_notice() {
+    let Some(home) = std::env::var_os("HOME").filter(|h| !h.is_empty()) else {
+        return;
+    };
+    let dir = PathBuf::from(home).join(".config/primum");
+    let marker = dir.join(".workspace-notice");
+    if dir.join("projects.toml").is_file() && !marker.exists() {
+        eprintln!("{NOTICE}");
+        let _ = std::fs::write(marker, "");
+    }
+}
+
+/// The workspace `cwd` is in, or an error saying how to make one.
+fn workspace(cwd: &std::path::Path) -> Result<projects::Workspace> {
+    projects::workspace(cwd)
+        .ok_or_else(|| anyhow::anyhow!("not in a workspace: run `primum workspace init`"))
 }
 
 /// Runs the command line; returns the exit code.
@@ -243,6 +280,7 @@ pub fn run(args: Vec<String>) -> i32 {
 }
 
 fn dispatch(cli: Cli) -> Result<()> {
+    central_list_notice();
     let cwd = std::env::current_dir().context("no working directory")?;
     let project = || projects::resolve(cli.project.as_deref(), &cwd);
     let changes = matches!(
@@ -259,12 +297,36 @@ fn dispatch(cli: Cli) -> Result<()> {
             | Cmd::Resolve { .. }
     );
     match cli.cmd {
-        Cmd::Init { name } => {
-            let p = projects::init(&cwd, name.as_deref())?;
+        Cmd::Init { folder, name } => {
+            let p = match folder {
+                Some(f) => workspace(&cwd)?.init_project(&f, name.as_deref())?,
+                None => projects::init(&cwd, name.as_deref())?,
+            };
             println!("primum project {} in {}", p.name, p.root.display());
         }
+        Cmd::Workspace {
+            cmd: WorkspaceCmd::Init,
+        } => {
+            let ws = projects::Workspace::create(&cwd)?;
+            let found = ws.listed.unwrap_or_default();
+            println!("primum workspace in {}", ws.root.display());
+            for f in found {
+                println!("  {f}");
+            }
+        }
+        Cmd::Workspace {
+            cmd: WorkspaceCmd::Migrate,
+        } => {
+            let done = projects::migrate(&cwd)?;
+            if done.is_empty() {
+                println!("nothing to migrate");
+            }
+            for line in done {
+                println!("{line}");
+            }
+        }
         Cmd::Projects { cmd: None } => {
-            for e in projects::list()? {
+            for e in projects::entries(&cwd) {
                 match e.project {
                     Ok(p) => println!("{}\t{}\tok", p.name, e.path.display()),
                     Err(why) => println!("-\t{}\t{why}", e.path.display()),
@@ -272,14 +334,14 @@ fn dispatch(cli: Cli) -> Result<()> {
             }
         }
         Cmd::Projects {
-            cmd: Some(ProjectsCmd::Add { path }),
+            cmd: Some(ProjectsCmd::Add { folder }),
         } => {
-            let p = projects::add(&path)?;
+            let p = workspace(&cwd)?.add(folder.trim_end_matches('/'))?;
             println!("{}\t{}", p.name, p.root.display());
         }
         Cmd::Projects {
             cmd: Some(ProjectsCmd::Remove { name }),
-        } => projects::remove(&name)?,
+        } => workspace(&cwd)?.remove(&name)?,
         Cmd::Add {
             kind,
             title,
@@ -408,10 +470,21 @@ fn dispatch(cli: Cli) -> Result<()> {
             });
             let folder = cwd.join(folder);
             crate::history::clone(&url, branch.as_deref(), &folder)?;
-            let p = projects::add(&folder)?;
+            let p = projects::open(&folder).map_err(|e| anyhow::anyhow!(e))?;
+            // a clone directly inside a workspace joins it
+            if let (Some(ws), Some(sub)) = (
+                projects::Workspace::find(&cwd),
+                folder.file_name().and_then(|n| n.to_str()),
+            ) && folder.parent().and_then(|d| d.canonicalize().ok())
+                == ws.root.canonicalize().ok()
+            {
+                ws.add(sub)?;
+            }
             println!("primum project {} in {}", p.name, p.root.display());
         }
-        Cmd::Serve { port, no_open } => crate::server::serve(port, !no_open)?,
+        Cmd::Serve { port, no_open } => {
+            crate::server::serve(projects::entries(&cwd), port, !no_open)?
+        }
         Cmd::Import { board_dir } => {
             let p = project()?;
             let r = crate::import::run(&board_dir, &p)?;
