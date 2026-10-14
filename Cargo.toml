@@ -23,6 +23,10 @@ fs2 = "~0.4.3"
 regex = "~1.13.1"
 anyhow = "~1.0.104"
 
+# Only to restore the default SIGPIPE: `primum list | head` ends quietly.
+[target.'cfg(unix)'.dependencies]
+libc = "~0.2.190"
+
 [dev-dependencies]
 tempfile = "~3.27.0"
 tower = { version = "~0.5.3", features = ["util"] }

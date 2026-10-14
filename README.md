@@ -67,8 +67,9 @@ rewrites `BOARD.md`, a read-only summary of the whole project.
 
 ## Adding items
 
-`primum add KIND TITLE` prints the new item's id. Scores left out default
-to impact 5, urgency 3, risk 3, effort 5.
+`primum add KIND [TITLE]` prints the new item's id. Without a title, the
+text's first heading is the title. Scores left out default to impact 5,
+urgency 3, risk 3, effort 5.
 
 ```bash
 primum add TODO "Export open items as CSV" --impact 6 --effort 3 --body-file csv.md
@@ -77,6 +78,7 @@ primum add URGENT "Login fails after the 2.3 upgrade" --impact 9 --urgency 10 --
 primum add DEBT "Split server.rs into routes and pages" --effort 6 --needs TODO:12
 primum add KILLER "Offline mode" --impact 9 --effort 8 --needs DEBT:3,BUG:7
 primum add TODO "Dark mode for print" --body-file - < notes.md
+primum add TODO --body-file csv.md        # the title is the text's first heading
 primum add TODO "Weekly digest" -p my-lib
 ```
 

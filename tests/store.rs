@@ -389,3 +389,34 @@ fn resolving_writes_the_choice_and_clears_the_record() {
     );
     assert!(resolve(&p, "TODO:1", "impact", Keep::First).is_err());
 }
+
+#[test]
+fn a_missing_title_comes_from_the_first_heading() {
+    let d = tempfile::tempdir().unwrap();
+    let p = common::project(d.path());
+    let body = |b: &str| Changes {
+        body: Some(b.into()),
+        ..ch()
+    };
+    let id = insert(
+        &p,
+        "TODO",
+        "  ",
+        body("Intro line\n\n### Işık ve gölge #2\n\ntext\n"),
+    )
+    .unwrap();
+    let board = load(&p).unwrap();
+    let it = board.get(&id).unwrap();
+    assert_eq!(it.title, "Işık ve gölge #2");
+    assert!(
+        it.body.contains("### Işık ve gölge #2"),
+        "the heading stays"
+    );
+    let e = insert(&p, "TODO", "", body("no heading here\n")).unwrap_err();
+    assert_eq!(
+        e.to_string(),
+        "give a title, or start the text with a heading"
+    );
+    assert!(insert(&p, "TODO", "", ch()).is_err());
+    assert_eq!(load(&p).unwrap().items.len(), 1, "nothing added");
+}

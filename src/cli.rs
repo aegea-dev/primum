@@ -64,7 +64,8 @@ pub enum Cmd {
     Add {
         /// URGENT, BUG, DEBT, KILLER or TODO
         kind: String,
-        title: String,
+        /// Default: the text's first heading
+        title: Option<String>,
         #[command(flatten)]
         scores: Scores,
         /// Ids it waits for, like TODO:1,BUG:2
@@ -336,7 +337,12 @@ fn dispatch(cli: Cli) -> Result<()> {
             };
             println!(
                 "{}",
-                store::insert(&project()?, &kind.to_uppercase(), &title, c)?
+                store::insert(
+                    &project()?,
+                    &kind.to_uppercase(),
+                    title.as_deref().unwrap_or(""),
+                    c
+                )?
             );
         }
         Cmd::List {
