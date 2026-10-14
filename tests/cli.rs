@@ -471,6 +471,39 @@ fn the_manager_reads_an_input_and_prints_its_answer() {
 }
 
 #[test]
+fn the_daemon_runs_a_lifecycle_and_the_journal_shows_it() {
+    let t = T::new();
+    let dir = t.dir.path().join("café/lifecycles");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("akış.json"),
+        r#"{ "name": "akış", "states": ["yeni", "hazir", "bitti"], "start": "yeni", "end": ["bitti"],
+             "transitions": [
+               { "from": "yeni", "on": "lifecycle.attached", "to": "hazir",
+                 "do": [ { "action": "ticket.update@1", "with": { "note": "Hazır." } } ] } ] }"#,
+    )
+    .unwrap();
+    t.out(&["add", "TODO", "Gölge"]);
+    t.out(&["lifecycle", "attach", "1", "akış"]);
+    let o = t.run(&["daemon", "--once", "--now", "2026-10-14T20:00:00Z"]);
+    assert!(o.status.success(), "{o:?}");
+    assert!(t.out(&["show", "1"]).contains("hazir"));
+    let events = t.out(&["events", "1"]);
+    assert!(events.contains("lifecycle.attached"), "{events}");
+    let json: serde_json::Value = serde_json::from_str(&t.out(&["events", "--json"])).unwrap();
+    assert_eq!(json[0]["event"]["type"], "lifecycle.attached");
+    assert!(t.out(&["lifecycle", "resume", "1"]).contains("queued"));
+    // the daemon delivers it; the ticket has not failed, so nothing moves
+    t.run(&["daemon", "--once", "--now", "2026-10-14T20:01:00Z"]);
+    let events = t.out(&["events", "1"]);
+    assert!(
+        events.contains("lifecycle.resume") && !events.contains("waiting"),
+        "{events}"
+    );
+    assert!(t.out(&["show", "1"]).contains("hazir"));
+}
+
+#[test]
 fn lifecycle_commands() {
     let t = T::new();
     common::with_example(&t.dir.path().join("café"));

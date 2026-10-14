@@ -2,7 +2,9 @@
 //! one ticket and one event (`manager::decide`). The daemon and workers
 //! come next.
 pub mod builtins;
+pub mod daemon;
 pub mod eval;
+pub mod journal;
 pub mod manager;
 
 use crate::lifecycle::File;

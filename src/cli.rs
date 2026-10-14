@@ -204,6 +204,24 @@ pub enum Cmd {
     /// The lifecycle manager: one decision, JSON in on stdin, JSON out on stdout
     #[command(hide = true)]
     Manager,
+    /// Run tickets' lifecycles, for every project here, pass after pass
+    Daemon {
+        /// One pass, then stop
+        #[arg(long)]
+        once: bool,
+        /// Seconds between passes
+        #[arg(long, default_value_t = 1)]
+        interval: u64,
+        /// The time to run at (tests)
+        #[arg(long, hide = true)]
+        now: Option<String>,
+    },
+    /// The engine's journal: a ticket's events in order, or every event
+    Events {
+        id: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -240,6 +258,8 @@ pub enum LifecycleCmd {
     },
     /// Make a ticket follow the built-in manual lifecycle again
     Detach { id: String },
+    /// Run a failed ticket's failed transition again (the daemon runs it)
+    Resume { id: String },
 }
 
 #[derive(Subcommand)]
@@ -350,6 +370,69 @@ fn dispatch(cli: Cli) -> Result<()> {
         }
         Cmd::Lifecycle { cmd } => lifecycle_cmd(&project()?, cmd)?,
         Cmd::Context { cmd, json } => context_cmd(&project()?, cmd, json)?,
+        Cmd::Daemon {
+            once,
+            interval,
+            now,
+        } => {
+            let manager = std::env::current_exe()?;
+            let projects: Vec<Project> = match cli.project.as_deref() {
+                Some(_) => vec![project()?],
+                None => projects::entries(&cwd)
+                    .into_iter()
+                    .filter_map(|e| e.project.ok())
+                    .collect(),
+            };
+            if projects.is_empty() {
+                bail!("no primum project here: cd into a board or a workspace");
+            }
+            loop {
+                let at = match &now {
+                    Some(t) => t
+                        .parse::<chrono::DateTime<chrono::Utc>>()
+                        .map_err(|_| anyhow!("--now takes an RFC 3339 time, not {t}"))?,
+                    None => chrono::Utc::now(),
+                };
+                for p in &projects {
+                    match crate::engine::daemon::run_once(p, at, &manager) {
+                        Ok(pass) if pass.delivered + pass.written > 0 => eprintln!(
+                            "{}: {} events, {} changes written",
+                            p.name, pass.delivered, pass.written
+                        ),
+                        Ok(_) => {}
+                        Err(e) => eprintln!("{}: {e:#}", p.name),
+                    }
+                }
+                if once {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_secs(interval));
+            }
+        }
+        Cmd::Events { id, json } => {
+            let p = project()?;
+            let j = crate::engine::journal::Journal::open(&p)?;
+            let subject = id
+                .map(|i| norm_id(&i))
+                .transpose()?
+                .map(|i| crate::engine::journal::subject(&p.name, &i));
+            let events = j.events(subject.as_deref())?;
+            if json {
+                println!("{}", serde_json::to_string_pretty(&events)?);
+            } else {
+                for r in events {
+                    let state = match (&r.handled, &r.error) {
+                        (_, Some(e)) => format!("error: {e}"),
+                        (Some(_), None) => "handled".to_string(),
+                        (None, None) => "waiting".to_string(),
+                    };
+                    println!(
+                        "{:>5}  {}  {:<20} {:<36} {state}",
+                        r.seq, r.event.time, r.event.kind, r.event.subject
+                    );
+                }
+            }
+        }
         Cmd::Manager => {
             let mut text = String::new();
             std::io::Read::read_to_string(&mut std::io::stdin(), &mut text)?;
@@ -867,6 +950,21 @@ fn lifecycle_cmd(p: &Project, cmd: LifecycleCmd) -> Result<()> {
             let id = norm_id(&id)?;
             crate::store::detach(p, &id)?;
             println!("{}: manual", label(&id));
+        }
+        LifecycleCmd::Resume { id } => {
+            use crate::engine::journal::{Envelope, Journal, subject};
+            let id = norm_id(&id)?;
+            let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+            let e = Envelope::new(
+                "cli",
+                "lifecycle.resume",
+                &subject(&p.name, &id),
+                &now,
+                None,
+                serde_json::json!({}),
+            );
+            Journal::open(p)?.publish(&e)?;
+            println!("{}: resume queued; the daemon runs it", label(&id));
         }
         LifecycleCmd::List => {
             let manual = find_lifecycle(p, "manual")?;
