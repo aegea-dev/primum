@@ -1,14 +1,11 @@
 # primum
 
-Prioritized work items for any number of projects, kept as plain markdown
-files, with a command line and a local web board.
+A command-line tool for prioritized work items. Each item is a plain
+markdown file, ranked by impact, urgency, risk and effort, for any number of
+projects. Everything runs from your terminal; `primum serve` adds an
+optional local web board.
 
 Documentation: <https://erhangundogan.github.io/primum/>
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/erhangundogan/primum/main/docs/board-dark.png">
-  <img alt="The primum board: items in priority order, lanes as filters, next up above the table" src="https://raw.githubusercontent.com/erhangundogan/primum/main/docs/board-light.png">
-</picture>
 
 ## Install
 

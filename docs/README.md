@@ -32,10 +32,6 @@ astro.config.mjs     sidebar, theme
 Adding a page means creating the file and adding it to `sidebar` in
 `astro.config.mjs`. A front matter value containing `: ` must be quoted.
 
-`board-light.png` and `board-dark.png` in this folder are what the root
-README shows (by their raw GitHub URLs); `src/assets/` holds copies for the
-site.
-
 ## Deploying
 
 The site is served by GitHub Pages at <https://erhangundogan.github.io/primum/>.
