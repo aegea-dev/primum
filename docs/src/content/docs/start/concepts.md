@@ -51,6 +51,44 @@ rounded to one decimal, half to even. Items are ordered by lane, then by
 priority, highest first. Scores left out when adding default to impact 5,
 urgency 3, risk 3, effort 5.
 
+## primum and WSJF
+
+primum's priority is a form of **Weighted Shortest Job First** (WSJF), the
+ordering rule from Don Reinertsen's *The Principles of Product Development
+Flow*, later made popular by SAFe. WSJF divides the cost of delay by the size
+of the job, so small valuable work goes first:
+
+```text
+WSJF     = cost of delay / job size
+         = (business value + time criticality + risk reduction) / job size
+
+priority = (impact + urgency + risk) * 10 / effort
+```
+
+| WSJF | primum |
+|---|---|
+| business value | impact |
+| time criticality | urgency |
+| risk reduction and opportunity enablement | risk |
+| job size | effort |
+
+The differences are deliberate:
+
+- **Lanes come first.** WSJF ranks one backlog; primum ranks within each lane,
+  so an `URGENT` item is never outranked by a high-scoring `TODO`.
+- **Plain 1 to 10 scores** instead of relative Fibonacci estimates compared
+  across the backlog: each item can be scored on its own, by one person, in
+  seconds.
+- **Blocked items wait.** An item whose `needs` are open is skipped by
+  `primum next`, whatever its score.
+- **Times ten** keeps the priority readable (`32.0` rather than `3.2`); the
+  order is the same.
+
+primum's statuses (`open`, `doing`, `done`) form a Kanban-style pull flow, and
+the board shows items in progress before the next one: finish what is
+started before starting more. There are no sprints, story points or
+velocity; primum is a backlog and a flow, not a sprint planner.
+
 ## Needs and blocked items
 
 `needs: [TODO:1, BUG:2]` says an item waits for others. While any of them is
