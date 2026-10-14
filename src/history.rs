@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use std::process::{Command, Output, Stdio};
 
 /// What the history tracks: primum's files and nothing else.
-const EXCLUDE: &str = "/*\n!/project.json\n!/primum.toml\n!/BOARD.md\n!/items/\n/items/*\n!/items/*.md\n!/conflicts/\n!/lifecycles/\n/lifecycles/*\n!/lifecycles/*.toml\n";
+const EXCLUDE: &str = "/*\n!/project.json\n!/primum.toml\n!/BOARD.md\n!/items/\n/items/*\n!/items/*.md\n!/conflicts/\n!/lifecycles/\n/lifecycles/*\n!/lifecycles/*.json\n!/actionables/\n/actionables/*/.venv/\n/actionables/*/node_modules/\n/actionables/**/__pycache__/\n";
 
 pub fn git_binary() -> String {
     std::env::var("PRIMUM_GIT").unwrap_or_else(|_| "git".into())
@@ -207,8 +207,8 @@ pub struct Entry {
     pub path: Option<String>,
 }
 
-/// A path the history API may name: project.json, primum.toml, BOARD.md, or a file
-/// directly in items/, conflicts/ or lifecycles/.
+/// A path the history API may name: project.json, primum.toml, BOARD.md, a file
+/// directly in items/, conflicts/ or lifecycles/, or a file in actionables/.
 fn tracked_path(path: &str) -> bool {
     let in_dir = |d: &str| {
         path.strip_prefix(d)
@@ -220,6 +220,9 @@ fn tracked_path(path: &str) -> bool {
         || in_dir("items/")
         || in_dir("conflicts/")
         || in_dir("lifecycles/")
+        || path
+            .strip_prefix("actionables/")
+            .is_some_and(|r| !r.is_empty() && !r.contains("..") && !r.ends_with('/'))
 }
 
 impl History {
