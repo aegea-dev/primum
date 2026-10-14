@@ -142,3 +142,29 @@ fn the_example_and_the_manual_lifecycle_are_valid() {
     lifecycle::validate::validate(std::path::Path::new("manual.toml"), &lifecycle::manual())
         .unwrap();
 }
+
+#[test]
+fn versions_follow_steps_not_formatting() {
+    let (p, text) = fixture("stakeholder-update");
+    let a = lifecycle::load_text(&p, &text).unwrap();
+    assert_eq!(a.version.len(), 64);
+    assert_eq!(lifecycle::short(&a.version).len(), 12);
+    let reformatted = text.replace(" = ", "=").replace("# remind: send again", "");
+    let b = lifecycle::load_text(&p, &reformatted).unwrap();
+    assert_eq!(a.version, b.version, "comments and spacing do not count");
+    let changed = text.replace("timeout = \"7d\"", "timeout = \"8d\"");
+    let c = lifecycle::load_text(&p, &changed).unwrap();
+    assert_ne!(a.version, c.version);
+    assert_ne!(
+        a.steps[1].1, c.steps[1].1,
+        "await-reply's own version changed"
+    );
+    assert_eq!(a.steps[0].1, c.steps[0].1, "notify's did not");
+    // an actionable's version is part of the step's version
+    let mut step = a.file.step[0].clone();
+    let before = lifecycle::version::step(&step);
+    step.action = Some("command@2".into());
+    assert_ne!(lifecycle::version::step(&step), before);
+    // the version is stable: the same text, the same hash, every time
+    assert_eq!(a.version, lifecycle::load_text(&p, &text).unwrap().version);
+}

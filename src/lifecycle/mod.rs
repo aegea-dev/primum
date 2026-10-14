@@ -5,6 +5,7 @@ pub mod actionables;
 pub mod expr;
 pub mod format;
 pub mod validate;
+pub mod version;
 
 use crate::store::Project;
 use std::fmt;
@@ -50,13 +51,31 @@ pub fn parse(path: &Path, text: &str) -> Result<File, LifecycleError> {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Lifecycle {
     pub file: File,
+    /// The whole lifecycle's version (64 hex characters).
+    pub version: String,
+    /// Each step's id and version, in file order.
+    pub steps: Vec<(String, String)>,
+}
+
+/// A version as people see it: its first 12 characters.
+pub fn short(version: &str) -> &str {
+    &version[..version.len().min(12)]
 }
 
 /// Parses and checks a lifecycle's text; `path` names it.
 pub fn load_text(path: &Path, text: &str) -> Result<Lifecycle, LifecycleError> {
     let file = parse(path, text)?;
     validate::validate(path, &file)?;
-    Ok(Lifecycle { file })
+    let steps = file
+        .step
+        .iter()
+        .map(|s| (s.id.clone(), version::step(s)))
+        .collect();
+    Ok(Lifecycle {
+        version: version::lifecycle(&file),
+        steps,
+        file,
+    })
 }
 
 /// Reads, parses and checks a lifecycle file.
