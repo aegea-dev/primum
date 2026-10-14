@@ -1,132 +1,94 @@
-//! The checks a lifecycle file passes before anything can follow it. The
-//! first problem found is reported, naming the file and the step.
-use super::format::{File, Next, StepDef};
-use super::{LifecycleError, actionables, expr};
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+//! The checks a lifecycle file passes before a ticket can follow it. The
+//! first problem found is reported, naming the file and the transition.
+use super::definitions::Definition;
+use super::format::{File, Transition};
+use super::{FAILED, LifecycleError, actionables, expr};
+use serde_json::Value;
 use std::path::Path;
 
-/// The states a lifecycle has when it declares none.
-pub const DEFAULT_STATES: [&str; 6] = [
-    "idle",
-    "waiting",
-    "processing",
-    "effects",
-    "done",
-    "wontfix",
-];
-
-/// Every step a step can go to: next, branches, fallbacks, a recommendation.
-pub fn targets(s: &StepDef) -> Vec<&str> {
-    let mut out = vec![];
-    match &s.next {
-        Some(Next::Step(id)) => out.push(id.as_str()),
-        Some(Next::Branches(bs)) => out.extend(bs.iter().map(|b| b.go.as_str())),
-        None => {}
-    }
-    out.extend(s.on_error.as_deref());
-    out.extend(s.on_timeout.as_deref());
-    out.extend(s.wait.as_ref().and_then(|w| w.recommend.as_deref()));
-    out
+/// A lowercase word: letters, digits and `-`.
+pub fn is_word(s: &str) -> bool {
+    !s.is_empty()
+        && s.chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
 }
 
-/// Every string inside a `with` value, for its templates.
-fn strings<'a>(v: &'a toml::Value, out: &mut Vec<&'a str>) {
+/// Every string inside a JSON value, for its templates.
+pub fn strings<'a>(v: &'a Value, out: &mut Vec<&'a str>) {
     match v {
-        toml::Value::String(s) => out.push(s),
-        toml::Value::Array(a) => a.iter().for_each(|x| strings(x, out)),
-        toml::Value::Table(t) => t.values().for_each(|x| strings(x, out)),
+        Value::String(s) => out.push(s),
+        Value::Array(a) => a.iter().for_each(|x| strings(x, out)),
+        Value::Object(o) => o.values().for_each(|x| strings(x, out)),
         _ => {}
     }
 }
 
-fn check_step(s: &StepDef, states: &[String], ids: &BTreeSet<&str>) -> Result<(), String> {
-    match (&s.action, &s.wait) {
-        (Some(_), Some(_)) => {
-            return Err("a step either does something (do) or waits (wait), not both".into());
-        }
-        (None, None) if !s.end => {
-            return Err("a step does something (do) or waits (wait); only a closing step (end = true) may do neither".into());
-        }
-        _ => {}
+/// Compiles every `${...}` in a text.
+pub fn check_templates(text: &str) -> Result<(), String> {
+    for e in expr::templates(text)? {
+        expr::compile(&e)?;
     }
-    if s.next.is_none() && !s.end {
-        return Err("a step needs next, or end = true".into());
-    }
-    if let Some(st) = &s.state
-        && !states.contains(st)
-    {
-        return Err(format!(
-            "state \"{st}\" is not one of {}",
-            states.join(", ")
-        ));
-    }
-    match &s.action {
-        Some(a) => actionables::check(a, s.with.as_ref())?,
-        None if s.with.is_some() => return Err("with goes with do".into()),
-        None => {}
-    }
-    if let Some(w) = &s.wait
-        && w.kind != "input"
-        && w.kind != "approval"
-    {
-        return Err(format!(
-            "wait for \"input\" or \"approval\", not \"{}\"",
-            w.kind
-        ));
-    }
-    let mut exprs: Vec<&str> = vec![];
-    exprs.extend(s.target.as_deref());
-    exprs.extend(s.wait.as_ref().and_then(|w| w.when.as_deref()));
-    if let Some(Next::Branches(bs)) = &s.next {
-        exprs.extend(bs.iter().filter_map(|b| b.when.as_deref()));
-    }
-    for e in exprs {
-        expr::compile(e)?;
-    }
-    if let Some(with) = &s.with {
-        let mut texts = vec![];
-        with.values().for_each(|v| strings(v, &mut texts));
-        for t in texts {
-            for e in expr::templates(t)? {
-                expr::compile(&e)?;
-            }
-        }
-    }
-    let durations = [
-        s.timeout.as_deref(),
-        s.wait.as_ref().and_then(|w| w.timeout.as_deref()),
-        s.retry.as_ref().and_then(|r| r.backoff.as_deref()),
+    Ok(())
+}
+
+fn check_transition(t: &Transition, states: &[String], defs: &[Definition]) -> Result<(), String> {
+    let named = [
+        ("from", Some(&t.from)),
+        ("to", Some(&t.to)),
+        ("while", t.showing.as_ref()),
+        ("on_timeout", t.on_timeout.as_ref()),
+        ("on_fail", t.on_fail.as_ref()),
     ];
-    for d in durations.into_iter().flatten() {
-        expr::duration(d)?;
+    for (what, s) in named {
+        if let Some(s) = s
+            && !states.contains(s)
+        {
+            return Err(format!("{what} \"{s}\" is not a state"));
+        }
     }
-    for t in targets(s) {
-        if !ids.contains(t) {
-            let what = match &s.next {
-                Some(Next::Step(n)) if n == t => "next",
-                Some(Next::Branches(bs)) if bs.iter().any(|b| b.go == t) => "go",
-                _ if s.on_error.as_deref() == Some(t) => "on_error",
-                _ if s.on_timeout.as_deref() == Some(t) => "on_timeout",
-                _ => "recommend",
-            };
-            return Err(format!("{what} \"{t}\" is not a step"));
+    if t.on.is_none() && t.actions.is_empty() {
+        return Err("a transition needs on, do, or both".into());
+    }
+    if let Some(on) = &t.on {
+        let ok = on.split('.').all(is_word);
+        if !ok {
+            return Err(format!("on \"{on}\" is an event type, like ticket.created"));
+        }
+    }
+    match (&t.timeout, &t.on_timeout) {
+        (Some(d), Some(_)) => {
+            expr::duration(d)?;
+        }
+        (Some(_), None) => return Err("timeout needs on_timeout".into()),
+        (None, Some(_)) => return Err("on_timeout needs timeout".into()),
+        (None, None) => {}
+    }
+    if let Some(w) = &t.when {
+        expr::compile(w)?;
+    }
+    for a in &t.actions {
+        actionables::check(&a.action, a.with.as_ref(), defs)?;
+        if let Some(e) = &a.expect {
+            expr::compile(e)?;
+        }
+        if let Some(with) = &a.with {
+            let mut texts = vec![];
+            with.values().for_each(|v| strings(v, &mut texts));
+            for text in texts {
+                check_templates(text)?;
+            }
         }
     }
     Ok(())
 }
 
-/// Checks a parsed lifecycle; `path` names it in errors and gives the name
-/// it must have.
-pub fn validate(path: &Path, f: &File) -> Result<(), LifecycleError> {
+/// Checks a parsed lifecycle against the project's actionables; `path`
+/// names it in errors and gives the name it must have.
+pub fn validate(path: &Path, f: &File, defs: &[Definition]) -> Result<(), LifecycleError> {
     let file = path.display().to_string();
     let whole = |message: String| LifecycleError {
         file: file.clone(),
-        step: None,
-        message,
-    };
-    let at = |id: &str, message: String| LifecycleError {
-        file: file.clone(),
-        step: Some(id.to_string()),
+        at: None,
         message,
     };
     let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
@@ -136,62 +98,52 @@ pub fn validate(path: &Path, f: &File) -> Result<(), LifecycleError> {
             f.name
         )));
     }
-    let mut ids = BTreeSet::new();
-    for s in &f.step {
-        let ok = !s.id.is_empty()
-            && s.id
-                .chars()
-                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
-        if !ok {
-            return Err(at(&s.id, "an id is lowercase letters, digits and -".into()));
+    if f.states.is_empty() {
+        return Err(whole("states is empty".into()));
+    }
+    for (i, s) in f.states.iter().enumerate() {
+        if !is_word(s) {
+            return Err(whole(format!(
+                "state \"{s}\" is lowercase letters, digits and -"
+            )));
         }
-        if !ids.insert(s.id.as_str()) {
-            return Err(at(&s.id, "the id is used twice".into()));
+        if f.states[..i].contains(s) {
+            return Err(whole(format!("state \"{s}\" is listed twice")));
         }
-    }
-    if !ids.contains(f.start.as_str()) {
-        return Err(whole(format!("start \"{}\" is not a step", f.start)));
-    }
-    let states: Vec<String> = match &f.states {
-        Some(s) => s.clone(),
-        None => DEFAULT_STATES.iter().map(|s| s.to_string()).collect(),
-    };
-    for s in &f.step {
-        check_step(s, &states, &ids).map_err(|m| at(&s.id, m))?;
-    }
-    // every step reachable from start
-    let by_id: BTreeMap<&str, &StepDef> = f.step.iter().map(|s| (s.id.as_str(), s)).collect();
-    let mut seen = BTreeSet::from([f.start.as_str()]);
-    let mut queue = VecDeque::from([f.start.as_str()]);
-    while let Some(id) = queue.pop_front() {
-        for t in targets(by_id[id]) {
-            if seen.insert(t) {
-                queue.push_back(t);
-            }
+        if s == FAILED {
+            return Err(whole(
+                "\"failed\" is the engine's own state; do not list it".into(),
+            ));
         }
     }
-    if let Some(s) = f.step.iter().find(|s| !seen.contains(s.id.as_str())) {
-        return Err(at(&s.id, "not reachable from start".into()));
+    if !f.states.contains(&f.start) {
+        return Err(whole(format!("start \"{}\" is not a state", f.start)));
     }
-    // a closing step reachable from every step
-    for s in &f.step {
-        let mut seen = BTreeSet::from([s.id.as_str()]);
-        let mut queue = VecDeque::from([s.id.as_str()]);
-        let mut found = false;
-        while let Some(id) = queue.pop_front() {
-            if by_id[id].end {
-                found = true;
-                break;
-            }
-            for t in targets(by_id[id]) {
-                if seen.insert(t) {
-                    queue.push_back(t);
-                }
-            }
-        }
-        if !found {
-            return Err(at(&s.id, "no closing step is reachable from here".into()));
-        }
+    if let Some(e) = f.end.iter().find(|e| !f.states.contains(e)) {
+        return Err(whole(format!("end \"{e}\" is not a state")));
+    }
+    for t in &f.transitions {
+        check_transition(t, &f.states, defs).map_err(|message| LifecycleError {
+            file: file.clone(),
+            at: Some(format!("transition \"{} -> {}\"", t.from, t.to)),
+            message,
+        })?;
     }
     Ok(())
+}
+
+/// What `primum lifecycle check` points out without failing: a state no
+/// transition enters or leaves (apart from start and end), which only a
+/// person can move a ticket to. A lifecycle with no transitions at all is
+/// moved by a person throughout, like `manual`.
+pub fn warnings(f: &File) -> Vec<String> {
+    if f.transitions.is_empty() {
+        return vec![];
+    }
+    f.states
+        .iter()
+        .filter(|s| **s != f.start && !f.end.contains(s))
+        .filter(|s| !f.transitions.iter().any(|t| &t.from == *s || &t.to == *s))
+        .map(|s| format!("state \"{s}\": no transition enters or leaves it; only a person can move a ticket there"))
+        .collect()
 }

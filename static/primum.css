@@ -149,5 +149,5 @@ pre.diff .del{color:var(--danger)}
 .conflict-mark{color:var(--warn);font-weight:700;margin-left:4px}
 
 
-/* the item page's lifecycle: name, short version, step */
+/* the item page's lifecycle: name and short version */
 #item-meta .lifecycle{font:12px/1.2 ui-monospace,Menlo,monospace;color:var(--mut);margin-left:12px;align-self:center}

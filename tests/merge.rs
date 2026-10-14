@@ -133,18 +133,26 @@ fn the_kind_merges_like_a_field() {
 }
 
 #[test]
-fn the_lifecycle_and_step_merge_together() {
+fn the_lifecycle_and_its_arguments_merge_together() {
     let b = base();
+    let args = |v: i64| {
+        let mut m = serde_json::Map::new();
+        m.insert("deneme".into(), v.into());
+        Some(m)
+    };
     let mut ours = b.clone();
-    (ours.lifecycle, ours.step) = (Some("a@1".into()), Some("x".into()));
+    (ours.lifecycle, ours.args) = (Some("a@1".into()), args(1));
     let m = merge_item(Some(&b), &ours, &b, &text);
-    assert_eq!(m.item.step.as_deref(), Some("x"));
+    assert_eq!(m.item.args, args(1));
     let mut theirs = b.clone();
-    (theirs.lifecycle, theirs.step) = (Some("a@1".into()), Some("y".into()));
+    (theirs.lifecycle, theirs.args) = (Some("a@1".into()), args(2));
     let m = merge_item(Some(&b), &ours, &theirs, &text);
     assert_eq!(m.fields[0].field, "lifecycle");
     assert_eq!(
         m.fields[0].values,
-        ["a@1 x".to_string(), "a@1 y".to_string()]
+        [
+            "a@1 {\"deneme\":1}".to_string(),
+            "a@1 {\"deneme\":2}".to_string()
+        ]
     );
 }

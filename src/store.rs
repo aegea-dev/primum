@@ -279,7 +279,7 @@ pub fn load(p: &Project) -> Result<Board> {
                 Some(Ok(l)) => Rules::of(&l.file),
                 Some(Err(e)) => return Err(anyhow!(e)),
                 None => Rules {
-                    states: crate::lifecycle::validate::DEFAULT_STATES
+                    states: crate::lifecycle::FALLBACK_STATES
                         .iter()
                         .map(|s| s.to_string())
                         .collect(),
@@ -557,15 +557,21 @@ pub fn computed_context(board: &Board) -> serde_json::Map<String, serde_json::Va
     m
 }
 
-/// Attaches an item to a lifecycle at its current version: its step is the
-/// lifecycle's start, its status the start's state. Returns the version.
-pub fn attach(p: &Project, id: &str, name: &str) -> Result<String> {
+/// Attaches an item to a lifecycle at its current version, with the
+/// arguments its actions read: its status is the lifecycle's start.
+/// Returns the version.
+pub fn attach(
+    p: &Project,
+    id: &str,
+    name: &str,
+    args: Option<serde_json::Map<String, serde_json::Value>>,
+) -> Result<String> {
     let l = crate::lifecycle::resolve(p, name)
         .ok_or_else(|| anyhow!("no lifecycle {name} in lifecycles/"))??;
     change(p, |board| {
         let it = board.get_mut(id)?;
         it.lifecycle = Some(format!("{name}@{}", l.version));
-        it.step = Some(l.file.start.clone());
+        it.args = args;
         it.status = crate::lifecycle::first_state(&l.file);
         it.finished = None;
         let it = it.clone();
@@ -582,7 +588,7 @@ pub fn detach(p: &Project, id: &str) -> Result<()> {
         let manual = board.manual.clone();
         let it = board.get_mut(id)?;
         it.lifecycle = None;
-        it.step = None;
+        it.args = None;
         if !manual.states.contains(&it.status) {
             it.status = manual.states[0].clone();
         }
@@ -812,11 +818,16 @@ pub fn resolve(p: &Project, id: &str, what: &str, keep: Keep) -> Result<()> {
                     let it = it.clone();
                     save(p, &it)?;
                 }
-                // "<name>@<version> <step>", or "manual"
+                // "<name>@<version>", "<name>@<version> <args JSON>", or "manual"
                 "lifecycle" => {
-                    let (pin, step) = match v.split_once(' ') {
-                        Some((pin, step)) => (Some(pin.to_string()), Some(step.to_string())),
-                        None => (None, None),
+                    let (pin, args) = match v.as_str() {
+                        "manual" => (None, None),
+                        v => match v.split_once(' ') {
+                            Some((pin, args)) => {
+                                (Some(pin.to_string()), Some(serde_json::from_str(args)?))
+                            }
+                            None => (Some(v.to_string()), None),
+                        },
                     };
                     // the status follows the side kept: one its lifecycle has
                     let rules = match &pin {
@@ -829,7 +840,7 @@ pub fn resolve(p: &Project, id: &str, what: &str, keep: Keep) -> Result<()> {
                         None => board.manual.clone(),
                     };
                     let it = board.get_mut(id)?;
-                    (it.lifecycle, it.step) = (pin, step);
+                    (it.lifecycle, it.args) = (pin, args);
                     if !rules.states.contains(&it.status) {
                         it.status = rules.states[0].clone();
                     }

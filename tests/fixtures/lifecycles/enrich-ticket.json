@@ -1,0 +1,26 @@
+{
+  "name": "enrich-ticket",
+  "description": "Fetch data from an API and fill the ticket in; ürün bilgisi.",
+  "states": ["create", "idle", "waiting", "processing", "finished", "timed-out"],
+  "start": "create",
+  "end": ["finished", "timed-out"],
+  "transitions": [
+    { "from": "create", "on": "ticket.created", "to": "idle" },
+    { "from": "idle", "to": "processing", "while": "waiting",
+      "timeout": "5m", "on_timeout": "timed-out",
+      "do": [
+        { "action": "http.request@1",
+          "with": { "url": "https://api.example.com/items/${ticket.id}",
+                    "headers": { "Authorization": "Bearer ${env.API_KEY}" } },
+          "expect": "output.status == 200 && has(output.json.data)" }
+      ] },
+    { "from": "processing", "to": "finished",
+      "do": [
+        { "action": "json.pick@1", "with": { "path": "json.data" } },
+        { "action": "ticket.update@1",
+          "with": { "title": "${prev.name}", "note": "Filled in from the API." } },
+        { "action": "checks.is-valid@1", "with": { "ticket": "${ticket}" },
+          "expect": "output.ok" }
+      ] }
+  ]
+}

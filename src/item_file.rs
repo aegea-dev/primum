@@ -97,8 +97,14 @@ pub fn write(item: &Item) -> String {
     if !item.docs.is_empty() {
         out += &format!("docs: {}\n", list(&item.docs));
     }
-    if let (Some(l), Some(s)) = (&item.lifecycle, &item.step) {
-        out += &format!("lifecycle: {l}\nstep: {s}\n");
+    if let Some(l) = &item.lifecycle {
+        out += &format!("lifecycle: {l}\n");
+        if let Some(a) = &item.args {
+            out += &format!(
+                "args: {}\n",
+                serde_json::to_string(a).expect("arguments serialize")
+            );
+        }
     }
     if let Some(f) = &item.finished {
         out += &format!("finished: {f}\n");
@@ -174,7 +180,12 @@ fn set_field(item: &mut Item, key: &str, raw: &str) -> Result<(), String> {
         "needs" => item.needs = list_value(raw)?,
         "docs" => item.docs = list_value(raw)?,
         "lifecycle" => item.lifecycle = Some(raw.to_string()),
-        "step" => item.step = Some(raw.to_string()),
+        "args" => {
+            item.args =
+                Some(serde_json::from_str(raw).map_err(|_| {
+                    "args must be a JSON object, like {\"region\": \"eu\"}".to_string()
+                })?)
+        }
         "finished" => item.finished = (!raw.is_empty()).then(|| raw.to_string()),
         "source" => item.source = text_value(raw)?,
         other => return Err(format!("unknown field `{other}`")),
@@ -226,8 +237,8 @@ pub fn parse(file: &str, text: &str) -> Result<Item, ParseError> {
     if !seen_kind {
         return Err(err(1, "front matter has no `kind`".into()));
     }
-    if item.lifecycle.is_some() != item.step.is_some() {
-        return Err(err(1, "lifecycle and step go together".into()));
+    if item.args.is_some() && item.lifecycle.is_none() {
+        return Err(err(1, "args go with lifecycle".into()));
     }
     let rest: String = lines.collect();
     item.body = rest.strip_prefix('\n').unwrap_or(&rest).to_string();

@@ -34,9 +34,9 @@ function draw(){
     try{await api('/items',{id:IT.id,[el.dataset.f]:v});}catch(e){alert(e.message);}
     await load();
   });
-  // the lifecycle it follows (manual when none) and where it is in it
+  // the lifecycle it follows (manual when none) and its version
   const [lc,ver]=(IT.lifecycle||'manual@').split('@');
-  const life=`<span class=lifecycle title="${esc(IT.lifecycle||'built-in manual lifecycle')}">${esc(lc)}${ver?' '+esc(ver.slice(0,12)):''}${IT.step?' · '+esc(IT.step):''}</span>`;
+  const life=`<span class=lifecycle title="${esc(IT.lifecycle||'built-in manual lifecycle')}">${esc(lc)}${ver?' '+esc(ver.slice(0,12)):''}</span>`;
   $('#item-meta').innerHTML=`<span class=docpath>${esc(IT.file)}</span>${life}`;
   $('#view').innerHTML=IT.body.trim()?md(IT.body):'<p class=empty>(no text yet)</p>';
   $('#edit').classList.toggle('hide',closed);
