@@ -4,9 +4,10 @@ description: The steps a ticket goes through, from created to closed, as a JSON 
 ---
 
 :::caution[In progress]
-primum reads, checks and versions lifecycle files today. Running them (the
-lifecycle engine) is being built; until then every ticket is moved by a
-person.
+A ticket on a lifecycle moves by itself while
+[`primum daemon`](/reference/daemon/) runs. Actions that need a worker
+(`http.request@1`, `command@1`, a project's own actionables) wait until
+workers exist; the rest of a lifecycle runs today.
 :::
 
 A lifecycle is the list of steps one ticket goes through, from created to
