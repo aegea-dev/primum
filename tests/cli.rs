@@ -448,6 +448,29 @@ fn a_closed_pipe_ends_quietly() {
 }
 
 #[test]
+fn the_manager_reads_an_input_and_prints_its_answer() {
+    let t = T::new();
+    let lifecycle: serde_json::Value = serde_json::from_str(&common::example_json()).unwrap();
+    let input = serde_json::json!({
+        "now": "2026-10-14T20:00:00Z",
+        "lifecycle": lifecycle,
+        "ticket": {"id": "12", "title": "Gölge", "status": "create"},
+        "runtime": {"state": "create"},
+        "event": {"id": "e1", "type": "ticket.created", "data": {}}
+    });
+    // no project is needed: it is run from the workspace's root
+    let o = t.run_at(&["manager"], t.dir.path(), &input.to_string());
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+    let a: serde_json::Value = serde_json::from_slice(&o.stdout).unwrap();
+    assert_eq!(a["runtime"]["state"], "idle");
+    assert_eq!(a["status"], "waiting");
+    assert_eq!(a["events"][0]["data"]["action"], "http.request@1");
+    let bad = t.run_at(&["manager"], t.dir.path(), "{}");
+    assert_eq!(bad.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&bad.stderr).contains("the manager's input"));
+}
+
+#[test]
 fn lifecycle_commands() {
     let t = T::new();
     common::with_example(&t.dir.path().join("café"));
