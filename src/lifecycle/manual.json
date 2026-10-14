@@ -1,0 +1,8 @@
+{
+  "name": "manual",
+  "description": "A person moves the ticket: idle, doing, done or wontfix.",
+  "states": ["idle", "doing", "done", "wontfix"],
+  "start": "idle",
+  "end": ["done", "wontfix"],
+  "transitions": []
+}

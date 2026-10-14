@@ -279,7 +279,7 @@ pub fn load(p: &Project) -> Result<Board> {
                 Some(Ok(l)) => Rules::of(&l.file),
                 Some(Err(e)) => return Err(anyhow!(e)),
                 None => Rules {
-                    states: crate::lifecycle::validate::DEFAULT_STATES
+                    states: crate::lifecycle::FALLBACK_STATES
                         .iter()
                         .map(|s| s.to_string())
                         .collect(),

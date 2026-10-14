@@ -429,10 +429,7 @@ fn statuses_come_from_the_lifecycle() {
 }
 
 fn with_example(d: &std::path::Path) {
-    let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures/lifecycles/stakeholder-update.toml");
-    std::fs::create_dir_all(d.join("lifecycles")).unwrap();
-    std::fs::copy(src, d.join("lifecycles/stakeholder-update.toml")).unwrap();
+    common::with_example(d);
 }
 
 #[test]
@@ -441,18 +438,21 @@ fn attach_pins_a_lifecycle_and_detach_returns_to_manual() {
     let p = common::project(d.path());
     with_example(d.path());
     let id = insert(&p, "TODO", "Gölge", ch()).unwrap();
-    let version = attach(&p, &id, "stakeholder-update").unwrap();
+    let version = attach(&p, &id, "enrich-ticket").unwrap();
     assert_eq!(version.len(), 64);
     let b = load(&p).unwrap();
     let it = b.get(&id).unwrap();
     assert_eq!(
         it.lifecycle.as_deref(),
-        Some(format!("stakeholder-update@{version}").as_str())
+        Some(format!("enrich-ticket@{version}").as_str())
     );
-    assert_eq!(it.step.as_deref(), Some("notify"));
-    assert_eq!(it.status, "effects");
-    assert_eq!(b.rules_of(it).states, ["effects", "waiting", "processing"]);
-    assert_eq!(common::subjects(&p)[0], "#1: attach stakeholder-update");
+    assert_eq!(it.step.as_deref(), Some("create"));
+    assert_eq!(it.status, "create");
+    assert_eq!(
+        b.rules_of(it).states,
+        ["create", "idle", "waiting", "processing", "finished", "timed-out", "failed"]
+    );
+    assert_eq!(common::subjects(&p)[0], "#1: attach enrich-ticket");
     let doing = Changes {
         status: Some("doing".into()),
         ..ch()
@@ -478,12 +478,12 @@ fn a_lifecycle_conflict_is_resolved_to_one_side() {
     let p = common::project(d.path());
     with_example(d.path());
     let id = insert(&p, "TODO", "Gölge", ch()).unwrap();
-    let version = attach(&p, &id, "stakeholder-update").unwrap();
+    let version = attach(&p, &id, "enrich-ticket").unwrap();
     let side = |a: &str| Side {
         author: a.into(),
         date: String::new(),
     };
-    let ours = format!("stakeholder-update@{version} notify");
+    let ours = format!("enrich-ticket@{version} create");
     write(
         &p,
         &Conflict {

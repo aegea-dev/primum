@@ -746,17 +746,12 @@ fn context_cmd(p: &Project, cmd: Option<ContextCmd>, json: bool) -> Result<()> {
 
 /// A project's lifecycle by name: a file in lifecycles/, else a built-in one.
 fn find_lifecycle(p: &Project, name: &str) -> Result<crate::lifecycle::Lifecycle> {
-    let file = crate::lifecycle::dir(p).join(format!("{name}.toml"));
-    if file.is_file() {
-        return Ok(crate::lifecycle::load_file(&file)?);
-    }
-    if let Some(l) = crate::lifecycle::built_in(name) {
-        return Ok(l);
-    }
-    bail!(
-        "no lifecycle {name} in {}",
-        crate::lifecycle::dir(p).display()
-    )
+    Ok(crate::lifecycle::resolve(p, name).ok_or_else(|| {
+        anyhow!(
+            "no lifecycle {name} in {}",
+            crate::lifecycle::dir(p).display()
+        )
+    })??)
 }
 
 /// The project's lifecycle files, sorted.
@@ -765,27 +760,67 @@ fn lifecycle_files(p: &Project) -> Vec<PathBuf> {
         .into_iter()
         .flatten()
         .filter_map(|e| e.ok().map(|e| e.path()))
-        .filter(|f| f.extension().is_some_and(|x| x == "toml"))
+        .filter(|f| f.extension().is_some_and(|x| x == "json"))
         .collect();
     v.sort();
     v
 }
 
+/// How `lifecycle show` prints a transition: `from -> to`, what starts it
+/// and what it does, then its extras.
+fn transition_line(t: &crate::lifecycle::format::Transition) -> String {
+    let mut what = vec![];
+    if let Some(on) = &t.on {
+        what.push(format!("on {on}"));
+    }
+    if let Some(w) = &t.when {
+        what.push(format!("when {w}"));
+    }
+    if !t.actions.is_empty() {
+        let names: Vec<&str> = t.actions.iter().map(|a| a.action.as_str()).collect();
+        what.push(format!("do {}", names.join(", ")));
+    }
+    let mut extra = vec![];
+    if let Some(s) = &t.showing {
+        extra.push(format!("while {s}"));
+    }
+    if let (Some(d), Some(to)) = (&t.timeout, &t.on_timeout) {
+        extra.push(format!("timeout {d} -> {to}"));
+    }
+    if let Some(f) = &t.on_fail {
+        extra.push(format!("on fail -> {f}"));
+    }
+    let extra = if extra.is_empty() {
+        String::new()
+    } else {
+        format!("  ({})", extra.join("; "))
+    };
+    format!(
+        "  {:<28} {}{extra}",
+        format!("{} -> {}", t.from, t.to),
+        what.join(" ")
+    )
+}
+
 fn lifecycle_cmd(p: &Project, cmd: LifecycleCmd) -> Result<()> {
-    use crate::lifecycle::{format::Next, load_file, short};
+    use crate::lifecycle::{definitions, load_file, short, validate};
     match cmd {
         LifecycleCmd::Check { target } => {
             let files = match target {
-                Some(t) if t.ends_with(".toml") => vec![PathBuf::from(t)],
-                Some(name) => vec![crate::lifecycle::dir(p).join(format!("{name}.toml"))],
+                Some(t) if t.ends_with(".json") => vec![PathBuf::from(t)],
+                Some(name) => vec![crate::lifecycle::dir(p).join(format!("{name}.json"))],
                 None => lifecycle_files(p),
             };
             if files.is_empty() {
                 println!("no lifecycles in {}", crate::lifecycle::dir(p).display());
             }
+            let defs = definitions::load_all(p)?;
             for f in files {
-                let l = load_file(&f)?;
+                let l = load_file(&f, &defs)?;
                 println!("{}  {}", l.file.name, short(&l.version));
+                for w in validate::warnings(&l.file) {
+                    eprintln!("warning: {}: {w}", f.display());
+                }
             }
         }
         LifecycleCmd::Show { name, json } => {
@@ -798,28 +833,11 @@ fn lifecycle_cmd(p: &Project, cmd: LifecycleCmd) -> Result<()> {
             if !l.file.description.is_empty() {
                 println!("{}", l.file.description);
             }
-            for (s, (_, v)) in l.file.step.iter().zip(&l.steps) {
-                let what = match (&s.action, &s.wait) {
-                    (Some(a), _) => a.clone(),
-                    (_, Some(w)) => format!("wait for {}", w.kind),
-                    _ => "-".into(),
-                };
-                let next = match &s.next {
-                    Some(Next::Step(id)) => format!("-> {id}"),
-                    Some(Next::Branches(bs)) => {
-                        let gos: Vec<&str> = bs.iter().map(|b| b.go.as_str()).collect();
-                        format!("-> {}", gos.join(" | "))
-                    }
-                    None => String::new(),
-                };
-                let end = if s.end { "  (closes)" } else { "" };
-                println!(
-                    "  {:<14} {:<11} {:<18} {next}{end}  {}",
-                    s.id,
-                    s.state.as_deref().unwrap_or("-"),
-                    what,
-                    short(v)
-                );
+            println!("states  {}", l.file.states.join(", "));
+            println!("start   {}", l.file.start);
+            println!("end     {}", l.file.end.join(", "));
+            for t in &l.file.transitions {
+                println!("{}", transition_line(t));
             }
         }
         LifecycleCmd::Attach { id, name } => {
@@ -835,8 +853,9 @@ fn lifecycle_cmd(p: &Project, cmd: LifecycleCmd) -> Result<()> {
         LifecycleCmd::List => {
             let manual = find_lifecycle(p, "manual")?;
             println!("manual  {}  built in", short(&manual.version));
+            let defs = definitions::load_all(p)?;
             for f in lifecycle_files(p) {
-                match load_file(&f) {
+                match load_file(&f, &defs) {
                     Ok(l) => println!(
                         "{}  {}  {}",
                         l.file.name,

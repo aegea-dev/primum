@@ -1,56 +1,92 @@
-use primum::lifecycle::{self, parse};
+use primum::lifecycle::{self, parse, validate};
+use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 
-fn fixture(name: &str) -> (PathBuf, String) {
-    let p = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures/lifecycles")
-        .join(format!("{name}.toml"));
-    let text = std::fs::read_to_string(&p).unwrap();
-    (p, text)
+fn example_path() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/lifecycles/enrich-ticket.json")
+}
+
+/// The example without its project actionable, for tests that use no
+/// definitions.
+fn example_without_project_actionables() -> String {
+    std::fs::read_to_string(example_path())
+        .unwrap()
+        .replace(
+            r#"{ "action": "checks.is-valid@1", "with": { "ticket": "${ticket}" },
+          "expect": "output.ok" }"#,
+            r#"{ "action": "command@1", "with": { "run": ["./check.sh", "${ticket.id}"] } }"#,
+        )
+}
+
+fn small() -> Value {
+    json!({
+        "name": "akış",
+        "states": ["a", "b", "c"],
+        "start": "a",
+        "end": ["c"],
+        "transitions": [
+            { "from": "a", "on": "ticket.created", "to": "b" },
+            { "from": "b", "to": "c", "timeout": "5m", "on_timeout": "c",
+              "do": [ { "action": "http.request@1",
+                        "with": { "url": "https://example.com/${ticket.id}" },
+                        "expect": "output.status == 200" } ] }
+        ]
+    })
+}
+
+fn check(v: &Value) -> Result<lifecycle::Lifecycle, String> {
+    lifecycle::load_text(Path::new("lifecycles/akış.json"), &v.to_string(), &[])
+        .map_err(|e| e.to_string())
 }
 
 #[test]
 fn the_example_parses() {
-    let (p, text) = fixture("stakeholder-update");
-    let f = parse(&p, &text).unwrap();
-    assert_eq!(f.name, "stakeholder-update");
-    assert_eq!(f.start, "notify");
-    let ids: Vec<&str> = f.step.iter().map(|s| s.id.as_str()).collect();
-    assert_eq!(
-        ids,
-        [
-            "notify",
-            "await-reply",
-            "call-api",
-            "mark-doing",
-            "await-input",
-            "report",
-            "approve",
-            "finish"
-        ]
-    );
+    let f = parse(&example_path(), &example_without_project_actionables()).unwrap();
+    assert_eq!(f.name, "enrich-ticket");
+    assert_eq!(f.start, "create");
+    assert_eq!(f.end, ["finished", "timed-out"]);
+    let moves: Vec<(&str, &str)> = f
+        .transitions
+        .iter()
+        .map(|t| (t.from.as_str(), t.to.as_str()))
+        .collect();
+    assert_eq!(moves, [("create", "idle"), ("idle", "processing"), ("processing", "finished")]);
+    assert_eq!(f.transitions[1].showing.as_deref(), Some("waiting"));
+    assert_eq!(f.transitions[2].actions[0].action, "json.pick@1");
 }
 
 #[test]
-fn the_built_in_manual_lifecycle_parses() {
+fn an_action_is_a_name_or_an_object() {
+    let mut v = small();
+    v["transitions"][1]["do"] = json!(["json.pick@1"]);
+    let e = check(&v).unwrap_err();
+    assert!(e.contains("json.pick@1 needs with.path"), "{e}");
+    v["transitions"][1]["do"] = json!([{ "action": "json.pick@1", "with": { "path": "a" } }]);
+    check(&v).unwrap();
+    v["transitions"][1]["do"] = json!([12]);
+    assert!(check(&v).unwrap_err().contains("an action is a name"), "a number is neither");
+}
+
+#[test]
+fn the_built_in_manual_lifecycle() {
     let f = lifecycle::manual();
     assert_eq!(f.name, "manual");
+    assert_eq!(f.states, ["idle", "doing", "done", "wontfix"]);
     assert_eq!(f.start, "idle");
-    assert_eq!(
-        f.states.as_deref().unwrap(),
-        ["idle", "doing", "done", "wontfix"]
-    );
+    assert_eq!(f.end, ["done", "wontfix"]);
+    assert!(f.transitions.is_empty(), "a person moves it");
+    assert_eq!(lifecycle::states(&f), ["idle", "doing", "done", "wontfix"]);
+    assert_eq!(lifecycle::closed_states(&f), ["done", "wontfix"]);
+    assert_eq!(lifecycle::first_state(&f), "idle");
+    assert_eq!(lifecycle::Rules::of(&f).states, ["idle", "doing", "done", "wontfix"]);
 }
 
 #[test]
-fn unknown_keys_are_errors() {
-    let e = parse(
-        Path::new("lifecycles/x.toml"),
-        "name = \"x\"\nstart = \"a\"\nrenk = 1\n[[step]]\nid = \"a\"\nend = true\n",
-    )
-    .unwrap_err();
-    assert!(e.to_string().starts_with("lifecycles/x.toml: "), "{e}");
-    assert!(e.to_string().contains("renk"), "{e}");
+fn a_lifecycle_that_runs_can_also_be_failed() {
+    let l = check(&small()).unwrap();
+    let r = lifecycle::Rules::of(&l.file);
+    assert_eq!(r.states, ["a", "b", "c", "failed"]);
+    assert_eq!(r.closed, ["c"]);
 }
 
 #[test]
@@ -59,128 +95,98 @@ fn expressions_templates_and_durations() {
     assert!(expr::compile("output.status >= 200 && output.status < 300").is_ok());
     assert!(expr::compile("input.source == 'http' &&").is_err());
     assert_eq!(
-        expr::templates("${needs.api_url}/updates/${ticket.id}").unwrap(),
-        ["needs.api_url", "ticket.id"]
+        expr::templates("${project.api_url}/updates/${ticket.id}").unwrap(),
+        ["project.api_url", "ticket.id"]
     );
     assert!(expr::templates("open ${ticket.id").is_err());
-    assert_eq!(
-        expr::templates("no templates, ışık").unwrap(),
-        Vec::<String>::new()
-    );
+    assert_eq!(expr::templates("no templates, ışık").unwrap(), Vec::<String>::new());
     assert_eq!(expr::duration("30s").unwrap().as_secs(), 30);
-    assert_eq!(expr::duration("7d").unwrap().as_secs(), 7 * 86_400);
     assert_eq!(expr::duration("1h 30m").unwrap().as_secs(), 5_400);
-    assert_eq!(expr::duration("2w").unwrap().as_secs(), 14 * 86_400);
     for bad in ["", "7", "-1s", "soon"] {
         assert!(expr::duration(bad).is_err(), "{bad}");
     }
 }
 
 #[test]
-fn every_broken_file_says_what_is_wrong() {
-    let cases = [
-        (
-            "name-mismatch",
-            "name \"other\" must match the file name \"name-mismatch\"",
-        ),
-        ("start-missing", "start \"nowhere\" is not a step"),
-        ("duplicate-id", "step \"a\": the id is used twice"),
-        (
-            "bad-id",
-            "step \"Çağrı\": an id is lowercase letters, digits and -",
-        ),
-        ("next-missing", "step \"a\": next \"nowhere\" is not a step"),
-        (
-            "both-do-wait",
-            "step \"a\": a step either does something (do) or waits (wait), not both",
-        ),
-        (
-            "nothing-to-do",
-            "step \"a\": a step does something (do) or waits (wait); only a closing step (end = true) may do neither",
-        ),
-        (
-            "neither-next-end",
-            "step \"a\": a step needs next, or end = true",
-        ),
-        ("unreachable", "step \"b\": not reachable from start"),
-        (
-            "no-way-out",
-            "step \"a\": no closing step is reachable from here",
-        ),
-        ("unknown-action", "step \"a\": unknown actionable fax@1"),
-        (
-            "command-no-run",
-            "step \"a\": command@1 needs with.run, a list of strings",
-        ),
-        ("with-without-do", "step \"a\": with goes with do"),
-        (
-            "bad-state",
-            "step \"a\": state \"dreaming\" is not one of idle, waiting, processing, effects, done, wontfix",
-        ),
-        ("bad-target", "step \"a\": bad expression"),
-        ("bad-template", "step \"a\": unclosed"),
-        ("bad-duration", "step \"a\": a duration is like"),
-        (
-            "bad-wait",
-            "step \"a\": wait for \"input\" or \"approval\", not \"email\"",
-        ),
+fn every_broken_lifecycle_says_what_is_wrong() {
+    type Fault = fn(&mut Value);
+    let cases: Vec<(Fault, &str)> = vec![
+        (|v| v["name"] = json!("başka"), "name \"başka\" must match the file name \"akış\""),
+        (|v| v["states"] = json!([]), "states is empty"),
+        (|v| v["states"] = json!(["a", "B", "b", "c"]), "state \"B\" is lowercase letters, digits and -"),
+        (|v| v["states"] = json!(["a", "a", "b", "c"]), "state \"a\" is listed twice"),
+        (|v| v["states"] = json!(["a", "b", "c", "failed"]), "\"failed\" is the engine's own state; do not list it"),
+        (|v| v["start"] = json!("x"), "start \"x\" is not a state"),
+        (|v| v["end"] = json!(["x"]), "end \"x\" is not a state"),
+        (|v| v["renk"] = json!(1), "unknown field `renk`"),
+        (|v| v["transitions"][0]["to"] = json!("x"), "transition \"a -> x\": to \"x\" is not a state"),
+        (|v| v["transitions"][0]["from"] = json!("x"), "transition \"x -> b\": from \"x\" is not a state"),
+        (|v| v["transitions"][1]["while"] = json!("x"), "transition \"b -> c\": while \"x\" is not a state"),
+        (|v| v["transitions"][1]["on_fail"] = json!("x"), "transition \"b -> c\": on_fail \"x\" is not a state"),
+        (|v| v["transitions"][1]["on_timeout"] = json!("x"), "transition \"b -> c\": on_timeout \"x\" is not a state"),
+        (|v| { v["transitions"][0].as_object_mut().unwrap().remove("on"); }, "transition \"a -> b\": a transition needs on, do, or both"),
+        (|v| v["transitions"][0]["on"] = json!("Ticket Created"), "transition \"a -> b\": on \"Ticket Created\" is an event type, like ticket.created"),
+        (|v| v["transitions"][1]["timeout"] = json!("soon"), "transition \"b -> c\": a duration is like"),
+        (|v| { v["transitions"][1].as_object_mut().unwrap().remove("on_timeout"); }, "transition \"b -> c\": timeout needs on_timeout"),
+        (|v| { v["transitions"][1].as_object_mut().unwrap().remove("timeout"); }, "transition \"b -> c\": on_timeout needs timeout"),
+        (|v| v["transitions"][0]["when"] = json!("input.x &&"), "transition \"a -> b\": bad expression"),
+        (|v| v["transitions"][1]["do"][0]["action"] = json!("fax@1"), "transition \"b -> c\": unknown actionable fax@1"),
+        (|v| v["transitions"][1]["do"][0]["with"] = json!({}), "transition \"b -> c\": http.request@1 needs with.url"),
+        (|v| v["transitions"][1]["do"][0]["with"]["renk"] = json!(1), "transition \"b -> c\": http.request@1 takes no with.renk"),
+        (|v| v["transitions"][1]["do"][0]["with"]["url"] = json!("https://e.com/${ticket.id"), "transition \"b -> c\": unclosed"),
+        (|v| v["transitions"][1]["do"][0]["expect"] = json!("output.status =="), "transition \"b -> c\": bad expression"),
+        (|v| v["transitions"][1]["do"][0]["renk"] = json!(1), "unknown field `renk`"),
     ];
-    for (name, want) in cases {
-        let p = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join(format!("tests/fixtures/lifecycles/broken/{name}.toml"));
-        let e = lifecycle::load_file(&p).unwrap_err().to_string();
-        assert!(e.contains(want), "{name}: {e}");
-        assert!(e.contains(&format!("{name}.toml: ")), "{name}: {e}");
+    for (fault, want) in cases {
+        let mut v = small();
+        fault(&mut v);
+        let e = check(&v).unwrap_err();
+        assert!(e.contains(want), "want {want:?}, got {e}");
+        assert!(e.starts_with("lifecycles/akış.json: "), "{e}");
     }
 }
 
 #[test]
 fn the_example_and_the_manual_lifecycle_are_valid() {
-    let (p, _) = fixture("stakeholder-update");
-    // approve -> await-input loops back, with a way out
-    lifecycle::load_file(&p).unwrap();
-    lifecycle::validate::validate(std::path::Path::new("manual.toml"), &lifecycle::manual())
-        .unwrap();
+    lifecycle::load_text(&example_path(), &example_without_project_actionables(), &[]).unwrap();
+    validate::validate(Path::new("manual.json"), &lifecycle::manual(), &[]).unwrap();
 }
 
 #[test]
-fn versions_follow_steps_not_formatting() {
-    let (p, text) = fixture("stakeholder-update");
-    let a = lifecycle::load_text(&p, &text).unwrap();
+fn a_state_only_a_person_reaches_is_a_warning() {
+    let mut v = small();
+    v["states"] = json!(["a", "b", "c", "beklemede"]);
+    let l = check(&v).unwrap();
+    assert_eq!(
+        validate::warnings(&l.file),
+        ["state \"beklemede\": no transition enters or leaves it; only a person can move a ticket there"]
+    );
+    assert!(validate::warnings(&lifecycle::manual()).is_empty(), "manual has no transitions at all");
+}
+
+#[test]
+fn versions_follow_content_not_formatting_or_descriptions() {
+    let a = check(&small()).unwrap();
     assert_eq!(a.version.len(), 64);
     assert_eq!(lifecycle::short(&a.version).len(), 12);
-    let reformatted = text.replace(" = ", "=").replace("# remind: send again", "");
-    let b = lifecycle::load_text(&p, &reformatted).unwrap();
-    assert_eq!(a.version, b.version, "comments and spacing do not count");
-    let changed = text.replace("timeout = \"7d\"", "timeout = \"8d\"");
-    let c = lifecycle::load_text(&p, &changed).unwrap();
-    assert_ne!(a.version, c.version);
-    assert_ne!(
-        a.steps[1].1, c.steps[1].1,
-        "await-reply's own version changed"
-    );
-    assert_eq!(a.steps[0].1, c.steps[0].1, "notify's did not");
-    // an actionable's version is part of the step's version
-    let mut step = a.file.step[0].clone();
-    let before = lifecycle::version::step(&step);
-    step.action = Some("command@2".into());
-    assert_ne!(lifecycle::version::step(&step), before);
-    // the version is stable: the same text, the same hash, every time
-    assert_eq!(a.version, lifecycle::load_text(&p, &text).unwrap().version);
-}
-
-#[test]
-fn states_and_closed_states_of_a_lifecycle() {
-    let m = lifecycle::manual();
-    assert_eq!(lifecycle::states(&m), ["idle", "doing", "done", "wontfix"]);
-    assert_eq!(lifecycle::closed_states(&m), ["done", "wontfix"]);
-    assert_eq!(lifecycle::first_state(&m), "idle");
-    let (p, text) = fixture("stakeholder-update");
-    let f = parse(&p, &text).unwrap();
-    assert_eq!(
-        lifecycle::states(&f),
-        ["effects", "waiting", "processing"],
-        "the states its steps name, in order"
-    );
-    assert_eq!(lifecycle::first_state(&f), "effects");
+    let pretty = serde_json::to_string_pretty(&small()).unwrap();
+    let b = lifecycle::load_text(Path::new("lifecycles/akış.json"), &pretty, &[]).unwrap();
+    assert_eq!(a.version, b.version, "formatting does not count");
+    let mut v = small();
+    v["description"] = json!("açıklama");
+    v["transitions"][0]["description"] = json!("başlangıç");
+    v["transitions"][1]["do"][0]["description"] = json!("istek");
+    assert_eq!(a.version, check(&v).unwrap().version, "descriptions do not count");
+    let mut v = small();
+    v["transitions"][1]["timeout"] = json!("6m");
+    assert_ne!(a.version, check(&v).unwrap().version, "a transition changed");
+    let mut v = small();
+    v["transitions"][1]["do"][0]["with"]["url"] = json!("https://example.org/${ticket.id}");
+    assert_ne!(a.version, check(&v).unwrap().version, "an argument changed");
+    let mut v = small();
+    v["transitions"][0]["do"] = json!([{ "action": "ticket.update@1", "with": { "note": "ü" } }]);
+    let named = check(&v).unwrap().version;
+    v["transitions"][0]["do"] = json!([{ "with": { "note": "ü" }, "action": "ticket.update@1" }]);
+    assert_eq!(named, check(&v).unwrap().version, "key order does not count");
+    assert_eq!(a.version, check(&small()).unwrap().version, "stable");
 }

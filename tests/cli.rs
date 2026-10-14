@@ -1,3 +1,4 @@
+mod common;
 use std::process::{Command, Output, Stdio};
 
 /// A temporary workspace (also HOME) with a project `café`, made by the
@@ -449,47 +450,41 @@ fn a_closed_pipe_ends_quietly() {
 #[test]
 fn lifecycle_commands() {
     let t = T::new();
-    let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures/lifecycles/stakeholder-update.toml");
+    common::with_example(&t.dir.path().join("café"));
     let dir = t.dir.path().join("café/lifecycles");
-    std::fs::create_dir_all(&dir).unwrap();
-    std::fs::copy(&src, dir.join("stakeholder-update.toml")).unwrap();
     let out = t.out(&["lifecycle", "check"]);
-    assert!(out.starts_with("stakeholder-update  "), "{out}");
+    assert!(out.starts_with("enrich-ticket  "), "{out}");
     assert_eq!(out.split_whitespace().nth(1).unwrap().len(), 12);
     let list = t.out(&["lifecycle", "list"]);
     assert!(
-        list.contains("manual") && list.contains("built in") && list.contains("stakeholder-update"),
+        list.contains("manual") && list.contains("built in") && list.contains("enrich-ticket"),
         "{list}"
     );
-    let show = t.out(&["lifecycle", "show", "stakeholder-update"]);
+    let show = t.out(&["lifecycle", "show", "enrich-ticket"]);
     assert!(
-        show.contains("notify") && show.contains("command@1") && show.contains("-> await-reply"),
+        show.contains("idle -> processing") && show.contains("http.request@1") && show.contains("while waiting"),
         "{show}"
     );
     let json: serde_json::Value =
         serde_json::from_str(&t.out(&["lifecycle", "show", "manual", "--json"])).unwrap();
     assert_eq!(json["file"]["start"], "idle");
-    std::fs::write(dir.join("kırık.toml"), "name = \"kırık\"\n").unwrap();
+    std::fs::write(dir.join("kırık.json"), "{\"name\": \"kırık\"}\n").unwrap();
     let o = t.run(&["lifecycle", "check"]);
     assert_eq!(o.status.code(), Some(1));
-    assert!(String::from_utf8_lossy(&o.stderr).contains("kırık.toml"));
+    assert!(String::from_utf8_lossy(&o.stderr).contains("kırık.json"));
 }
 
 #[test]
 fn attach_and_detach_on_the_command_line() {
     let t = T::new();
-    let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures/lifecycles/stakeholder-update.toml");
+    common::with_example(&t.dir.path().join("café"));
     let dir = t.dir.path().join("café/lifecycles");
-    std::fs::create_dir_all(&dir).unwrap();
-    std::fs::copy(&src, dir.join("stakeholder-update.toml")).unwrap();
     t.out(&["add", "TODO", "Gölge"]);
-    let out = t.out(&["lifecycle", "attach", "1", "stakeholder-update"]);
-    assert!(out.starts_with("#1: stakeholder-update "), "{out}");
+    let out = t.out(&["lifecycle", "attach", "1", "enrich-ticket"]);
+    assert!(out.starts_with("#1: enrich-ticket "), "{out}");
     let show = t.out(&["show", "1"]);
     assert!(
-        show.contains("lifecycle stakeholder-update") && show.contains("step notify"),
+        show.contains("lifecycle enrich-ticket") && show.contains("step create"),
         "{show}"
     );
     assert_eq!(t.out(&["lifecycle", "detach", "#1"]).trim(), "#1: manual");
@@ -519,16 +514,14 @@ fn context_on_the_command_line() {
 #[test]
 fn start_on_a_lifecycle_without_doing_says_what_to_do() {
     let t = T::new();
-    let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures/lifecycles/stakeholder-update.toml");
+    common::with_example(&t.dir.path().join("café"));
     let dir = t.dir.path().join("café/lifecycles");
-    std::fs::create_dir_all(&dir).unwrap();
-    std::fs::copy(&src, dir.join("stakeholder-update.toml")).unwrap();
     t.out(&["add", "TODO", "Gölge"]);
-    t.out(&["lifecycle", "attach", "1", "stakeholder-update"]);
+    t.out(&["lifecycle", "attach", "1", "enrich-ticket"]);
     let e = t.err(&["start", "1"]);
     assert!(
-        e.contains("is not one of effects, waiting, processing") && e.contains("--status"),
+        e.contains("is not one of create, idle, waiting, processing, finished, timed-out, failed")
+            && e.contains("--status"),
         "{e}"
     );
 }

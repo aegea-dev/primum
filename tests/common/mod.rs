@@ -65,3 +65,21 @@ pub fn person(dir: &Path, name: &str) -> Project {
     h.git(&["config", "user.email", &email]).unwrap();
     p
 }
+
+/// The example lifecycle (`tests/fixtures/lifecycles/enrich-ticket.json`)
+/// with its project actionable replaced by a built-in, for projects that
+/// define no actionables.
+pub fn example_json() -> String {
+    let p = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/lifecycles/enrich-ticket.json");
+    std::fs::read_to_string(p).unwrap().replace(
+        r#"{ "action": "checks.is-valid@1", "with": { "ticket": "${ticket}" },
+          "expect": "output.ok" }"#,
+        r#"{ "action": "command@1", "with": { "run": ["./check.sh"] } }"#,
+    )
+}
+
+/// Writes the example lifecycle into a project folder.
+pub fn with_example(dir: &Path) {
+    std::fs::create_dir_all(dir.join("lifecycles")).unwrap();
+    std::fs::write(dir.join("lifecycles/enrich-ticket.json"), example_json()).unwrap();
+}

@@ -1,90 +1,101 @@
-//! The lifecycle file as TOML: what people write, checked key by key (an
+//! The lifecycle file as JSON: what people write, checked key by key (an
 //! unknown key is an error, never ignored).
-use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use serde::{Deserialize, Deserializer, Serialize};
+use serde_json::{Map, Value};
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct File {
     pub name: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub description: String,
+    /// Every state a ticket can be in, in order.
+    pub states: Vec<String>,
+    /// Where a ticket begins.
     pub start: String,
-    /// What the lifecycle reads: a name and where it comes from.
+    /// The closing states.
     #[serde(default)]
-    pub needs: BTreeMap<String, String>,
-    /// The lifecycle's own states; the defaults when absent.
+    pub end: Vec<String>,
     #[serde(default)]
-    pub states: Option<Vec<String>>,
-    pub step: Vec<StepDef>,
+    pub transitions: Vec<Transition>,
 }
 
+/// A move from one state to another.
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct StepDef {
-    pub id: String,
+pub struct Transition {
+    pub from: String,
+    pub to: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub description: String,
+    /// The event type that triggers it; without, it starts on entering `from`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub state: Option<String>,
-    /// An actionable and its version: `command@1`.
-    #[serde(default, rename = "do", skip_serializing_if = "Option::is_none")]
-    pub action: Option<String>,
+    pub on: Option<String>,
+    /// A condition that must hold for it to be taken.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub with: Option<toml::Table>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub wait: Option<Wait>,
-    /// The condition that completes the step.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub target: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub retry: Option<Retry>,
+    pub when: Option<String>,
+    /// The chain of actions, run in order.
+    #[serde(default, rename = "do", skip_serializing_if = "Vec::is_empty")]
+    pub actions: Vec<Action>,
+    /// The status shown while the chain runs.
+    #[serde(default, rename = "while", skip_serializing_if = "Option::is_none")]
+    pub showing: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timeout: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub on_error: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub on_timeout: Option<String>,
+    /// Where a failed chain goes instead of `failed`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub next: Option<Next>,
-    /// A closing step: the ticket is closed here.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub end: bool,
+    pub on_fail: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+/// One action in a chain: a name like `json.pick@1`, or an object with
+/// arguments and a check. Both forms read into this one.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Action {
+    pub action: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub description: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub with: Option<Map<String, Value>>,
+    /// A condition over `output`; false means the action failed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expect: Option<String>,
+}
+
+#[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Wait {
-    /// `input` or `approval`.
-    #[serde(rename = "for")]
-    pub kind: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub when: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub timeout: Option<String>,
-    /// For an approval: the step to take when the timeout passes.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub recommend: Option<String>,
+struct Call {
+    action: String,
+    #[serde(default)]
+    description: String,
+    #[serde(default)]
+    with: Option<Map<String, Value>>,
+    #[serde(default)]
+    expect: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct Retry {
-    pub attempts: u32,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub backoff: Option<String>,
-}
-
-/// The next step, or branches tried in order (the last without `when`).
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
-#[serde(untagged)]
-pub enum Next {
-    Step(String),
-    Branches(Vec<Branch>),
-}
-
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct Branch {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub when: Option<String>,
-    pub go: String,
+impl<'de> Deserialize<'de> for Action {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        match Value::deserialize(d)? {
+            Value::String(action) => Ok(Action {
+                action,
+                description: String::new(),
+                with: None,
+                expect: None,
+            }),
+            v @ Value::Object(_) => {
+                let c: Call = serde_json::from_value(v).map_err(serde::de::Error::custom)?;
+                Ok(Action {
+                    action: c.action,
+                    description: c.description,
+                    with: c.with,
+                    expect: c.expect,
+                })
+            }
+            _ => Err(serde::de::Error::custom(
+                "an action is a name like \"json.pick@1\", or an object with \"action\"",
+            )),
+        }
+    }
 }
