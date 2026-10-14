@@ -28,6 +28,10 @@ export default defineConfig({
 	site: SITE,
 	base: BASE,
 	trailingSlash: 'always',
+	// Published pages that moved: their old URLs keep working.
+	redirects: {
+		'/guides/many-projects/': `${BASE}/guides/workspaces/`.replace('//', '/'),
+	},
 	markdown: { remarkPlugins: [remarkBase] },
 	integrations: [
 		starlight({
@@ -66,6 +70,7 @@ export default defineConfig({
 					items: [
 						{ label: 'Overview', slug: 'commands' },
 						{ label: 'init', slug: 'commands/init' },
+						{ label: 'workspace', slug: 'commands/workspace' },
 						{ label: 'add', slug: 'commands/add' },
 						{ label: 'list', slug: 'commands/list' },
 						{ label: 'show', slug: 'commands/show' },
@@ -92,7 +97,7 @@ export default defineConfig({
 					items: [
 						{ label: 'Adding many items', slug: 'guides/adding-many-items' },
 						{ label: 'Specs, plans and other documents', slug: 'guides/documents' },
-						{ label: 'Many projects', slug: 'guides/many-projects' },
+						{ label: 'Workspaces', slug: 'guides/workspaces' },
 						{ label: 'History and sync', slug: 'guides/history-and-sync' },
 						{ label: 'Conflicts', slug: 'guides/conflicts' },
 						{ label: 'GitHub Issues', slug: 'guides/github-issues' },

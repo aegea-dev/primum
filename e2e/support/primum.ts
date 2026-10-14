@@ -1,5 +1,5 @@
-// A board for each test: two temporary projects with Turkish fixture items, a
-// temporary XDG_CONFIG_HOME listing them, and `primum serve` on a free port.
+// A board for each test: a temporary workspace (also HOME) holding two
+// projects with non-ASCII fixture items, and `primum serve` on a free port.
 import { once } from "node:events";
 import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { get } from "node:http";
@@ -66,13 +66,13 @@ function respondsOk(url: string): Promise<boolean> {
 }
 
 async function makeBoard(dir: string, binary: string): Promise<{ root: string; env: NodeJS.ProcessEnv }> {
-  const env = { ...process.env, XDG_CONFIG_HOME: join(dir, "config"), NO_COLOR: "1" };
+  const env = { ...process.env, HOME: dir, NO_COLOR: "1" };
   const root = join(dir, "işler");
   const other = join(dir, "ödev");
-  await mkdir(root);
-  await mkdir(other);
+  await run(binary, ["workspace", "init"], dir, env);
+  await run(binary, ["init", "işler"], dir, env);
+  await run(binary, ["init", "ödev"], dir, env);
   const p = (...args: string[]) => run(binary, args, root, env);
-  await p("init");
   await writeFile(join(dir, "body.md"), "## Neden\n\nGökçe galeriyi açınca **boş** sayfa görüyor.\n");
   await p("add", "BUG", "Gökçe'nin galerisi boş açılıyor", "--impact", "8", "--urgency", "7", "--body-file", join(dir, "body.md"));
   await p("add", "TODO", "Özgür için CSV dışa aktarımı", "--needs", "BUG:1");
@@ -82,14 +82,13 @@ async function makeBoard(dir: string, binary: string): Promise<{ root: string; e
   await p("doc", "BUG:1", "spec", "--file", join(dir, "spec.md"));
   await writeFile(join(dir, "plan.md"), "# Galeri planı\n\n1. önce\n2. sonra\n");
   await p("doc", "BUG:1", "plan", "--file", join(dir, "plan.md"));
-  await run(binary, ["init"], other, env);
   await run(binary, ["add", "URGENT", "Ödev teslimi"], other, env);
   await p("set", "BUG:1", "--effort", "4");
   await makeConflict(dir, binary, root, env);
   return { root, env };
 }
 
-/// A second machine (its own config) clones işler through a bare remote;
+/// A second machine (its own workspace) clones işler through a bare remote;
 /// both change KILLER:1's urgency and sync, which leaves a conflict on
 /// this machine. Sync is manual, so nothing else syncs during the tests.
 async function makeConflict(dir: string, binary: string, root: string, env: NodeJS.ProcessEnv): Promise<void> {
@@ -98,9 +97,11 @@ async function makeConflict(dir: string, binary: string, root: string, env: Node
   const p = (...args: string[]) => run(binary, args, root, env);
   await p("remote", "set", remote, "--manual");
   await p("sync");
-  const env2 = { ...env, XDG_CONFIG_HOME: join(dir, "config2") };
-  await run(binary, ["clone", remote, "kopya"], dir, env2);
-  const q = (...args: string[]) => run(binary, args, join(dir, "kopya"), env2);
+  const machine2 = join(dir, "machine2");
+  await mkdir(machine2);
+  await run(binary, ["workspace", "init"], machine2, env);
+  await run(binary, ["clone", remote, "kopya"], machine2, env);
+  const q = (...args: string[]) => run(binary, args, join(machine2, "kopya"), env);
   await q("remote", "set", remote, "--manual");
   await q("set", "KILLER:1", "--urgency", "2");
   await q("sync");

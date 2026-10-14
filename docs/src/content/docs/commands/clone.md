@@ -9,8 +9,9 @@ primum clone git@github.com:me/boards.git my-lib --branch my-lib
 ```
 
 Creates `FOLDER` (default: the remote's name without `.git`), fetches the
-project's history into it, checks out the items, sets the remote, and lists
-the project on this machine.
+project's history into it, checks out the items and `project.json`, and
+sets the remote. Run in a [workspace](/guides/workspaces/), the new project
+joins it.
 
 | Option | Effect |
 |---|---|

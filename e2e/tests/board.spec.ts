@@ -84,8 +84,9 @@ test("the second project's tab shows its own items", async ({ page, board }) => 
 });
 
 test("a linked item shows its GitHub issue", async ({ page, board }) => {
-  const { appendFile, readFile, writeFile } = await import("node:fs/promises");
-  await appendFile(join(board.root, "primum.toml"), '\n[github]\nrepo = "ozgur/isler"\n');
+  const { readFile, writeFile } = await import("node:fs/promises");
+  const settings = JSON.parse(await readFile(join(board.root, "project.json"), "utf8"));
+  await writeFile(join(board.root, "project.json"), JSON.stringify({ ...settings, github: { repo: "ozgur/isler" } }));
   const file = join(board.root, "items/DEBT-1.md");
   const text = await readFile(file, "utf8");
   await writeFile(file, text.replace("needs: []\n", "needs: []\ngithub: 7\n"));

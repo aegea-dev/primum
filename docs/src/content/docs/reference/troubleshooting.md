@@ -10,10 +10,20 @@ edit outside primum left it in a form primum does not write; fix the line to
 match [item files](/reference/item-files/). `primum log TODO:87` shows the
 last good version.
 
-## "several projects are listed; choose one with -p NAME"
+## "choose a project with -p NAME: ..."
 
-The command ran outside a project, with more than one listed. Pass
-`-p NAME`, or `cd` into the project. `primum projects` lists the names.
+The command ran at a workspace's root, which holds more than one project.
+Pass one of the names listed, or `cd` into the project.
+
+## "no primum project here"
+
+The command ran outside any project or workspace. `cd` into your boards
+folder, or make one with `primum workspace init` and `primum init NAME`.
+
+## "~/.config/primum/projects.toml is no longer used"
+
+Shown once after upgrading. primum finds boards from the folder you are
+in; see [moving boards from earlier versions](/guides/workspaces/#moving-boards-from-earlier-versions).
 
 ## History is off
 

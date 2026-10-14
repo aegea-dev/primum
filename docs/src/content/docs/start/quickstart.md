@@ -3,17 +3,19 @@ title: Quickstart
 description: A project, three items, the next one to do, and the board, in five minutes.
 ---
 
-## Make a project
+## Make a workspace and a project
 
-Any folder can hold a project. It does not need to be a git repository.
+A workspace is a folder holding your boards. It does not need to be a git
+repository.
 
 ```bash
-mkdir -p ~/boards/my-app && cd ~/boards/my-app
-primum init
+mkdir ~/boards && cd ~/boards
+primum workspace init
+primum init my-app && cd my-app
 ```
 
-`init` writes `primum.toml` and an empty `items/`, starts the project's
-history, and lists the project on this machine.
+`workspace init` writes `primum.toml`; `init my-app` makes the subfolder
+`my-app` with `project.json` and an empty `items/`, and starts its history.
 
 ## Add items
 

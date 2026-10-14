@@ -5,7 +5,8 @@ description: Every primum command, what it does, and the option they all share.
 
 | Command | Does |
 |---|---|
-| [`init`](/commands/init/) | Make this folder a project and list it |
+| [`init`](/commands/init/) | Make a project, in a workspace or here |
+| [`workspace`](/commands/workspace/) | Make a workspace, or migrate earlier boards |
 | [`add`](/commands/add/) | Add an item; prints its id |
 | [`list`](/commands/list/) | Items in priority order |
 | [`show`](/commands/show/) | One item: scores, needs, text and documents |
@@ -18,7 +19,7 @@ description: Every primum command, what it does, and the option they all share.
 | [`delete`](/commands/delete/) | Delete an item and its documents |
 | [`serve`](/commands/serve/) | Open the board in the browser |
 | [`log`](/commands/log/) | Changes to the project or one item |
-| [`projects`](/commands/projects/) | The projects this machine shows |
+| [`projects`](/commands/projects/) | The workspace's projects |
 | [`remote`](/commands/remote/) | This machine's remote for the project |
 | [`clone`](/commands/clone/) | Make a project from a remote |
 | [`sync`](/commands/sync/) | Pull, merge and push now |
@@ -28,9 +29,10 @@ description: Every primum command, what it does, and the option they all share.
 
 ## Choosing the project
 
-Every command takes `-p NAME` (`--project NAME`) to pick a project by name.
-Without it, primum uses the project containing the current folder, else the
-only project listed. See [many projects](/guides/many-projects/).
+Every command takes `-p NAME` (`--project NAME`) to pick a project of the
+workspace by name. Without it, primum uses the project containing the
+current folder, else the workspace's only project. See
+[workspaces](/guides/workspaces/).
 
 ## Ids
 

@@ -1,13 +1,14 @@
 ---
 title: primum projects
-description: The projects this machine shows, and adding or removing one.
+description: The workspace's projects, and adding or removing one.
 ---
 
 ```bash
-primum projects                     # name, folder, and whether it opens
-primum projects add ~/boards/my-lib
-primum projects remove my-lib       # the project is not touched
+primum projects                   # name, folder, and whether it opens
+primum projects add my-lib        # put the subfolder my-lib on the list
+primum projects remove my-lib     # take it off; the project is not touched
 ```
 
-The list is `~/.config/primum/projects.toml`, in tab order. See
-[many projects](/guides/many-projects/).
+The list is the workspace's `primum.toml`, in tab order. Outside a workspace,
+`primum projects` shows the project you are in. See
+[workspaces](/guides/workspaces/).
