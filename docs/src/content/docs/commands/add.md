@@ -4,11 +4,13 @@ description: Add an item to a lane, with scores, needs and text.
 ---
 
 ```bash
-primum add KIND TITLE [options]
+primum add KIND [TITLE] [options]
 ```
 
 Adds an item to the lane `KIND` (`URGENT`, `BUG`, `DEBT`, `KILLER` or `TODO`)
-with the next number there, and prints its id.
+with the next number there, and prints its id. Without a title, the
+text's first heading (any level, without its `#` marks) is the title, and
+the heading stays in the text; with neither, nothing is added.
 
 ```bash
 primum add TODO "Export open items as CSV" --impact 6 --effort 3 --body-file csv.md
@@ -17,6 +19,7 @@ primum add URGENT "Login fails after the 2.3 upgrade" --impact 9 --urgency 10 --
 primum add DEBT "Split server.rs into routes and pages" --effort 6 --needs TODO:12
 primum add KILLER "Offline mode" --impact 9 --effort 8 --needs DEBT:3,BUG:7
 primum add TODO "Dark mode for print" --body-file - < notes.md
+primum add TODO --body-file csv.md        # the title is the text's first heading
 primum add TODO "Weekly digest" -p my-lib
 ```
 

@@ -43,7 +43,9 @@ table.items{width:100%;border-collapse:collapse;margin-top:12px;background:var(-
 table.items th,table.items td{padding:7px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
 table.items th{font-size:12px;font-weight:500;color:var(--mut);cursor:pointer;user-select:none;white-space:nowrap;position:sticky;top:var(--chrome-h,100px);background:var(--surface);z-index:2}
 table.items th.sorted{color:var(--fg)}
-table.items td.n,table.items th.n{text-align:right;font-variant-numeric:tabular-nums;width:56px}
+table.items td.n,table.items th.n{text-align:center;font-variant-numeric:tabular-nums;width:56px}
+/* docs and status, the last two columns: titles over their contents */
+table.items th:nth-last-child(-n+2),table.items td:nth-last-child(-n+2){text-align:center}
 tr.item{cursor:pointer;background:var(--surface)}
 tr.item.alt{background:var(--stripe)}
 tr.item:hover{background:var(--hover)}
@@ -97,6 +99,8 @@ main.itempage{padding:16px 16px 48px}
 .doctabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px}
 .doctabs button.on{background:var(--accent);border-color:var(--accent);color:#fff}
 .docpath{font:11px ui-monospace,Menlo,monospace;color:var(--mut);margin-bottom:10px;overflow-wrap:anywhere}
+/* the file path in the item page's bar: the bar's size, on its centre line */
+#item-meta .docpath{font:12px/1.2 ui-monospace,Menlo,monospace;margin:0;align-self:center}
 
 /* Markdown, for bodies and documents. */
 .md{font:15px/1.65 -apple-system,system-ui,sans-serif;color:var(--fg);max-width:74ch;overflow-wrap:anywhere}

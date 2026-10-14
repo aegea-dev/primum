@@ -309,17 +309,37 @@ fn apply(it: &mut Item, c: Changes) -> Result<()> {
     Ok(())
 }
 
+/// The text of the body's first markdown heading (any level), without its
+/// `#` marks.
+fn first_heading(body: &str) -> Option<String> {
+    body.lines().find_map(|l| {
+        let l = l.trim_start();
+        let hashes = l.len() - l.trim_start_matches('#').len();
+        let text = &l[hashes..];
+        let text = text.strip_prefix([' ', '\t'])?.trim();
+        (1..=6)
+            .contains(&hashes)
+            .then(|| text.to_string())
+            .filter(|t| !t.is_empty())
+    })
+}
+
+/// Adds an item. A blank title is taken from the body's first heading; with
+/// neither, nothing is added.
 pub fn insert(p: &Project, kind: &str, title: &str, c: Changes) -> Result<String> {
     if !KINDS.contains(&kind) {
         bail!("unknown kind {kind}");
     }
+    let title = match title.trim() {
+        "" => c
+            .body
+            .as_deref()
+            .and_then(first_heading)
+            .ok_or_else(|| anyhow!("give a title, or start the text with a heading"))?,
+        _ => title.to_string(),
+    };
     change(p, |board| {
-        let title = if title.trim().is_empty() {
-            "untitled"
-        } else {
-            title
-        };
-        let mut it = Item::new(kind, board.next_num(kind), title);
+        let mut it = Item::new(kind, board.next_num(kind), &title);
         it.source = "primum".into();
         apply(&mut it, c)?;
         save(p, &it)?;

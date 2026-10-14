@@ -403,3 +403,47 @@ fn changes_sync_by_themselves() {
     let log = String::from_utf8_lossy(&log.stdout);
     assert!(log.contains("TODO:1: add \"Gökçe\""), "{log}");
 }
+
+#[test]
+fn add_without_a_title_uses_the_first_heading() {
+    let t = T::new();
+    let f = t.file("x.md", "## Ölçüm sayfası\n\nNe ve neden.\n");
+    assert_eq!(t.out(&["add", "TODO", "--body-file", &f]).trim(), "TODO:1");
+    assert!(t.item("TODO:1").contains("title: \"Ölçüm sayfası\""));
+    let g = t.file("y.md", "no heading\n");
+    let o = t.run(&["add", "TODO", "--body-file", &g]);
+    assert_eq!(o.status.code(), Some(1));
+    assert_eq!(
+        String::from_utf8_lossy(&o.stderr).trim(),
+        "primum: give a title, or start the text with a heading"
+    );
+}
+
+#[test]
+fn a_closed_pipe_ends_quietly() {
+    let t = T::new();
+    let items = t.dir.path().join("café/items");
+    for n in 1..=2000 {
+        let text = format!(
+            "---\ntitle: \"Satır {n}\"\nstatus: open\nimpact: 5\nurgency: 3\nrisk: 3\neffort: 5\nneeds: []\n---\n"
+        );
+        std::fs::write(items.join(format!("TODO-{n}.md")), text).unwrap();
+    }
+    let mut c = Command::new(env!("CARGO_BIN_EXE_primum"))
+        .args(["list"])
+        .current_dir(t.dir.path().join("café"))
+        .env("HOME", t.dir.path())
+        .env("NO_COLOR", "1")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    {
+        use std::io::Read;
+        let mut first = [0u8; 16];
+        c.stdout.take().unwrap().read_exact(&mut first).unwrap();
+    } // the reader goes away, as `| head` does
+    let o = c.wait_with_output().unwrap();
+    let err = String::from_utf8_lossy(&o.stderr);
+    assert!(!err.contains("panicked"), "{err}");
+}
