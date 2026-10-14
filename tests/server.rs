@@ -17,7 +17,7 @@ fn setup(dir: &std::path::Path) -> (Project, axum::Router) {
     };
     store::insert(&p, "TODO", "Özgür'ün işi", c("## Neden\n")).unwrap();
     store::insert(&p, "BUG", "Gökçe'nin hatası", Changes::default()).unwrap();
-    store::set_doc(&p, "TODO:1", "spec", "# Spec\n\nIşıl yazdı.\n").unwrap();
+    store::set_doc(&p, "1", "spec", "# Spec\n\nIşıl yazdı.\n").unwrap();
     let missing = Entry {
         path: dir.join("yok"),
         project: Err("no primum.toml in yok".into()),
@@ -71,8 +71,9 @@ async fn items_in_priority_order_with_page_fields() {
     let (code, text) = get(&app, &format!("{API}/items")).await;
     assert_eq!(code, StatusCode::OK);
     let items: Value = serde_json::from_str(&text).unwrap();
-    assert_eq!(items[0]["id"], "BUG:1");
-    assert_eq!(items[1]["id"], "TODO:1");
+    // #1 is a TODO, #2 a BUG: the BUG lane comes first
+    assert_eq!(items[0]["id"], "2");
+    assert_eq!(items[1]["id"], "1");
     for field in [
         "score",
         "kind_rank",
@@ -85,24 +86,24 @@ async fn items_in_priority_order_with_page_fields() {
     ] {
         assert!(items[1].get(field).is_some(), "{field}");
     }
-    assert_eq!(items[1]["docs"][0]["path"], "items/TODO-1.spec.md");
-    assert_eq!(items[1]["file"], "items/TODO-1.md");
+    assert_eq!(items[1]["docs"][0]["path"], "items/1.spec.md");
+    assert_eq!(items[1]["file"], "items/1.md");
 }
 
 #[tokio::test]
 async fn doc_serves_documents_only() {
     let d = tempfile::tempdir().unwrap();
     let (_, app) = setup(d.path());
-    let (code, text) = get(&app, &format!("{API}/doc?path=items/TODO-1.spec.md")).await;
+    let (code, text) = get(&app, &format!("{API}/doc?path=items/1.spec.md")).await;
     assert_eq!(
         (code, text.as_str()),
         (StatusCode::OK, "# Spec\n\nIşıl yazdı.\n")
     );
     for bad in [
-        "items/TODO-1.md",
+        "items/1.md",
         "../primum.toml",
         "items%2F..%2FBOARD.md",
-        "items/TODO-9.spec.md",
+        "items/9.spec.md",
         "",
     ] {
         let (code, _) = get(&app, &format!("{API}/doc?path={bad}")).await;
@@ -117,48 +118,43 @@ async fn update_writes_the_file_and_reopening_clears_finished() {
     let (code, _) = post(
         &app,
         &format!("{API}/items"),
-        json!({"id": "BUG:1", "status": "done", "effort": "3"}),
+        json!({"id": "2", "status": "done", "effort": "3"}),
     )
     .await;
     assert_eq!(code, StatusCode::OK);
-    let file = common::read(&p.root, "items/BUG-1.md");
+    let file = common::read(&p.root, "items/2.md");
     assert!(
         file.contains("status: done") && file.contains("finished: ") && file.contains("effort: 3")
     );
     post(
         &app,
         &format!("{API}/items"),
-        json!({"id": "BUG:1", "status": "open"}),
+        json!({"id": "2", "status": "open"}),
     )
     .await;
-    assert!(!common::read(&p.root, "items/BUG-1.md").contains("finished:"));
+    assert!(!common::read(&p.root, "items/2.md").contains("finished:"));
     let (code, v) = post(
         &app,
         &format!("{API}/items"),
-        json!({"id": "BUG:1", "status": "bitti"}),
+        json!({"id": "2", "status": "bitti"}),
     )
     .await;
     assert_eq!(
         (code, v["error"].as_str()),
         (StatusCode::BAD_REQUEST, Some("unknown status bitti"))
     );
-    let (code, _) = post(
-        &app,
-        &format!("{API}/items"),
-        json!({"id": "BUG:9", "risk": 2}),
-    )
-    .await;
+    let (code, _) = post(&app, &format!("{API}/items"), json!({"id": "9", "risk": 2})).await;
     assert_eq!(code, StatusCode::NOT_FOUND);
-    let (code, _) = post(&app, &format!("{API}/items"), json!({"id": "BUG:1"})).await;
+    let (code, _) = post(&app, &format!("{API}/items"), json!({"id": "2"})).await;
     assert_eq!(code, StatusCode::BAD_REQUEST, "nothing to update");
     let (code, _) = post(
         &app,
         &format!("{API}/items"),
-        json!({"id": "BUG:1", "needs": "TODO:1, BUG:2"}),
+        json!({"id": "2", "needs": "1, #3"}),
     )
     .await;
     assert_eq!(code, StatusCode::OK);
-    assert!(common::read(&p.root, "items/BUG-1.md").contains("needs: [TODO:1, BUG:2]"));
+    assert!(common::read(&p.root, "items/2.md").contains("needs: [1, 3]"));
 }
 
 #[tokio::test]
@@ -168,15 +164,17 @@ async fn kind_new_and_delete() {
     let (code, v) = post(
         &app,
         &format!("{API}/items/kind"),
-        json!({"id": "TODO:1", "kind": "URGENT"}),
+        json!({"id": "1", "kind": "URGENT"}),
     )
     .await;
     assert_eq!(code, StatusCode::OK);
     assert_eq!(
         (v["old"].as_str(), v["new"].as_str()),
-        (Some("TODO:1"), Some("URGENT:1"))
+        (Some("1"), Some("1")),
+        "the kind is a field: the id stays"
     );
-    assert!(p.root.join("items/URGENT-1.spec.md").is_file());
+    assert!(common::read(&p.root, "items/1.md").contains("\nkind: URGENT\n"));
+    assert!(p.root.join("items/1.spec.md").is_file());
 
     let (code, v) = post(
         &app,
@@ -184,8 +182,8 @@ async fn kind_new_and_delete() {
         json!({"kind": "BUG", "title": "Işıl'ın bulduğu", "impact": 9}),
     )
     .await;
-    assert_eq!((code, v["id"].as_str()), (StatusCode::OK, Some("BUG:2")));
-    assert!(common::read(&p.root, "items/BUG-2.md").contains("impact: 9"));
+    assert_eq!((code, v["id"].as_str()), (StatusCode::OK, Some("3")));
+    assert!(common::read(&p.root, "items/3.md").contains("impact: 9"));
     let (code, _) = post(
         &app,
         &format!("{API}/new"),
@@ -194,13 +192,10 @@ async fn kind_new_and_delete() {
     .await;
     assert_eq!(code, StatusCode::BAD_REQUEST);
 
-    let (code, v) = post(&app, &format!("{API}/delete"), json!({"id": "URGENT:1"})).await;
+    let (code, v) = post(&app, &format!("{API}/delete"), json!({"id": "1"})).await;
     assert_eq!(code, StatusCode::OK);
-    assert_eq!(
-        v["removed"],
-        json!(["items/URGENT-1.md", "items/URGENT-1.spec.md"])
-    );
-    assert!(!p.root.join("items/URGENT-1.md").exists());
+    assert_eq!(v["removed"], json!(["items/1.md", "items/1.spec.md"]));
+    assert!(!p.root.join("items/1.md").exists());
 }
 
 #[tokio::test]
@@ -216,15 +211,15 @@ async fn pages_projects_and_assets() {
     assert!(page.contains("2 open, 0 in progress"), "{page}");
     assert!(page.contains(r#""API":"/p/i%C5%9Fler/api""#));
     assert!(page.contains(r#"class="secnav-off" title="no primum.toml in yok""#));
-    let (code, page) = get(&app, "/p/i%C5%9Fler/item/TODO-1").await;
+    let (code, page) = get(&app, "/p/i%C5%9Fler/item/1").await;
     assert_eq!(code, StatusCode::OK);
     assert!(
         page.contains("Özgür&#39;ün işi") || page.contains("Özgür&#x27;ün işi"),
         "{page}"
     );
-    assert!(page.contains(r#"window.ITEM_ID="TODO:1""#));
+    assert!(page.contains(r#"window.ITEM_ID="1""#));
     assert_eq!(
-        get(&app, "/p/i%C5%9Fler/item/TODO-9").await.0,
+        get(&app, "/p/i%C5%9Fler/item/9").await.0,
         StatusCode::NOT_FOUND
     );
     assert_eq!(
@@ -247,15 +242,15 @@ async fn history_and_its_diffs() {
     post(
         &app,
         &format!("{API}/items"),
-        json!({"id": "BUG:1", "effort": 2}),
+        json!({"id": "2", "effort": 2}),
     )
     .await;
-    let (code, text) = get(&app, &format!("{API}/history?id=BUG:1")).await;
+    let (code, text) = get(&app, &format!("{API}/history?id=2")).await;
     assert_eq!(code, StatusCode::OK);
     let log: Value = serde_json::from_str(&text).unwrap();
-    assert_eq!(log[0]["message"], "BUG:1: effort");
+    assert_eq!(log[0]["message"], "#2: effort");
     let c = log[0]["commit"].as_str().unwrap();
-    let uri = format!("{API}/history/diff?commit={c}&path=items/BUG-1.md");
+    let uri = format!("{API}/history/diff?commit={c}&path=items/2.md");
     let (code, diff) = get(&app, &uri).await;
     assert_eq!(code, StatusCode::OK);
     assert!(diff.contains("+effort: 2"), "{diff}");
@@ -273,7 +268,7 @@ async fn a_conflict_shows_and_resolves() {
         date: String::new(),
     };
     let c = Conflict {
-        id: "BUG:1".into(),
+        id: "2".into(),
         sides: [side("Özgür"), side("Işıl")],
         fields: vec![FieldValues {
             field: "effort".into(),
@@ -286,15 +281,15 @@ async fn a_conflict_shows_and_resolves() {
     let (_, text) = get(&app, &format!("{API}/items")).await;
     let items: Value = serde_json::from_str(&text).unwrap();
     assert_eq!(items[0]["conflict"]["fields"][0]["field"], "effort");
-    let bad = json!({"id": "BUG:1", "field": "effort", "keep": 3});
+    let bad = json!({"id": "2", "field": "effort", "keep": 3});
     assert_eq!(
         post(&app, &format!("{API}/resolve"), bad).await.0,
         StatusCode::BAD_REQUEST
     );
-    let ok = json!({"id": "BUG:1", "field": "effort", "keep": 2});
+    let ok = json!({"id": "2", "field": "effort", "keep": 2});
     assert_eq!(
         post(&app, &format!("{API}/resolve"), ok).await.0,
         StatusCode::OK
     );
-    assert!(common::read(&p.root, "items/BUG-1.md").contains("effort: 2"));
+    assert!(common::read(&p.root, "items/2.md").contains("effort: 2"));
 }

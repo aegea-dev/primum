@@ -3,7 +3,7 @@ use primum::model::Item;
 
 fn base() -> Item {
     let mut it = Item::new("TODO", 88, "Özgür'ün listesi");
-    it.needs = vec!["BUG:1".into(), "BUG:2".into()];
+    it.needs = vec!["1".into(), "2".into()];
     it.body = "bir\niki\nüç\n".into();
     it
 }
@@ -50,14 +50,11 @@ fn the_same_change_on_both_sides_is_no_conflict() {
 fn needs_merge_as_sets() {
     let b = base();
     let mut o = b.clone();
-    o.needs = vec!["BUG:1".into(), "BUG:2".into(), "DEBT:3".into()];
+    o.needs = vec!["1".into(), "2".into(), "3".into()];
     let mut t = b.clone();
-    t.needs = vec!["BUG:2".into()];
+    t.needs = vec!["2".into()];
     let m = merge_item(Some(&b), &o, &t, &text);
-    assert_eq!(
-        m.item.needs,
-        vec!["BUG:2".to_string(), "DEBT:3".to_string()]
-    );
+    assert_eq!(m.item.needs, vec!["2".to_string(), "3".to_string()]);
 }
 
 #[test]
@@ -119,4 +116,18 @@ fn without_a_base_differences_are_conflicts() {
     t.urgency = 8;
     let m = merge_item(None, &o, &t, &text);
     assert_eq!(m.fields[0].field, "urgency");
+}
+
+#[test]
+fn the_kind_merges_like_a_field() {
+    let b = base();
+    let mut ours = b.clone();
+    ours.kind = "BUG".into();
+    let mut theirs = b.clone();
+    theirs.impact = 9;
+    let m = merge_item(Some(&b), &ours, &theirs, &text);
+    assert_eq!((m.item.kind.as_str(), m.item.impact), ("BUG", 9));
+    theirs.kind = "DEBT".into();
+    let m = merge_item(Some(&b), &ours, &theirs, &text);
+    assert_eq!(m.fields[0].field, "kind");
 }

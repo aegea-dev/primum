@@ -47,8 +47,11 @@ fn imports_items_and_their_documents() {
     let r = import::run(&src, &p).unwrap();
     assert_eq!(r.items, 5);
 
+    // numbered in board.py's order: BUG:1 #1, BUG:2 #2, TODO:1 #3,
+    // TODO:2 #4, TODO:3 #5
     let b = load(&p).unwrap();
-    let bug = b.get("BUG:1").unwrap();
+    let bug = b.get("1").unwrap();
+    assert_eq!(bug.kind, "BUG");
     assert_eq!(bug.title, "Gökçe'nin galerisi boş açılıyor");
     assert_eq!(
         (bug.impact, bug.urgency, bug.risk, bug.effort),
@@ -56,25 +59,21 @@ fn imports_items_and_their_documents() {
     );
     assert_eq!(
         bug.body,
-        "## BUG:1 Gökçe'nin galerisi boş açılıyor\n\nIşıl gördü.\n"
+        "## #1 Gökçe'nin galerisi boş açılıyor\n\nIşıl gördü.\n"
     );
     assert_eq!(bug.source, "board");
-    assert_eq!(bug.docs, vec!["items/TODO-1.spec.md".to_string()]);
+    assert_eq!(bug.docs, vec!["items/3.spec.md".to_string()]);
 
-    let t1 = b.get("TODO:1").unwrap();
+    let t1 = b.get("3").unwrap();
     assert_eq!(t1.status, "doing");
-    assert_eq!(
-        t1.needs,
-        vec!["BUG:1".to_string()],
-        "the closed BUG:2 is cleared"
-    );
+    assert_eq!(t1.needs, vec!["1".to_string()], "the closed #2 is cleared");
     assert!(t1.body.ends_with("## 2026-10-07\n\nBaşladı.\n"));
 
-    let t2 = b.get("TODO:2").unwrap();
+    let t2 = b.get("4").unwrap();
     assert_eq!((t2.impact, t2.effort), (8, 2), "crit and cplx back-fill");
     assert_eq!(t2.body, "Tek satır gövde\n");
 
-    let t3 = b.get("TODO:3").unwrap();
+    let t3 = b.get("5").unwrap();
     assert_eq!(
         (t3.status.as_str(), t3.finished.as_deref()),
         ("wontfix", Some("2026-10-01"))
@@ -82,20 +81,20 @@ fn imports_items_and_their_documents() {
 
     let items = p.items_dir();
     let copy = |n: &str| std::fs::read_to_string(items.join(n)).unwrap();
-    assert!(copy("TODO-2.spec.md").contains("**Ticket:** TODO:2 (foundation for BUG:1)"));
-    assert!(copy("TODO-2.plan.md").starts_with("# Galeri planı"));
-    assert!(copy("TODO-1.spec.md").starts_with("# Ortak"));
-    assert!(copy("TODO-1.spec.2026-10-05.md").starts_with("# Gövde"));
-    assert!(copy("TODO-3.spec.md").starts_with("# Arama\n"));
-    assert!(copy("TODO-3.spec.2026-10-06.md").starts_with("# Arama ek"));
+    assert!(copy("4.spec.md").contains("**Ticket:** #4 (foundation for #1)"));
+    assert!(copy("4.plan.md").starts_with("# Galeri planı"));
+    assert!(copy("3.spec.md").starts_with("# Ortak"));
+    assert!(copy("3.spec.2026-10-05.md").starts_with("# Gövde"));
+    assert!(copy("5.spec.md").starts_with("# Arama\n"));
+    assert!(copy("5.spec.2026-10-06.md").starts_with("# Arama ek"));
     let kinds = |id: &str| {
         b.docs[id]
             .iter()
             .map(|x| x.name.clone())
             .collect::<Vec<_>>()
     };
-    assert_eq!(kinds("BUG:1"), ["TODO-1.spec.md"], "not linked to galeri");
-    assert_eq!(kinds("TODO:2"), ["TODO-2.spec.md", "TODO-2.plan.md"]);
+    assert_eq!(kinds("1"), ["3.spec.md"], "not linked to galeri");
+    assert_eq!(kinds("4"), ["4.spec.md", "4.plan.md"]);
 
     assert_eq!(
         r.left,
@@ -104,12 +103,9 @@ fn imports_items_and_their_documents() {
             "superpowers/specs/2026-10-08-hayalet-design.md"
         ]
     );
-    assert!(!items.join("TODO-99.spec.md").exists());
+    assert!(!items.join("99.spec.md").exists());
     assert_eq!(r.docs.len(), 6);
-    assert_eq!(
-        r.shared,
-        [("BUG:1".to_string(), "items/TODO-1.spec.md".to_string())]
-    );
+    assert_eq!(r.shared, [("1".to_string(), "items/3.spec.md".to_string())]);
     assert!(common::read(&p.root, "BOARD.md").contains("3 open, 2 closed, 5 total."));
 
     assert_eq!(snapshot(&src), before, "the source board is untouched");

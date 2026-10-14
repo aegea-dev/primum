@@ -25,22 +25,30 @@ pub struct Item {
     pub body: String,
 }
 
-pub fn id_of(kind: &str, num: u32) -> String {
-    format!("{kind}:{num}")
+/// An item's id: its number, as text.
+pub fn id_of(num: u32) -> String {
+    num.to_string()
 }
 
-pub fn parse_id(id: &str) -> Option<(String, u32)> {
-    let (kind, num) = id.split_once(':')?;
-    if !KINDS.contains(&kind) || num.is_empty() || !num.bytes().all(|b| b.is_ascii_digit()) {
+/// `12` or `#12` is 12; anything else, None.
+pub fn parse_id(s: &str) -> Option<u32> {
+    let s = s.trim();
+    let digits = s.strip_prefix('#').unwrap_or(s);
+    if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
         return None;
     }
-    Some((kind.to_string(), num.parse().ok()?))
+    digits.parse().ok().filter(|n| *n > 0)
+}
+
+/// How people see an id: `#12`.
+pub fn label(id: &str) -> String {
+    format!("#{id}")
 }
 
 impl Item {
     pub fn new(kind: &str, num: u32, title: &str) -> Item {
         Item {
-            id: id_of(kind, num),
+            id: id_of(num),
             kind: kind.to_string(),
             num,
             title: title.to_string(),
@@ -66,11 +74,10 @@ impl Item {
         (raw * 10.0).round_ties_even() / 10.0
     }
 
-    /// This item's id, kind and number with `other`'s fields.
+    /// This item's id and number with `other`'s fields (its kind included).
     pub fn with_fields_of(&self, other: &Item) -> Item {
         Item {
             id: self.id.clone(),
-            kind: self.kind.clone(),
             num: self.num,
             ..other.clone()
         }

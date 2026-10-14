@@ -345,7 +345,7 @@ async fn item_page(
     let p = s.project(&project)?;
     let board = store::load(p)?;
     let id = parse_item_name(&format!("{item}.md"))
-        .map(|(k, n)| crate::model::id_of(&k, n))
+        .map(crate::model::id_of)
         .and_then(|id| board.get(&id).map(|i| i.id.clone()))
         .ok_or_else(|| ApiError(StatusCode::NOT_FOUND, format!("no item {item}")))?;
     let it = board.get(&id).expect("found above");
@@ -461,6 +461,7 @@ fn needs_field(v: &Value) -> Result<Option<Vec<String>>, ApiError> {
 fn changes(v: &Value) -> Result<Changes, ApiError> {
     Ok(Changes {
         title: text_field(v, "title")?,
+        kind: text_field(v, "kind")?,
         status: text_field(v, "status")?,
         impact: score_field(v, "impact")?,
         urgency: score_field(v, "urgency")?,
@@ -507,10 +508,10 @@ async fn api_kind(
     let p = s.project(&project)?;
     let id = id_field(&v)?;
     let kind = text_field(&v, "kind")?.ok_or_else(|| bad("kind required"))?;
-    let new = store::set_kind(p, &id, &kind)?;
+    store::set_kind(p, &id, &kind)?;
     sync_soon(p);
     Ok(axum::Json(
-        json!({ "old": id, "new": new, "stem": stem(&new) }),
+        json!({ "old": id, "new": id, "stem": stem(&id) }),
     ))
 }
 

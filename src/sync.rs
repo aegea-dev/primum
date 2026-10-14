@@ -6,7 +6,7 @@ use crate::conflicts::{self, BodyValues, Conflict, DocConflict, FieldValues};
 use crate::history::{Fetched, History, Pushed, Remote};
 use crate::item_file::{self, parse_doc_name, parse_item_name};
 use crate::merge::merge_item;
-use crate::model::id_of;
+use crate::model::{id_of, label};
 use crate::store::{self, Project};
 use anyhow::{Result, bail};
 use std::collections::BTreeSet;
@@ -153,24 +153,28 @@ fn added_items(h: &History, base: &str, rev: &str) -> Result<BTreeSet<String>> {
 fn renumber(p: &Project, h: &History, base: &str, theirs: &str, report: &mut Report) -> Result<()> {
     let ours = added_items(h, base, "HEAD")?;
     let remote_new = added_items(h, base, theirs)?;
-    let remote_names: Vec<(String, u32)> = h
+    let remote_nums: Vec<u32> = h
         .git(&["ls-tree", "--name-only", theirs, "items/"])?
         .lines()
         .filter_map(|l| parse_item_name(l.strip_prefix("items/")?))
         .collect();
     for name in ours.intersection(&remote_new) {
-        let (kind, num) = parse_item_name(name).expect("filtered above");
-        let old = id_of(&kind, num);
+        let old = id_of(parse_item_name(name).expect("filtered above"));
         let board = store::load(p)?;
-        let taken = |n: u32| {
-            board.get(&id_of(&kind, n)).is_some() || remote_names.contains(&(kind.clone(), n))
-        };
-        let mut free = num + 1;
-        while taken(free) {
-            free += 1;
-        }
-        let new = store::move_locked(p, &old, &kind, free)?;
-        h.commit(&format!("{old} -> {new}: number taken on the remote"))?;
+        let highest = board
+            .items
+            .iter()
+            .map(|i| i.num)
+            .chain(remote_nums.iter().copied())
+            .chain(h.deleted_numbers()?)
+            .max()
+            .unwrap_or(0);
+        let new = store::renumber_locked(p, &old, highest + 1)?;
+        h.commit(&format!(
+            "{} -> {}: number taken on the remote",
+            label(&old),
+            label(&new)
+        ))?;
         report.renumbered.push((old, new));
     }
     Ok(())
@@ -255,9 +259,7 @@ fn resolve_all(
                 }
                 (Some(kept), None) | (None, Some(kept)) => {
                     std::fs::write(&file, &kept)?;
-                    let id = parse_item_name(name)
-                        .map(|(k, n)| id_of(&k, n))
-                        .unwrap_or_default();
+                    let id = parse_item_name(name).map(id_of).unwrap_or_default();
                     report.kept.push(format!(
                         "{id} was deleted on one side and changed on the other; kept"
                     ));
@@ -274,8 +276,8 @@ fn resolve_all(
                         let stem = name.strip_suffix(".md").unwrap_or(name);
                         let other_name = format!("{stem}.{}.md", short.trim());
                         std::fs::write(p.items_dir().join(&other_name), &t)?;
-                        let (kind, num, _) = parse_doc_name(name).expect("checked");
-                        let id = id_of(&kind, num);
+                        let (num, _) = parse_doc_name(name).expect("checked");
+                        let id = id_of(num);
                         record(
                             p,
                             Conflict {

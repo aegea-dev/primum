@@ -8,7 +8,7 @@ fn ch() -> Changes {
     Changes::default()
 }
 
-/// Özgür's project on a fresh remote with BUG:1 and TODO:1, and Işıl's
+/// Özgür's project on a fresh remote with #1 (a BUG) and #2 (a TODO), and Işıl's
 /// clone of it.
 fn two(dir: &Path) -> (Project, Project) {
     let url = common::remote(dir);
@@ -46,26 +46,26 @@ fn different_items_and_adjacent_fields_merge_without_asking() {
         status: Some("doing".into()),
         ..ch()
     };
-    set(&oz, "TODO:1", doing);
+    set(&oz, "2", doing);
     let effort = Changes {
         effort: Some(2),
         ..ch()
     };
-    set(&oz, "BUG:1", effort);
+    set(&oz, "1", effort);
     sync(&oz).unwrap();
     let impact = Changes {
         impact: Some(9),
         ..ch()
     };
-    set(&is, "TODO:1", impact);
+    set(&is, "2", impact);
     let r = sync(&is).unwrap();
     assert!(r.pulled && r.pushed && r.conflicts.is_empty(), "{r:?}");
     let b = load(&is).unwrap();
-    let t = b.get("TODO:1").unwrap();
+    let t = b.get("2").unwrap();
     assert_eq!((t.status.as_str(), t.impact), ("doing", 9));
-    assert_eq!(b.get("BUG:1").unwrap().effort, 2);
+    assert_eq!(b.get("1").unwrap().effort, 2);
     sync(&oz).unwrap();
-    assert_eq!(load(&oz).unwrap().get("TODO:1").unwrap().impact, 9);
+    assert_eq!(load(&oz).unwrap().get("2").unwrap().impact, 9);
     let subjects = common::subjects(&is);
     assert!(
         subjects.iter().any(|s| s.starts_with("sync with main")),
@@ -81,15 +81,15 @@ fn bodies_merge_by_line() {
         body: Some("BİR\niki\nüç\n".into()),
         ..ch()
     };
-    set(&oz, "TODO:1", a);
+    set(&oz, "2", a);
     sync(&oz).unwrap();
     let b = Changes {
         body: Some("bir\niki\nÜÇ\n".into()),
         ..ch()
     };
-    set(&is, "TODO:1", b);
+    set(&is, "2", b);
     assert!(sync(&is).unwrap().conflicts.is_empty());
-    let body = load(&is).unwrap().get("TODO:1").unwrap().body.clone();
+    let body = load(&is).unwrap().get("2").unwrap().body.clone();
     assert_eq!(body, "BİR\niki\nÜÇ\n");
 }
 
@@ -101,34 +101,39 @@ fn the_same_new_id_on_both_sides_renumbers_the_local_one() {
     sync(&oz).unwrap();
     insert(&is, "TODO", "Işıl'ın yenisi", ch()).unwrap();
     let needs = Changes {
-        needs: Some(vec!["TODO:2".into()]),
+        needs: Some(vec!["3".into()]),
+        body: Some("After #3.\n".into()),
         ..ch()
     };
     insert(&is, "BUG", "bekler", needs).unwrap();
-    set_doc(&is, "TODO:2", "spec", "# Işıl\n").unwrap();
+    set_doc(&is, "3", "spec", "# Işıl\n").unwrap();
     let r = sync(&is).unwrap();
-    assert_eq!(r.renumbered, [("TODO:2".to_string(), "TODO:3".to_string())]);
+    // #3 was taken on the remote; the local #3 moves above every number
+    // on both sides (#4 is local)
+    assert_eq!(r.renumbered, [("3".to_string(), "5".to_string())]);
     let b = load(&is).unwrap();
-    assert_eq!(b.get("TODO:2").unwrap().title, "Özgür'ün yenisi");
-    assert_eq!(b.get("TODO:3").unwrap().title, "Işıl'ın yenisi");
-    assert_eq!(b.get("BUG:2").unwrap().needs, vec!["TODO:3".to_string()]);
-    assert!(is.root.join("items/TODO-3.spec.md").is_file());
+    assert_eq!(b.get("3").unwrap().title, "Özgür'ün yenisi");
+    assert_eq!(b.get("5").unwrap().title, "Işıl'ın yenisi");
+    let waiting = b.get("4").unwrap();
+    assert_eq!(waiting.needs, vec!["5".to_string()]);
+    assert_eq!(waiting.body, "After #5.\n");
+    assert!(is.root.join("items/5.spec.md").is_file());
 }
 
 #[test]
 fn a_delete_against_an_edit_keeps_the_item() {
     let d = tempfile::tempdir().unwrap();
     let (oz, is) = two(d.path());
-    delete(&oz, "BUG:1").unwrap();
+    delete(&oz, "1").unwrap();
     sync(&oz).unwrap();
     let risk = Changes {
         risk: Some(9),
         ..ch()
     };
-    set(&is, "BUG:1", risk);
+    set(&is, "1", risk);
     let r = sync(&is).unwrap();
     assert_eq!(r.kept.len(), 1, "{r:?}");
-    assert_eq!(load(&is).unwrap().get("BUG:1").unwrap().risk, 9);
+    assert_eq!(load(&is).unwrap().get("1").unwrap().risk, 9);
 }
 
 #[test]
@@ -139,27 +144,27 @@ fn a_true_conflict_is_recorded_everywhere() {
         status: Some("done".into()),
         ..ch()
     };
-    set(&oz, "TODO:1", done);
+    set(&oz, "2", done);
     sync(&oz).unwrap();
     let wontfix = Changes {
         status: Some("wontfix".into()),
         ..ch()
     };
-    set(&is, "TODO:1", wontfix);
+    set(&is, "2", wontfix);
     let r = sync(&is).unwrap();
-    assert_eq!(r.conflicts, ["TODO:1"]);
+    assert_eq!(r.conflicts, ["2"]);
     let b = load(&is).unwrap();
-    let c = &b.conflicts["TODO:1"];
+    let c = &b.conflicts["2"];
     assert_eq!(
         c.fields[0].values,
         ["wontfix".to_string(), "done".to_string()]
     );
     let authors = (c.sides[0].author.as_str(), c.sides[1].author.as_str());
     assert_eq!(authors, ("Işıl", "Özgür"));
-    assert_eq!(b.get("TODO:1").unwrap().status, "wontfix");
+    assert_eq!(b.get("2").unwrap().status, "wontfix");
     sync(&oz).unwrap();
     assert!(
-        load(&oz).unwrap().conflicts.contains_key("TODO:1"),
+        load(&oz).unwrap().conflicts.contains_key("2"),
         "the conflict reaches Özgür"
     );
 }
@@ -175,10 +180,10 @@ fn offline_keeps_the_change() {
         urgency: Some(8),
         ..ch()
     };
-    set(&oz, "BUG:1", urgency);
+    set(&oz, "1", urgency);
     let r = sync(&oz).unwrap();
     assert!(r.offline.is_some() && !r.pushed);
-    assert_eq!(common::subjects(&oz)[0], "BUG:1: urgency");
+    assert_eq!(common::subjects(&oz)[0], "#1: urgency");
     h.set_remote(&real, None, false).unwrap();
     assert!(sync(&oz).unwrap().pushed);
 }

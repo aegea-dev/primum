@@ -5,17 +5,18 @@
 //! ```text
 //! ---
 //! title: "..."                JSON-style quoted, so any text is safe
+//! kind: BUG                   one of the lanes
 //! status: open
 //! impact: 5                   urgency, risk, effort the same
-//! needs: [BUG:1, TODO:2]      always written, [] when empty
-//! docs: [items/X-1.spec.md]   only when non-empty
+//! needs: [3, 5]               always written, [] when empty
+//! docs: [items/3.spec.md]     only when non-empty
 //! finished: 2026-10-13        only when set
 //! source: "..."               only when non-empty
 //! ---
 //!
 //! body
 //! ```
-use crate::model::{Item, STATUSES, parse_id};
+use crate::model::{Item, KINDS, STATUSES, parse_id};
 use std::fmt;
 
 #[derive(Debug, PartialEq)]
@@ -33,38 +34,42 @@ impl fmt::Display for ParseError {
 
 impl std::error::Error for ParseError {}
 
-/// `TODO:87` is `TODO-87.md`.
+/// `12` is `12.md`.
 pub fn file_name(id: &str) -> String {
     format!("{}.md", stem(id))
 }
 
-/// `TODO:87` is `TODO-87`, the start of every file name of that item.
+/// The start of every file name of an item: its number.
 pub fn stem(id: &str) -> String {
-    id.replacen(':', "-", 1)
+    id.to_string()
 }
 
-fn split_stem(stem: &str) -> Option<(String, u32)> {
-    let (kind, num) = stem.split_once('-')?;
-    parse_id(&format!("{kind}:{num}"))
-}
-
-/// The id parts of an item file name (`TODO-87.md`), None for anything else.
-pub fn parse_item_name(name: &str) -> Option<(String, u32)> {
+/// The number of an item file name (`12.md`), None for anything else.
+pub fn parse_item_name(name: &str) -> Option<u32> {
     let stem = name.strip_suffix(".md")?;
-    if stem.contains('.') {
+    if stem.starts_with('#') {
         return None;
     }
-    split_stem(stem)
+    parse_id(stem)
 }
 
-/// The id parts and type of a document name (`TODO-87.spec.md`,
-/// `TODO-87.spec.2026-10-06.md`), None for anything else.
-pub fn parse_doc_name(name: &str) -> Option<(String, u32, String)> {
+/// The number and type of a document name (`12.spec.md`,
+/// `12.spec.2026-10-06.md`), None for anything else.
+pub fn parse_doc_name(name: &str) -> Option<(u32, String)> {
     let stem = name.strip_suffix(".md")?;
     let (id, rest) = stem.split_once('.')?;
-    let (kind, num) = split_stem(id)?;
+    let num = parse_item_name(&format!("{id}.md"))?;
     let doc_type = rest.split('.').next().filter(|t| !t.is_empty())?;
-    Some((kind, num, doc_type.to_string()))
+    Some((num, doc_type.to_string()))
+}
+
+/// A file name from before numbers (`TODO-7.md`, `TODO-7.spec.md`).
+pub fn old_style_name(name: &str) -> bool {
+    static OLD: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(r"^(URGENT|BUG|DEBT|KILLER|TODO)-[0-9]+(\.[^/]*)?\.md$")
+            .expect("a valid pattern")
+    });
+    OLD.is_match(name)
 }
 
 fn quote(s: &str) -> String {
@@ -78,6 +83,7 @@ fn list(v: &[String]) -> String {
 pub fn write(item: &Item) -> String {
     let mut out = String::from("---\n");
     out += &format!("title: {}\n", quote(&item.title));
+    out += &format!("kind: {}\n", item.kind);
     out += &format!("status: {}\n", item.status);
     for (k, v) in [
         ("impact", item.impact),
@@ -142,6 +148,12 @@ fn score_value(key: &str, raw: &str) -> Result<u8, String> {
 fn set_field(item: &mut Item, key: &str, raw: &str) -> Result<(), String> {
     match key {
         "title" => item.title = text_value(raw)?,
+        "kind" => {
+            if !KINDS.contains(&raw) {
+                return Err(format!("unknown kind `{raw}`"));
+            }
+            item.kind = raw.to_string();
+        }
         "status" => {
             if !STATUSES.contains(&raw) {
                 return Err(format!("unknown status `{raw}`"));
@@ -161,16 +173,15 @@ fn set_field(item: &mut Item, key: &str, raw: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Reads an item file. `file` is its name, which gives the kind and number.
+/// Reads an item file. `file` is its name, which gives the number.
 pub fn parse(file: &str, text: &str) -> Result<Item, ParseError> {
     let err = |line: usize, message: String| ParseError {
         file: file.to_string(),
         line,
         message,
     };
-    let (kind, num) =
-        parse_item_name(file).ok_or_else(|| err(0, "not an item file name".into()))?;
-    let mut item = Item::new(&kind, num, "");
+    let num = parse_item_name(file).ok_or_else(|| err(0, "not an item file name".into()))?;
+    let mut item = Item::new("TODO", num, "");
     let mut lines = text.split_inclusive('\n');
     if lines.next().map(str::trim_end) != Some("---") {
         return Err(err(1, "expected `---` to open the front matter".into()));
@@ -178,6 +189,7 @@ pub fn parse(file: &str, text: &str) -> Result<Item, ParseError> {
     let mut n = 1;
     let mut closed = false;
     let mut seen_title = false;
+    let mut seen_kind = false;
     for line in lines.by_ref() {
         n += 1;
         let line = line.trim_end();
@@ -194,12 +206,16 @@ pub fn parse(file: &str, text: &str) -> Result<Item, ParseError> {
         let key = key.trim();
         set_field(&mut item, key, raw.trim()).map_err(|m| err(n, m))?;
         seen_title |= key == "title";
+        seen_kind |= key == "kind";
     }
     if !closed {
         return Err(err(n + 1, "front matter is not closed with `---`".into()));
     }
     if !seen_title {
         return Err(err(1, "front matter has no `title`".into()));
+    }
+    if !seen_kind {
+        return Err(err(1, "front matter has no `kind`".into()));
     }
     let rest: String = lines.collect();
     item.body = rest.strip_prefix('\n').unwrap_or(&rest).to_string();

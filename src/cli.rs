@@ -1,7 +1,7 @@
 //! The command line. Writes go through `store`, reads through `store::load`
 //! and the same `ItemView` the web page gets, so the terminal and the page
 //! always agree.
-use crate::model::{KINDS, STATUSES, parse_id};
+use crate::model::{KINDS, STATUSES, id_of, label, parse_id};
 use crate::projects;
 use crate::server::{ItemView, views};
 use crate::store::{self, Changes, Project};
@@ -68,7 +68,7 @@ pub enum Cmd {
         title: Option<String>,
         #[command(flatten)]
         scores: Scores,
-        /// Ids it waits for, like TODO:1,BUG:2
+        /// Ids it waits for, like 3,5
         #[arg(long)]
         needs: Option<String>,
         /// Its text, from a markdown file (- for standard input)
@@ -104,7 +104,7 @@ pub enum Cmd {
         /// open, doing, done or wontfix
         #[arg(long)]
         status: Option<String>,
-        /// Ids it waits for, like TODO:1,BUG:2 ("" for none)
+        /// Ids it waits for, like 3,5 ("" for none)
         #[arg(long)]
         needs: Option<String>,
         /// Replace its text with a markdown file (- for standard input)
@@ -187,6 +187,8 @@ pub enum Cmd {
     },
     /// Import a videre-board board into this (empty) project, once
     Import { board_dir: PathBuf },
+    /// Bring a board made by an earlier version up to date, once
+    Migrate,
 }
 
 #[derive(Subcommand)]
@@ -295,10 +297,28 @@ fn dispatch(cli: Cli) -> Result<()> {
                 println!("  {f}");
             }
         }
+        Cmd::Migrate => {
+            let p = project()?;
+            let moved = crate::migrate::migrate(&p)?;
+            if moved.is_empty() {
+                println!("nothing to migrate");
+            }
+            for (old, new) in moved {
+                println!("{old} -> {}", label(&new));
+            }
+        }
         Cmd::Workspace {
             cmd: WorkspaceCmd::Migrate,
         } => {
-            let done = projects::migrate(&cwd)?;
+            let mut done = projects::migrate(&cwd)?;
+            for e in projects::entries(&cwd) {
+                if let Ok(p) = e.project {
+                    let n = crate::migrate::migrate(&p)?.len();
+                    if n > 0 {
+                        done.push(format!("{}: numbered {n} items", p.name));
+                    }
+                }
+            }
             if done.is_empty() {
                 println!("nothing to migrate");
             }
@@ -373,14 +393,18 @@ fn dispatch(cli: Cli) -> Result<()> {
                 bail!("nothing to change: name a field, like --status done");
             }
             store::update(&project()?, &id, c)?;
-            println!("{id}: {}", named.join(", "));
+            println!("{}: {}", label(&id), named.join(", "));
         }
         Cmd::Start { id } => set_status(&project()?, &id, "doing")?,
         Cmd::Done { id } => set_status(&project()?, &id, "done")?,
         Cmd::Note { id, file } => {
             let id = norm_id(&id)?;
             store::append_note(&project()?, &id, &read_text(&file)?)?;
-            println!("{id}: note {}", chrono::Local::now().format("%Y-%m-%d"));
+            println!(
+                "{}: note {}",
+                label(&id),
+                chrono::Local::now().format("%Y-%m-%d")
+            );
         }
         Cmd::Doc { id, doc_type, file } => {
             let path = store::set_doc(&project()?, &norm_id(&id)?, &doc_type, &read_text(&file)?)?;
@@ -388,8 +412,9 @@ fn dispatch(cli: Cli) -> Result<()> {
         }
         Cmd::Kind { id, kind } => {
             let id = norm_id(&id)?;
-            let new = store::set_kind(&project()?, &id, &kind.to_uppercase())?;
-            println!("{id} -> {new}");
+            let kind = kind.to_uppercase();
+            store::set_kind(&project()?, &id, &kind)?;
+            println!("{}: kind {kind}", label(&id));
         }
         Cmd::Delete { id, yes } => delete(&project()?, &norm_id(&id)?, yes)?,
         Cmd::Next { n } => next(&project()?, n)?,
@@ -509,7 +534,7 @@ fn parse_keep(k: &str) -> Result<store::Keep> {
 fn resolve(p: &Project, id: &str, field: Option<String>, keep: Option<String>) -> Result<()> {
     if let (Some(f), Some(k)) = (&field, &keep) {
         store::resolve(p, id, f, parse_keep(k)?)?;
-        println!("{id}: resolved {f}");
+        println!("{}: resolved {f}", label(id));
         return Ok(());
     }
     let board = store::load(p)?;
@@ -535,7 +560,7 @@ fn resolve(p: &Project, id: &str, field: Option<String>, keep: Option<String>) -
     }
     let interactive = std::io::stdin().is_terminal();
     for (what, values, both) in questions {
-        println!("{id} {what}");
+        println!("{} {what}", label(id));
         for (i, v) in values.iter().enumerate() {
             let shown = if what == "body" {
                 format!("\n{}", v.trim_end())
@@ -572,7 +597,11 @@ fn print_sync(r: &crate::sync::Report, verbose: bool) {
         eprintln!("primum: offline, changes stay local until the next sync ({why})");
     }
     for (old, new) in &r.renumbered {
-        eprintln!("primum: {old} is now {new} (the number was taken on the remote)");
+        eprintln!(
+            "primum: {} is now {} (the number was taken on the remote)",
+            label(old),
+            label(new)
+        );
     }
     for k in &r.kept {
         eprintln!("primum: {k}");
@@ -627,18 +656,18 @@ fn set_status(p: &Project, id: &str, status: &str) -> Result<()> {
         ..Default::default()
     };
     store::update(p, &id, c)?;
-    println!("{id}: {status}");
+    println!("{}: {status}", label(&id));
     Ok(())
 }
 
-/// `todo:3` is `TODO:3`; anything that is not an id is an error.
+/// `12` and `#12` are `12`; anything that is not an id is an error.
 fn norm_id(id: &str) -> Result<String> {
-    let up = id.trim().to_uppercase();
-    parse_id(&up).ok_or_else(|| anyhow!("{id} is not an item id, like TODO:3"))?;
-    Ok(up)
+    parse_id(id)
+        .map(id_of)
+        .ok_or_else(|| anyhow!("{id} is not an item id, like 12 or #12"))
 }
 
-/// `TODO:1, bug:2` is `[TODO:1, BUG:2]`; an empty string is no needs.
+/// `3, #5` is `[3, 5]`; an empty string is no needs.
 pub fn parse_needs(s: &str) -> Result<Vec<String>> {
     s.split(',')
         .map(str::trim)
@@ -752,9 +781,12 @@ fn delete(p: &Project, id: &str, yes: bool) -> Result<()> {
             })
             .unwrap_or(0);
         if !std::io::stdin().is_terminal() {
-            bail!("deleting {id} needs --yes when not run from a terminal");
+            bail!(
+                "deleting {} needs --yes when not run from a terminal",
+                label(id)
+            );
         }
-        print!("Delete {id} and {own} documents? [y/N] ");
+        print!("Delete {} and {own} documents? [y/N] ", label(id));
         std::io::stdout().flush()?;
         let mut answer = String::new();
         std::io::stdin().read_line(&mut answer)?;
@@ -824,9 +856,13 @@ impl Style {
     }
 
     /// The id on its lane's color, as on the page.
+    /// `#12 BUG` in the lane's colour, 13 columns wide.
     fn badge(&self, kind: &str, id: &str) -> String {
         let (r, g, b) = kind_rgb(kind);
-        self.paint(&format!(" {id:<9}"), &format!("1;97;48;2;{r};{g};{b}"))
+        self.paint(
+            &format!(" {:<5}{kind:<7}", label(id)),
+            &format!("1;97;48;2;{r};{g};{b}"),
+        )
     }
 }
 
@@ -860,8 +896,9 @@ fn pad(s: &str, n: usize) -> String {
 
 fn header(s: &Style) -> String {
     let line = format!(
-        "{} {} imp urg rsk eff score {} status",
-        pad("id", 10),
+        "{}{} {} imp urg rsk eff score {} status",
+        pad("id", 6),
+        pad("kind", 7),
         pad("title", title_width(s)),
         pad("needs", 16)
     );
@@ -872,7 +909,7 @@ fn row_line(v: &ItemView, s: &Style) -> String {
     let id = if s.color {
         s.badge(&v.kind, &v.id)
     } else {
-        pad(&v.id, 10)
+        format!("{}{}", pad(&label(&v.id), 6), pad(&v.kind, 7))
     };
     let needs = if v.blocked {
         v.blockers.join(",")

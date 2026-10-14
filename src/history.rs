@@ -157,6 +157,26 @@ impl History {
             .then(|| String::from_utf8_lossy(&out.stdout).trim().to_string()))
     }
 
+    /// Numbers of item files ever deleted, so a number is never reused.
+    pub fn deleted_numbers(&self) -> Result<Vec<u32>> {
+        if self.head()?.is_none() {
+            return Ok(vec![]);
+        }
+        let out = self.git(&[
+            "log",
+            "--diff-filter=D",
+            "--no-renames",
+            "--name-only",
+            "--format=",
+            "--",
+            "items/",
+        ])?;
+        Ok(out
+            .lines()
+            .filter_map(|l| crate::item_file::parse_item_name(l.strip_prefix("items/")?))
+            .collect())
+    }
+
     /// Commits everything primum tracks that changed. Returns false when
     /// there was nothing to commit.
     pub fn commit(&self, message: &str) -> Result<bool> {
