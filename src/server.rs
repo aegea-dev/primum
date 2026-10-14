@@ -43,6 +43,10 @@ pub struct ItemView {
     pub closed: bool,
     /// Its lifecycle's states, in order: what a person can set.
     pub states: Vec<String>,
+    /// The lifecycle it follows (`<name>@<version>`) and where it is; none
+    /// for `manual`.
+    pub lifecycle: Option<String>,
+    pub step: Option<String>,
     /// The item's own documents and the ones it lists.
     pub docs: Vec<Doc>,
     /// The item's file, relative to the project root.
@@ -75,6 +79,8 @@ impl ItemView {
             blocked: !blockers.is_empty(),
             closed: board.is_closed(it),
             states: board.rules_of(it).states.clone(),
+            lifecycle: it.lifecycle.clone(),
+            step: it.step.clone(),
             blockers,
             docs: board.docs.get(&it.id).cloned().unwrap_or_default(),
             file: format!("items/{}", file_name(&it.id)),

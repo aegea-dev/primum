@@ -74,6 +74,18 @@ pub fn merge_item(
         Pick::Clean(v) => item.kind = v,
         Pick::Conflict(o, t) => conflict("kind", o, t),
     }
+    // a ticket's lifecycle and its step move together
+    let pin = |i: &Item| (i.lifecycle.clone(), i.step.clone());
+    match pick(base.map(pin).as_ref(), &pin(ours), &pin(theirs)) {
+        Pick::Clean((l, s)) => (item.lifecycle, item.step) = (l, s),
+        Pick::Conflict(o, t) => {
+            let show = |(l, s): (Option<String>, Option<String>)| match (l, s) {
+                (Some(l), Some(s)) => format!("{l} {s}"),
+                _ => "manual".to_string(),
+            };
+            conflict("lifecycle", show(o), show(t))
+        }
+    }
     match pick(base.map(|b| &b.source), &ours.source, &theirs.source) {
         Pick::Clean(v) => item.source = v,
         Pick::Conflict(o, t) => conflict("source", o, t),

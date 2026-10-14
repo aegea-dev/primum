@@ -475,3 +475,23 @@ fn lifecycle_commands() {
     assert_eq!(o.status.code(), Some(1));
     assert!(String::from_utf8_lossy(&o.stderr).contains("kırık.toml"));
 }
+
+#[test]
+fn attach_and_detach_on_the_command_line() {
+    let t = T::new();
+    let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/lifecycles/stakeholder-update.toml");
+    let dir = t.dir.path().join("café/lifecycles");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::copy(&src, dir.join("stakeholder-update.toml")).unwrap();
+    t.out(&["add", "TODO", "Gölge"]);
+    let out = t.out(&["lifecycle", "attach", "1", "stakeholder-update"]);
+    assert!(out.starts_with("#1: stakeholder-update "), "{out}");
+    let show = t.out(&["show", "1"]);
+    assert!(
+        show.contains("lifecycle stakeholder-update") && show.contains("step notify"),
+        "{show}"
+    );
+    assert_eq!(t.out(&["lifecycle", "detach", "#1"]).trim(), "#1: manual");
+    assert!(!t.out(&["show", "1"]).contains("lifecycle "));
+}

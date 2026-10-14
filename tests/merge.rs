@@ -131,3 +131,20 @@ fn the_kind_merges_like_a_field() {
     let m = merge_item(Some(&b), &ours, &theirs, &text);
     assert_eq!(m.fields[0].field, "kind");
 }
+
+#[test]
+fn the_lifecycle_and_step_merge_together() {
+    let b = base();
+    let mut ours = b.clone();
+    (ours.lifecycle, ours.step) = (Some("a@1".into()), Some("x".into()));
+    let m = merge_item(Some(&b), &ours, &b, &text);
+    assert_eq!(m.item.step.as_deref(), Some("x"));
+    let mut theirs = b.clone();
+    (theirs.lifecycle, theirs.step) = (Some("a@1".into()), Some("y".into()));
+    let m = merge_item(Some(&b), &ours, &theirs, &text);
+    assert_eq!(m.fields[0].field, "lifecycle");
+    assert_eq!(
+        m.fields[0].values,
+        ["a@1 x".to_string(), "a@1 y".to_string()]
+    );
+}

@@ -208,6 +208,10 @@ pub enum LifecycleCmd {
     },
     /// The project's lifecycles and their versions
     List,
+    /// Make a ticket follow a lifecycle, pinned at its current version
+    Attach { id: String, name: String },
+    /// Make a ticket follow the built-in manual lifecycle again
+    Detach { id: String },
 }
 
 #[derive(Subcommand)]
@@ -766,6 +770,16 @@ fn lifecycle_cmd(p: &Project, cmd: LifecycleCmd) -> Result<()> {
                 );
             }
         }
+        LifecycleCmd::Attach { id, name } => {
+            let id = norm_id(&id)?;
+            let v = crate::store::attach(p, &id, &name)?;
+            println!("{}: {name} {}", label(&id), short(&v));
+        }
+        LifecycleCmd::Detach { id } => {
+            let id = norm_id(&id)?;
+            crate::store::detach(p, &id)?;
+            println!("{}: manual", label(&id));
+        }
         LifecycleCmd::List => {
             let manual = find_lifecycle(p, "manual")?;
             println!("manual  {}  built in", short(&manual.version));
@@ -869,6 +883,17 @@ fn show(p: &Project, id: &str, json: bool) -> Result<()> {
             String::new()
         };
         println!("needs {}{blocked}", v.needs.join(", "));
+    }
+    if let (Some(pin), Some(step)) = (&v.lifecycle, &v.step) {
+        let (name, version) = crate::lifecycle::split_pin(pin);
+        let gone = match crate::lifecycle::resolve(p, name) {
+            Some(Ok(l)) if l.version == version => "",
+            _ => "  (that version is no longer in lifecycles/)",
+        };
+        println!(
+            "lifecycle {name} {}  step {step}{gone}",
+            crate::lifecycle::short(version)
+        );
     }
     if let Some(f) = &v.finished {
         println!("finished {f}");

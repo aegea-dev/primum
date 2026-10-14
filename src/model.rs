@@ -19,6 +19,10 @@ pub struct Item {
     pub needs: Vec<String>,
     /// Documents of other items this item also shows, as project-relative paths.
     pub docs: Vec<String>,
+    /// The lifecycle it follows, `<name>@<version>`; None follows `manual`.
+    pub lifecycle: Option<String>,
+    /// Where it is in that lifecycle.
+    pub step: Option<String>,
     pub finished: Option<String>,
     pub source: String,
     pub body: String,
@@ -58,6 +62,8 @@ impl Item {
             effort: 5,
             needs: vec![],
             docs: vec![],
+            lifecycle: None,
+            step: None,
             finished: None,
             source: String::new(),
             body: String::new(),

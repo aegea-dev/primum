@@ -47,6 +47,8 @@ pub struct Board {
     /// The rules of the built-in `manual` lifecycle, which tickets without
     /// a lifecycle follow.
     pub manual: Rules,
+    /// The rules of every other lifecycle a ticket follows, by name.
+    pub rules: BTreeMap<String, Rules>,
 }
 
 impl Board {
@@ -55,8 +57,12 @@ impl Board {
     }
 
     /// The rules of the lifecycle an item follows.
-    pub fn rules_of(&self, _it: &Item) -> &Rules {
-        &self.manual
+    pub fn rules_of(&self, it: &Item) -> &Rules {
+        it.lifecycle
+            .as_deref()
+            .map(|pin| crate::lifecycle::split_pin(pin).0)
+            .and_then(|name| self.rules.get(name))
+            .unwrap_or(&self.manual)
     }
 
     /// Whether an item is closed in its lifecycle.
@@ -263,8 +269,33 @@ pub fn load(p: &Project) -> Result<Board> {
         .max()
         .unwrap_or(0);
     let manual = Rules::manual();
+    // each lifecycle a ticket follows: its file's rules, or the defaults
+    // when the file is gone (the engine keeps pinned versions)
+    let mut rules: BTreeMap<String, Rules> = BTreeMap::new();
+    for pin in items.iter().filter_map(|i| i.lifecycle.as_deref()) {
+        let name = crate::lifecycle::split_pin(pin).0;
+        if !rules.contains_key(name) {
+            let r = match crate::lifecycle::resolve(p, name) {
+                Some(Ok(l)) => Rules::of(&l.file),
+                Some(Err(e)) => return Err(anyhow!(e)),
+                None => Rules {
+                    states: crate::lifecycle::validate::DEFAULT_STATES
+                        .iter()
+                        .map(|s| s.to_string())
+                        .collect(),
+                    closed: vec!["done".into(), "wontfix".into()],
+                },
+            };
+            rules.insert(name.to_string(), r);
+        }
+    }
     for it in &items {
-        check_status(&it.id, &it.status, &manual).map_err(|e| {
+        let r = it
+            .lifecycle
+            .as_deref()
+            .and_then(|pin| rules.get(crate::lifecycle::split_pin(pin).0))
+            .unwrap_or(&manual);
+        check_status(&it.id, &it.status, r).map_err(|e| {
             anyhow!(
                 "items/{}: {e:#}; boards made before lifecycles: run primum migrate",
                 file_name(&it.id)
@@ -277,6 +308,7 @@ pub fn load(p: &Project) -> Result<Board> {
         conflicts,
         doc_max,
         manual,
+        rules,
     })
 }
 
@@ -507,6 +539,43 @@ pub fn set_kind(p: &Project, id: &str, kind: &str) -> Result<()> {
     )
 }
 
+/// Attaches an item to a lifecycle at its current version: its step is the
+/// lifecycle's start, its status the start's state. Returns the version.
+pub fn attach(p: &Project, id: &str, name: &str) -> Result<String> {
+    let l = crate::lifecycle::resolve(p, name)
+        .ok_or_else(|| anyhow!("no lifecycle {name} in lifecycles/"))??;
+    change(p, |board| {
+        let it = board.get_mut(id)?;
+        it.lifecycle = Some(format!("{name}@{}", l.version));
+        it.step = Some(l.file.start.clone());
+        it.status = crate::lifecycle::first_state(&l.file);
+        it.finished = None;
+        let it = it.clone();
+        save(p, &it)?;
+        settle(p, board)?;
+        Ok((l.version.clone(), format!("{}: attach {name}", label(id))))
+    })
+}
+
+/// Detaches an item from its lifecycle: it follows `manual` again, and a
+/// status `manual` does not have becomes `idle`.
+pub fn detach(p: &Project, id: &str) -> Result<()> {
+    change(p, |board| {
+        let manual = board.manual.clone();
+        let it = board.get_mut(id)?;
+        it.lifecycle = None;
+        it.step = None;
+        if !manual.states.contains(&it.status) {
+            it.status = manual.states[0].clone();
+        }
+        it.finished = manual.closed.contains(&it.status).then(today);
+        let it = it.clone();
+        save(p, &it)?;
+        settle(p, board)?;
+        Ok(((), format!("{}: detach", label(id))))
+    })
+}
+
 /// Deletes an item and its own documents, and removes its id and documents
 /// from every other item. Returns the files removed.
 pub fn delete(p: &Project, id: &str) -> Result<Vec<String>> {
@@ -725,9 +794,33 @@ pub fn resolve(p: &Project, id: &str, what: &str, keep: Keep) -> Result<()> {
                     let it = it.clone();
                     save(p, &it)?;
                 }
+                // "<name>@<version> <step>", or "manual"
+                "lifecycle" => {
+                    let (pin, step) = match v.split_once(' ') {
+                        Some((pin, step)) => (Some(pin.to_string()), Some(step.to_string())),
+                        None => (None, None),
+                    };
+                    // the status follows the side kept: one its lifecycle has
+                    let rules = match &pin {
+                        Some(pin) => {
+                            match crate::lifecycle::resolve(p, crate::lifecycle::split_pin(pin).0) {
+                                Some(Ok(l)) => Rules::of(&l.file),
+                                _ => board.manual.clone(),
+                            }
+                        }
+                        None => board.manual.clone(),
+                    };
+                    let it = board.get_mut(id)?;
+                    (it.lifecycle, it.step) = (pin, step);
+                    if !rules.states.contains(&it.status) {
+                        it.status = rules.states[0].clone();
+                    }
+                    let it = it.clone();
+                    save(p, &it)?;
+                }
                 other => bail!("cannot resolve {other}"),
             }
-            if what != "source" {
+            if what != "source" && what != "lifecycle" {
                 update_locked(p, board, id, ch)?;
             }
         }

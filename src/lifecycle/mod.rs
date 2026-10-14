@@ -136,6 +136,20 @@ pub fn first_state(f: &File) -> String {
         .unwrap_or_else(|| states(f).into_iter().next().unwrap_or_default())
 }
 
+/// A lifecycle by name: the project's file, else a built-in one.
+pub fn resolve(p: &Project, name: &str) -> Option<Result<Lifecycle, LifecycleError>> {
+    let file = dir(p).join(format!("{name}.toml"));
+    if file.is_file() {
+        return Some(load_file(&file));
+    }
+    built_in(name).map(Ok)
+}
+
+/// `stakeholder-update@f2c...` is ("stakeholder-update", "f2c...").
+pub fn split_pin(pin: &str) -> (&str, &str) {
+    pin.split_once('@').unwrap_or((pin, ""))
+}
+
 /// What the ledger needs of a ticket's lifecycle: its states, in order,
 /// and the ones it is closed in.
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
