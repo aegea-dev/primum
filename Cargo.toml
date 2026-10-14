@@ -25,6 +25,8 @@ anyhow = "~1.0.104"
 cel-interpreter = { version = "~0.9.1", features = ["json"] }
 sha2 = "~0.11.1"
 humantime = "~2.4.0"
+rusqlite = { version = "~0.40.2", features = ["bundled"] }
+uuid = { version = "~1.28.0", features = ["v7"] }
 
 # Only to restore the default SIGPIPE: `primum list | head` ends quietly.
 [target.'cfg(unix)'.dependencies]

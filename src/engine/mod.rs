@@ -3,6 +3,7 @@
 //! come next.
 pub mod builtins;
 pub mod eval;
+pub mod journal;
 pub mod manager;
 
 use crate::lifecycle::File;
