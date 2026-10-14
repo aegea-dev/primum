@@ -43,8 +43,6 @@ pub struct ItemView {
     pub docs: Vec<Doc>,
     /// The item's file, relative to the project root.
     pub file: String,
-    /// The GitHub issue this item is kept in step with.
-    pub github: Option<u64>,
     /// What a sync could not decide for this item.
     pub conflict: Option<crate::conflicts::Conflict>,
     /// The start of the item's file names, `TODO-87`; its page is `item/<stem>`.
@@ -76,7 +74,6 @@ impl ItemView {
             file: format!("items/{}", file_name(&it.id)),
             stem: stem(&it.id),
             conflict: board.conflicts.get(&it.id).cloned(),
-            github: it.github,
         }
     }
 }
@@ -303,7 +300,6 @@ fn common(s: &AppState, p: &Project, board: &Board) -> PageCommon {
         globals: script_json(&json!({
             "PROJECT": p.name,
             "API": api,
-            "GITHUB": projects::github_repo(p).ok().flatten(),
         })),
     }
 }

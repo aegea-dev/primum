@@ -22,8 +22,6 @@ pub struct Item {
     pub docs: Vec<String>,
     pub finished: Option<String>,
     pub source: String,
-    /// The GitHub issue this item is kept in step with.
-    pub github: Option<u64>,
     pub body: String,
 }
 
@@ -55,7 +53,6 @@ impl Item {
             docs: vec![],
             finished: None,
             source: String::new(),
-            github: None,
             body: String::new(),
         }
     }

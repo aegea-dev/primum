@@ -117,7 +117,7 @@ function draw(){
   $('#rows').innerHTML=visible().map((i,n)=>`
    <tr class="item ${n%2?'alt':''} ${i.id===selectedId?'selected':''} ${i.status==='doing'?'doing':''} ${i.blocked?'blocked':''} ${isClosed(i)?'done':''}" data-id="${i.id}" data-stem="${i.stem}">
     <td class="id ${kindClass(i.kind)}">${i.id}</td>
-    <td class=title><a href="item/${i.stem}">${esc(i.title)}</a>${i.github&&window.GITHUB?` <a class=issue href="https://github.com/${GITHUB}/issues/${i.github}" target=_blank rel=noopener title="GitHub issue">#${i.github}</a>`:''}${i.conflict?'<span class=conflict-mark title="changed on two sides: open to resolve">!</span>':''} ${i.body.trim()?'':'<span class=warn title="no text yet">&#9888;</span>'}</td>
+    <td class=title><a href="item/${i.stem}">${esc(i.title)}</a>${i.conflict?'<span class=conflict-mark title="changed on two sides: open to resolve">!</span>':''} ${i.body.trim()?'':'<span class=warn title="no text yet">&#9888;</span>'}</td>
     <td class=n><input class=num type=number min=1 max=10 value="${i.impact}" data-f=impact aria-label=impact ${fin(i)}></td>
     <td class=n><input class=num type=number min=1 max=10 value="${i.urgency}" data-f=urgency aria-label=urgency ${fin(i)}></td>
     <td class=n><input class=num type=number min=1 max=10 value="${i.risk}" data-f=risk aria-label=risk ${fin(i)}></td>

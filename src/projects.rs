@@ -49,15 +49,7 @@ impl Settings {
         let Some(name) = t.get("name").and_then(|v| v.as_str()) else {
             return Ok(None); // a workspace file, not a project
         };
-        let mut s = Settings::new(name);
-        if let Some(g) = t.get("github").and_then(|g| g.as_table()) {
-            let g: Map<String, Value> = g
-                .iter()
-                .filter_map(|(k, v)| v.as_str().map(|v| (k.clone(), Value::from(v))))
-                .collect();
-            s.0.insert("github".into(), Value::Object(g));
-        }
-        Ok(Some(s))
+        Ok(Some(Settings::new(name)))
     }
 
     /// Writes `project.json`, and removes a legacy `primum.toml` holding
@@ -73,39 +65,6 @@ impl Settings {
 
     pub fn name(&self) -> Option<&str> {
         self.0.get("name").and_then(|v| v.as_str())
-    }
-
-    fn github(&self, key: &str) -> Option<String> {
-        self.0.get("github")?.get(key)?.as_str().map(str::to_string)
-    }
-
-    pub fn github_repo(&self) -> Option<String> {
-        self.github("repo")
-    }
-
-    /// How ids show on GitHub issues: `none` or `title`.
-    pub fn github_ids(&self) -> Option<String> {
-        self.github("ids")
-    }
-
-    /// Connects to `owner/repo` (keeping the other GitHub settings), or with
-    /// None drops every GitHub setting.
-    pub fn set_github_repo(&mut self, repo: Option<&str>) {
-        match repo {
-            Some(r) => {
-                let g = self
-                    .0
-                    .entry("github")
-                    .or_insert_with(|| Value::Object(Map::new()));
-                if !g.is_object() {
-                    *g = Value::Object(Map::new());
-                }
-                g["repo"] = r.into();
-            }
-            None => {
-                self.0.remove("github");
-            }
-        }
     }
 }
 
@@ -418,39 +377,6 @@ pub fn init(dir: &Path, name: Option<&str>) -> Result<Project> {
     let p = open(dir).map_err(|e| anyhow!(e))?;
     crate::history::History::open_with(&p, &format!("primum project {}", p.name))?;
     Ok(p)
-}
-
-fn settings(p: &Project) -> Result<Settings> {
-    Ok(Settings::read(&p.root)?.unwrap_or_else(|| Settings::new(&p.name)))
-}
-
-/// The GitHub repository the project is kept in step with, if any.
-pub fn github_repo(p: &Project) -> Result<Option<String>> {
-    Ok(Settings::read(&p.root)?.and_then(|s| s.github_repo()))
-}
-
-/// Connects the project to `owner/repo`, or disconnects it with None.
-pub fn set_github(p: &Project, repo: Option<&str>) -> Result<()> {
-    if let Some(r) = repo {
-        let ok = r
-            .split_once('/')
-            .is_some_and(|(o, n)| !o.is_empty() && !n.is_empty() && !n.contains('/'));
-        if !ok {
-            bail!("name the repository as owner/repo, not {r}");
-        }
-    }
-    let mut s = settings(p)?;
-    s.set_github_repo(repo);
-    s.write(&p.root)
-}
-
-/// How the project's ids show on GitHub issues (`github.ids`).
-pub fn github_ids(p: &Project) -> Result<crate::github::IdStyle> {
-    match Settings::read(&p.root)?.and_then(|s| s.github_ids()) {
-        None => Ok(Default::default()),
-        Some(s) => crate::github::IdStyle::parse(&s)
-            .ok_or_else(|| anyhow!("github.ids in project.json must be none or title, not {s}")),
-    }
 }
 
 /// The order of the machine's old central list, to order a migrated

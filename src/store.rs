@@ -426,10 +426,6 @@ pub(crate) fn move_locked(p: &Project, id: &str, kind: &str, num: u32) -> Result
         fs::rename(p.items_dir().join(&d.name), p.items_dir().join(to))?;
     }
     crate::conflicts::rename(p, id, &new_id)?;
-    let base = crate::github_sync::base_path(p, id);
-    if base.exists() {
-        fs::rename(base, crate::github_sync::base_path(p, &new_id))?;
-    }
     let (old_prefix, new_prefix) = (format!("items/{old_stem}."), format!("items/{new_stem}."));
     for it in board.items.iter().filter(|i| i.id != id) {
         let needs: Vec<String> = it
@@ -487,19 +483,7 @@ pub fn delete(p: &Project, id: &str) -> Result<Vec<String>> {
 }
 
 fn delete_locked(p: &Project, board: &mut Board, id: &str) -> Result<Vec<String>> {
-    let github = board.get(id).ok_or_else(|| anyhow!("no item {id}"))?.github;
-    if let Some(n) = github {
-        // its issue is closed at the next GitHub sync
-        let file = crate::github_sync::deleted_path(p);
-        let mut numbers: Vec<u64> = fs::read_to_string(&file)
-            .ok()
-            .and_then(|t| serde_json::from_str(&t).ok())
-            .unwrap_or_default();
-        numbers.push(n);
-        fs::create_dir_all(file.parent().expect("github/"))?;
-        fs::write(&file, serde_json::to_string(&numbers)? + "\n")?;
-        let _ = fs::remove_file(crate::github_sync::base_path(p, id));
-    }
+    board.get(id).ok_or_else(|| anyhow!("no item {id}"))?;
     let mut gone = vec![format!("items/{}", file_name(id))];
     fs::remove_file(p.items_dir().join(file_name(id)))?;
     for d in board.own_docs(id) {
@@ -717,22 +701,4 @@ pub fn resolve(p: &Project, id: &str, what: &str, keep: Keep) -> Result<()> {
         settle_locked(p)?;
         Ok(((), format!("{id}: resolve {what}")))
     })
-}
-
-/// Inserts an item that came from elsewhere (a GitHub issue), keeping its
-/// kind and fields and giving it the next number in its lane. No lock: the
-/// caller holds it.
-pub(crate) fn insert_locked(p: &Project, mut it: Item) -> Result<String> {
-    let board = load(p)?;
-    it.num = board.next_num(&it.kind);
-    it.id = id_of(&it.kind, it.num);
-    save(p, &it)?;
-    settle_locked(p)?;
-    Ok(it.id)
-}
-
-/// `update` without the lock or a commit, for a caller holding the lock.
-pub(crate) fn update_locked_by_id(p: &Project, id: &str, c: Changes) -> Result<()> {
-    let mut board = load(p)?;
-    update_locked(p, &mut board, id, c)
 }
