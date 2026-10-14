@@ -75,21 +75,21 @@ async function makeBoard(dir: string, binary: string): Promise<{ root: string; e
   const p = (...args: string[]) => run(binary, args, root, env);
   await writeFile(join(dir, "body.md"), "## Neden\n\nGökçe galeriyi açınca **boş** sayfa görüyor.\n");
   await p("add", "BUG", "Gökçe'nin galerisi boş açılıyor", "--impact", "8", "--urgency", "7", "--body-file", join(dir, "body.md"));
-  await p("add", "TODO", "Özgür için CSV dışa aktarımı", "--needs", "BUG:1");
+  await p("add", "TODO", "Özgür için CSV dışa aktarımı", "--needs", "1");
   await p("add", "KILLER", "Işıl'ın harita görünümü", "--impact", "9", "--effort", "7");
   await p("add", "DEBT", "Eski ayar dosyasını kaldır");
   await writeFile(join(dir, "spec.md"), "# Galeri spec\n\n| alan | tür |\n|---|---|\n| ad | metin |\n");
-  await p("doc", "BUG:1", "spec", "--file", join(dir, "spec.md"));
+  await p("doc", "1", "spec", "--file", join(dir, "spec.md"));
   await writeFile(join(dir, "plan.md"), "# Galeri planı\n\n1. önce\n2. sonra\n");
-  await p("doc", "BUG:1", "plan", "--file", join(dir, "plan.md"));
+  await p("doc", "1", "plan", "--file", join(dir, "plan.md"));
   await run(binary, ["add", "URGENT", "Ödev teslimi"], other, env);
-  await p("set", "BUG:1", "--effort", "4");
+  await p("set", "1", "--effort", "4");
   await makeConflict(dir, binary, root, env);
   return { root, env };
 }
 
 /// A second machine (its own workspace) clones işler through a bare remote;
-/// both change KILLER:1's urgency and sync, which leaves a conflict on
+/// both change #3's urgency and sync, which leaves a conflict on
 /// this machine. Sync is manual, so nothing else syncs during the tests.
 async function makeConflict(dir: string, binary: string, root: string, env: NodeJS.ProcessEnv): Promise<void> {
   const remote = join(dir, "remote.git");
@@ -103,9 +103,9 @@ async function makeConflict(dir: string, binary: string, root: string, env: Node
   await run(binary, ["clone", remote, "kopya"], machine2, env);
   const q = (...args: string[]) => run(binary, args, join(machine2, "kopya"), env);
   await q("remote", "set", remote, "--manual");
-  await q("set", "KILLER:1", "--urgency", "2");
+  await q("set", "3", "--urgency", "2");
   await q("sync");
-  await p("set", "KILLER:1", "--urgency", "8");
+  await p("set", "3", "--urgency", "8");
   await p("sync");
 }
 
@@ -127,7 +127,7 @@ export const test = base.extend<{ board: Board }>({
         if (Date.now() > deadline) throw new Error(`primum serve did not start: ${stderr()}`);
         await new Promise((r) => setTimeout(r, 100));
       }
-      const item = (id: string) => readFile(join(root, "items", `${id.replace(":", "-")}.md`), "utf8");
+      const item = (id: string) => readFile(join(root, "items", `${id}.md`), "utf8");
       await use({ baseURL, root, item });
     } finally {
       if (child && child.exitCode === null) {

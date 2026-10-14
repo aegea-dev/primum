@@ -14,7 +14,7 @@ commits them as their own entry, "edited outside primum".
 
 ```bash
 primum log               # the project
-primum log TODO:87       # one item, across renames
+primum log 87       # one item, across renames
 ```
 
 The history tracks `project.json`, `BOARD.md`, `items/*.md`, and the
@@ -52,6 +52,6 @@ primum merges items itself, field by field, never with git's line merge:
 - **The same field changed the same way** on both sides is one change.
 - **The same field changed differently** is a [conflict](/guides/conflicts/).
 
-Two machines adding items to one lane at once would take the same number. A
-sync renumbers the local new items to the next free numbers, rewriting every
-reference to them, and prints what moved.
+Two machines adding items at once can take the same number. A sync moves
+the local new item above every number used on either side, rewriting every
+reference to it (`needs`, documents, `#n` in text), and prints what moved.

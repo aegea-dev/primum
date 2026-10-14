@@ -14,6 +14,9 @@
 .kind-debt{--kind-color:#4F6F99}
 .kind-killer{--kind-color:#3F7E69}
 .kind-todo{--kind-color:#75689A}
+/* #12 in text: a link to the item, in its lane's colour */
+a.ref{color:var(--kind-color,var(--accent));font-weight:600;text-decoration:none}
+a.ref:hover{text-decoration:underline}
 
 .hide{display:none!important}
 .warn{color:var(--warn)}

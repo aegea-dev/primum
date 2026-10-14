@@ -25,6 +25,7 @@ description: Every primum command, what it does, and the option they all share.
 | [`sync`](/commands/sync/) | Pull, merge and push now |
 | [`resolve`](/commands/resolve/) | Settle a conflict a sync left |
 | [`import`](/commands/import/) | Import a videre-board board, once |
+| [`migrate`](/commands/migrate/) | Bring a board made by an earlier version up to date |
 
 ## Choosing the project
 
@@ -35,8 +36,9 @@ current folder, else the workspace's only project. See
 
 ## Ids
 
-Ids are written `KIND:N`, like `TODO:87`. The kind is not case sensitive on
-the command line: `todo:87` works.
+An item's id is its number. On the command line write `87` or `#87` (quote
+`#87` in shells that read `#` as a comment); output shows `#87` with the
+item's kind beside it.
 
 ## Help
 

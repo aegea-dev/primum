@@ -4,8 +4,8 @@ description: Mark an item in progress, or done.
 ---
 
 ```bash
-primum start TODO:87      # status: doing
-primum done TODO:87       # status: done, finished: today
+primum start 87      # status: doing
+primum done 87       # status: done, finished: today
 ```
 
 Shorthands for `primum set ID --status doing` and `--status done`. Marking an

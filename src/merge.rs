@@ -70,6 +70,10 @@ pub fn merge_item(
         Pick::Clean(v) => item.title = v,
         Pick::Conflict(o, t) => conflict("title", o, t),
     }
+    match pick(base.map(|b| &b.kind), &ours.kind, &theirs.kind) {
+        Pick::Clean(v) => item.kind = v,
+        Pick::Conflict(o, t) => conflict("kind", o, t),
+    }
     match pick(base.map(|b| &b.source), &ours.source, &theirs.source) {
         Pick::Clean(v) => item.source = v,
         Pick::Conflict(o, t) => conflict("source", o, t),

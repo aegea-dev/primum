@@ -5,7 +5,8 @@
 //! survive (`ticket_ids`, `_topic`, `item_docs`): inside primum a document
 //! belongs to an item by its file name.
 use crate::item_file::{self, file_name, parse_item_name, stem};
-use crate::model::{Item, KINDS, STATUSES, clamp_score};
+use crate::migrate::rewrite_refs;
+use crate::model::{Item, KINDS, STATUSES, clamp_score, id_of};
 use crate::store::{self, Project};
 use anyhow::{Context, Result, bail};
 use regex::Regex;
@@ -96,11 +97,16 @@ fn text(v: Option<&Value>) -> String {
 
 fn item_from_row(row: &Value) -> Result<Item> {
     let id = row["id"].as_str().context("a row has no id")?;
-    let (kind, num) = crate::model::parse_id(id).with_context(|| format!("bad id {id}"))?;
-    if !KINDS.contains(&kind.as_str()) {
+    let (kind, num) = id
+        .split_once(':')
+        .and_then(|(k, n)| Some((k, n.parse::<u32>().ok()?)))
+        .with_context(|| format!("bad id {id}"))?;
+    if !KINDS.contains(&kind) {
         bail!("{id}: unknown kind");
     }
-    let mut it = Item::new(&kind, num, &text(row.get("title")));
+    // the board.py id until `run` numbers the items
+    let mut it = Item::new(kind, num, &text(row.get("title")));
+    it.id = id.to_string();
     let status = row["status"].as_str().unwrap_or("open");
     if !STATUSES.contains(&status) {
         bail!("{id}: unknown status {status}");
@@ -197,6 +203,12 @@ pub fn run(board_dir: &Path, project: &Project) -> Result<Report> {
         }
     }
 
+    // primum's numbers: board.py's order
+    let map: BTreeMap<String, String> = items
+        .iter()
+        .enumerate()
+        .map(|(i, it)| (it.id.clone(), id_of(i as u32 + 1)))
+        .collect();
     let mut report = Report {
         items: items.len(),
         ..Default::default()
@@ -221,7 +233,7 @@ pub fn run(board_dir: &Path, project: &Project) -> Result<Report> {
             report.left.push(f.rel.clone());
             continue;
         };
-        let base = format!("{}.{}", stem(owner), f.doc_type);
+        let base = format!("{}.{}", stem(&map[owner]), f.doc_type);
         let date = DATE_PREFIX
             .captures(&f.name)
             .map(|c| c[1].to_string())
@@ -234,13 +246,23 @@ pub fn run(board_dir: &Path, project: &Project) -> Result<Report> {
         .into_iter()
         .find(|n| !taken.contains(n))
         .with_context(|| format!("no free name for {} beside {owner}", f.rel))?;
-        fs::write(items_dir.join(&name), &f.text)?;
+        fs::write(items_dir.join(&name), rewrite_refs(&f.text, &map))?;
         taken.insert(name.clone());
         let copy = format!("items/{name}");
         report.docs.push((f.rel.clone(), copy.clone()));
         for other in &linked[1..] {
-            shared.push((other.clone(), copy.clone()));
+            shared.push((map[other].clone(), copy.clone()));
         }
+    }
+    for (i, it) in items.iter_mut().enumerate() {
+        it.num = i as u32 + 1;
+        it.id = id_of(it.num);
+        it.needs = it
+            .needs
+            .iter()
+            .filter_map(|n| map.get(n).cloned())
+            .collect();
+        it.body = rewrite_refs(&it.body, &map);
     }
     for (id, copy) in &shared {
         if let Some(it) = items.iter_mut().find(|i| &i.id == id) {

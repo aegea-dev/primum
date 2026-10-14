@@ -53,6 +53,7 @@ src/store.rs       a project's items on disk: load and every change
 src/projects.rs    the workspace (primum.toml) and each project's project.json
 src/history.rs     the project's bare git repository; every git call
 src/merge.rs       three-way merge of one item, field by field
+src/migrate.rs     converting a board to one counter; rewriting references
 src/conflicts.rs   conflicts/<STEM>.json: what a sync could not decide
 src/sync.rs        fetch, renumber, merge, settle, push
 src/import.rs      one-time import of a board.py board

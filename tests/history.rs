@@ -9,8 +9,8 @@ fn open_creates_the_bare_repo_with_a_first_commit_of_what_is_there() {
     fs::write(d.path().join("primum.toml"), "name = \"deneme\"\n").unwrap();
     fs::write(d.path().join("notlar.txt"), "Gökçe'nin notu\n").unwrap();
     fs::write(d.path().join(".primum.lock"), "").unwrap();
-    fs::write(d.path().join("items/TODO-1.md.tmp"), "").unwrap();
-    fs::write(d.path().join("items/TODO-1.md"), "---\ntitle: x\n---\n").unwrap();
+    fs::write(d.path().join("items/1.md.tmp"), "").unwrap();
+    fs::write(d.path().join("items/1.md"), "---\ntitle: x\n---\n").unwrap();
     let h = History::open(&p).unwrap().unwrap();
     assert!(d.path().join(".primum/history.git/HEAD").is_file());
     assert_eq!(
@@ -18,7 +18,7 @@ fn open_creates_the_bare_repo_with_a_first_commit_of_what_is_there() {
         "*\n"
     );
     assert_eq!(common::subjects(&p), ["start history"]);
-    assert_eq!(common::tracked(&p), ["items/TODO-1.md", "primum.toml"]);
+    assert_eq!(common::tracked(&p), ["items/1.md", "primum.toml"]);
     assert!(h.head().unwrap().is_some());
     History::open(&p).unwrap().unwrap();
     assert_eq!(
@@ -34,20 +34,21 @@ fn commit_takes_only_primums_files_and_reports_whether_it_committed() {
     let p = common::project(d.path());
     let h = History::open(&p).unwrap().unwrap();
     assert!(!h.commit("boş").unwrap(), "nothing to commit");
-    fs::write(d.path().join("items/BUG-1.md"), "x").unwrap();
+    fs::write(d.path().join("items/1.md"), "x").unwrap();
     fs::write(d.path().join("BOARD.md"), "# deneme\n").unwrap();
     fs::create_dir_all(d.path().join("conflicts")).unwrap();
-    fs::write(d.path().join("conflicts/BUG-1.json"), "{}").unwrap();
+    fs::write(d.path().join("conflicts/1.json"), "{}").unwrap();
     fs::write(d.path().join("başka.md"), "x").unwrap();
-    assert!(h.commit("BUG:1: add \"Işıl\"").unwrap());
-    assert_eq!(common::subjects(&p)[0], "BUG:1: add \"Işıl\"");
+    assert!(h.commit("#1: add \"Çay\"").unwrap());
+    assert_eq!(common::subjects(&p)[0], "#1: add \"Çay\"");
     assert_eq!(
         common::tracked(&p),
-        ["BOARD.md", "conflicts/BUG-1.json", "items/BUG-1.md"]
+        ["BOARD.md", "conflicts/1.json", "items/1.md"]
     );
-    fs::remove_file(d.path().join("items/BUG-1.md")).unwrap();
-    assert!(h.commit("BUG:1: delete").unwrap());
-    assert_eq!(common::tracked(&p), ["BOARD.md", "conflicts/BUG-1.json"]);
+    fs::remove_file(d.path().join("items/1.md")).unwrap();
+    assert!(h.commit("#1: delete").unwrap());
+    assert_eq!(common::tracked(&p), ["BOARD.md", "conflicts/1.json"]);
+    assert_eq!(h.deleted_numbers().unwrap(), [1]);
 }
 
 #[test]
@@ -56,7 +57,7 @@ fn outside_edits_are_committed_apart() {
     let p = common::project(d.path());
     let h = History::open(&p).unwrap().unwrap();
     assert!(!h.record_outside().unwrap());
-    fs::write(d.path().join("items/TODO-1.md"), "elle yazıldı").unwrap();
+    fs::write(d.path().join("items/1.md"), "elle yazıldı").unwrap();
     assert!(h.record_outside().unwrap());
     assert_eq!(common::subjects(&p)[0], "edited outside primum");
 }
@@ -69,7 +70,7 @@ fn author_is_the_configured_identity() {
     h.git(&["config", "user.name", "Özgür"]).unwrap();
     h.git(&["config", "user.email", "ozgur@example.com"])
         .unwrap();
-    fs::write(d.path().join("items/TODO-1.md"), "x").unwrap();
+    fs::write(d.path().join("items/1.md"), "x").unwrap();
     h.commit("x").unwrap();
     assert_eq!(
         h.git(&["log", "-1", "--format=%an"]).unwrap().trim(),
@@ -78,33 +79,30 @@ fn author_is_the_configured_identity() {
 }
 
 #[test]
-fn log_follows_an_item_across_a_kind_change() {
+fn log_lists_an_items_changes_with_their_diffs() {
     use primum::store::*;
     let d = tempfile::tempdir().unwrap();
     let p = common::project(d.path());
-    insert(&p, "TODO", "Gökçe", Changes::default()).unwrap();
+    insert(&p, "TODO", "Çay", Changes::default()).unwrap();
     insert(&p, "BUG", "başka", Changes::default()).unwrap();
     let risk = Changes {
         risk: Some(8),
         ..Default::default()
     };
-    update(&p, "TODO:1", risk).unwrap();
-    set_kind(&p, "TODO:1", "BUG").unwrap();
+    update(&p, "1", risk).unwrap();
+    set_kind(&p, "1", "BUG").unwrap();
     let h = common::history(&p);
-    let log = h.log(Some("items/BUG-2.md"), 50).unwrap();
+    let log = h.log(Some("items/1.md"), 50).unwrap();
     let msgs: Vec<&str> = log.iter().map(|e| e.message.as_str()).collect();
-    assert_eq!(
-        msgs,
-        ["TODO:1 -> BUG:2", "TODO:1: risk", "TODO:1: add \"Gökçe\""]
-    );
-    assert_eq!(log[2].path.as_deref(), Some("items/TODO-1.md"));
-    let diff = h.diff(&log[1].commit, "items/TODO-1.md").unwrap();
+    assert_eq!(msgs, ["#1: kind BUG", "#1: risk", "#1: add \"Çay\""]);
+    assert_eq!(log[2].path.as_deref(), Some("items/1.md"));
+    let diff = h.diff(&log[1].commit, "items/1.md").unwrap();
     assert!(
         diff.contains("-risk: 3") && diff.contains("+risk: 8"),
         "{diff}"
     );
     assert_eq!(h.log(None, 2).unwrap().len(), 2);
-    assert!(h.diff("../x", "items/TODO-1.md").is_err());
+    assert!(h.diff("../x", "items/1.md").is_err());
     assert!(h.diff(&log[1].commit, "../primum.toml").is_err());
 }
 
@@ -142,7 +140,7 @@ fn push_fetch_and_clone() {
     assert!(matches!(h.fetch(&r).unwrap(), Fetched::Ok));
     let other = d.path().join("ışıl");
     clone(&url, None, &other).unwrap();
-    assert!(other.join("items/TODO-1.md").is_file());
+    assert!(other.join("items/1.md").is_file());
     assert!(other.join("BOARD.md").is_file());
     assert!(clone(&url, None, &other).is_err(), "already a project");
     let gone = h.set_remote("/yok/remote.git", None, false).unwrap();

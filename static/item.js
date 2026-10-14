@@ -10,6 +10,7 @@ async function load(){
   const items=await api('/items');
   IT=items.find(i=>i.id===ITEM_ID);
   if(!IT){location.href='../';return;}
+  knowItems(items,'');
   HISTORY=await api('/history?id='+encodeURIComponent(ITEM_ID)).catch(()=>[]);
   draw();
 }
@@ -17,14 +18,16 @@ async function load(){
 function draw(){
   const closed=isClosed(IT);
   $('#item-id').className='id '+kindClass(IT.kind);
+  $('#item-id').textContent=label(IT.id);
+  $('#item-id').title=IT.kind;
   $('#item-title').textContent=IT.title;
-  document.title=IT.id+' '+IT.title+' · primum';
+  document.title=label(IT.id)+' '+IT.title+' · primum';
   const score=f=>`<label>${f} <input class=num type=number min=1 max=10 value="${IT[f]}" data-f=${f} ${closed?'disabled':''}></label>`;
   $('#controls').innerHTML=
     `<label>status <select data-f=status>${STATUSES.map(s=>`<option ${s===IT.status?'selected':''}>${s}</option>`).join('')}</select></label>`
     +['impact','urgency','risk','effort'].map(score).join('')
     +`<span>score <span class=score>${IT.score}</span></span>`
-    +(IT.needs.length?`<span>needs ${IT.blockers.length?'<span class=warn>'+IT.blockers.join(', ')+'</span>':IT.needs.join(', ')}</span>`:'')
+    +(IT.needs.length?`<span>needs ${IT.blockers.length?'<span class=warn>'+IT.blockers.map(label).join(', ')+'</span>':IT.needs.map(label).join(', ')}</span>`:'')
     +(IT.finished?`<span>finished ${esc(IT.finished)}</span>`:'');
   document.querySelectorAll('#controls [data-f]').forEach(el=>el.onchange=async()=>{
     const v=el.tagName==='SELECT'?el.value:parseInt(el.value,10);
@@ -138,7 +141,7 @@ $('#kindsave').onclick=async()=>{
 $('#del').onclick=async()=>{
   const own=IT.docs.filter(d=>d.path.startsWith('items/'+IT.stem+'.')).length;
   const what=own?` and its ${own} document${own>1?'s':''}`:'';
-  if(!confirm('Delete '+IT.id+what+'? This cannot be undone.'))return;
+  if(!confirm('Delete '+label(IT.id)+what+'? This cannot be undone.'))return;
   try{await api('/delete',{id:IT.id});}catch(e){alert(e.message);return;}
   location.href='../';
 };

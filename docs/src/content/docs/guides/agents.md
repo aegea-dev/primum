@@ -10,9 +10,9 @@ every command takes plain arguments.
 
 ```bash
 primum next                   # what to do
-primum show TODO:87 --json    # one item, with its documents
+primum show 87 --json    # one item, with its documents
 primum list --json            # everything open, ranked
-primum log TODO:87 --json     # what happened to it
+primum log 87 --json     # what happened to it
 ```
 
 ## Writing
@@ -20,12 +20,12 @@ primum log TODO:87 --json     # what happened to it
 Text goes through files or standard input, never through quoting:
 
 ```bash
-primum start TODO:87
-primum doc TODO:87 plan --file plan.md
-primum note TODO:87 --file - <<'END'
+primum start 87
+primum doc 87 plan --file plan.md
+primum note 87 --file - <<'END'
 Implemented the CSV export; the date column follows the item's `finished`.
 END
-primum done TODO:87
+primum done 87
 ```
 
 `primum delete` refuses to run without a terminal unless given `--yes`.

@@ -3,7 +3,7 @@
 //! closed ids from every `needs`, and rewrites BOARD.md.
 use crate::history::History;
 use crate::item_file::{self, file_name, parse_doc_name, parse_item_name, stem};
-use crate::model::{Item, KINDS, STATUSES, clamp_score, id_of, priority_cmp};
+use crate::model::{Item, KINDS, STATUSES, clamp_score, id_of, label, priority_cmp};
 use anyhow::{Context, Result, anyhow, bail};
 use fs2::FileExt;
 use std::collections::BTreeMap;
@@ -54,16 +54,13 @@ impl Board {
             .ok_or_else(|| anyhow!("no item {id}"))
     }
 
-    /// The next free number in `kind`'s lane.
-    pub fn next_num_of(&self, kind: &str) -> u32 {
-        self.next_num(kind)
-    }
-
-    fn next_num(&self, kind: &str) -> u32 {
+    /// The next number: one above every item's, and every number in
+    /// `deleted`, so a number is never reused.
+    pub fn next_num(&self, deleted: &[u32]) -> u32 {
         self.items
             .iter()
-            .filter(|i| i.kind == kind)
             .map(|i| i.num)
+            .chain(deleted.iter().copied())
             .max()
             .unwrap_or(0)
             + 1
@@ -89,6 +86,7 @@ impl Board {
 #[derive(Debug, Default, Clone)]
 pub struct Changes {
     pub title: Option<String>,
+    pub kind: Option<String>,
     pub status: Option<String>,
     pub impact: Option<i64>,
     pub urgency: Option<i64>,
@@ -103,6 +101,7 @@ impl Changes {
     pub fn fields(&self) -> Vec<&'static str> {
         [
             ("title", self.title.is_some()),
+            ("kind", self.kind.is_some()),
             ("status", self.status.is_some()),
             ("impact", self.impact.is_some()),
             ("urgency", self.urgency.is_some()),
@@ -119,9 +118,11 @@ impl Changes {
 
     /// The commit message for this change to `id`.
     fn message(&self, id: &str) -> String {
-        match (&self.status, self.fields().as_slice()) {
-            (Some(s), ["status"]) => format!("{id}: status {s}"),
-            (_, fields) => format!("{id}: {}", fields.join(", ")),
+        let id = label(id);
+        match (&self.status, &self.kind, self.fields().as_slice()) {
+            (Some(s), _, ["status"]) => format!("{id}: status {s}"),
+            (_, Some(k), ["kind"]) => format!("{id}: kind {k}"),
+            (_, _, fields) => format!("{id}: {}", fields.join(", ")),
         }
     }
 }
@@ -180,6 +181,14 @@ pub(crate) fn write_atomic(path: &Path, text: &str) -> Result<()> {
     fs::rename(&tmp, path).with_context(|| format!("cannot replace {}", path.display()))
 }
 
+/// Numbers of items deleted in the project's history; none without git.
+fn deleted(p: &Project) -> Result<Vec<u32>> {
+    Ok(match History::open(p)? {
+        Some(h) => h.deleted_numbers()?,
+        None => vec![],
+    })
+}
+
 pub fn load(p: &Project) -> Result<Board> {
     let mut items = vec![];
     let mut own: BTreeMap<String, Vec<Doc>> = BTreeMap::new();
@@ -187,14 +196,17 @@ pub fn load(p: &Project) -> Result<Board> {
         .with_context(|| format!("{} has no items/ folder", p.root.display()))?
         .filter_map(|e| e.ok()?.file_name().into_string().ok())
         .collect();
+    if names.iter().any(|n| item_file::old_style_name(n)) {
+        bail!("this board uses ids from an earlier version: run primum migrate");
+    }
     names.sort();
     for name in names {
         if parse_item_name(&name).is_some() {
             let text = fs::read_to_string(p.items_dir().join(&name))
                 .with_context(|| format!("cannot read items/{name}"))?;
             items.push(item_file::parse(&name, &text)?);
-        } else if let Some((kind, num, doc_type)) = parse_doc_name(&name) {
-            own.entry(id_of(&kind, num)).or_default().push(Doc {
+        } else if let Some((num, doc_type)) = parse_doc_name(&name) {
+            own.entry(id_of(num)).or_default().push(Doc {
                 kind: doc_type,
                 path: format!("items/{name}"),
                 name,
@@ -215,7 +227,7 @@ pub fn load(p: &Project) -> Result<Board> {
         for path in &it.docs {
             let name = path.rsplit('/').next().unwrap_or(path).to_string();
             let kind = parse_doc_name(&name)
-                .map(|x| x.2)
+                .map(|x| x.1)
                 .unwrap_or_else(|| "doc".into());
             list.push(Doc {
                 kind,
@@ -290,6 +302,12 @@ fn apply(it: &mut Item, c: Changes) -> Result<()> {
     if let Some(t) = c.title {
         it.title = t;
     }
+    if let Some(k) = c.kind {
+        if !KINDS.contains(&k.as_str()) {
+            bail!("unknown kind {k}");
+        }
+        it.kind = k;
+    }
     for (field, v) in [
         (&mut it.impact, c.impact),
         (&mut it.urgency, c.urgency),
@@ -338,13 +356,14 @@ pub fn insert(p: &Project, kind: &str, title: &str, c: Changes) -> Result<String
             .ok_or_else(|| anyhow!("give a title, or start the text with a heading"))?,
         _ => title.to_string(),
     };
+    let deleted = deleted(p)?;
     change(p, |board| {
-        let mut it = Item::new(kind, board.next_num(kind), &title);
+        let mut it = Item::new(kind, board.next_num(&deleted), &title);
         it.source = "primum".into();
         apply(&mut it, c)?;
         save(p, &it)?;
         let id = it.id.clone();
-        let message = format!("{id}: add {}", serde_json::to_string(&it.title)?);
+        let message = format!("{}: add {}", label(&id), serde_json::to_string(&it.title)?);
         board.items.push(it);
         settle(p, board)?;
         Ok((id, message))
@@ -380,125 +399,75 @@ pub fn append_note(p: &Project, id: &str, text: &str) -> Result<()> {
             ..Default::default()
         };
         update_locked(p, board, id, c)?;
-        Ok(((), format!("{id}: note")))
+        Ok(((), format!("{}: note", label(id))))
     })
 }
 
-/// `## OLD rest` or `## <num>. rest` on the body's first line becomes
-/// `## NEW rest`: board.py's rewrite_body_heading.
-fn rewrite_heading(body: &str, old: &str, new: &str) -> String {
-    let (first, rest) = match body.split_once('\n') {
-        Some((a, b)) => (a, Some(b)),
-        None => (body, None),
-    };
-    let hashes = first.len() - first.trim_start_matches('#').len();
-    let after = &first[hashes..];
-    if hashes == 0 || !after.starts_with(char::is_whitespace) {
-        return body.to_string();
-    }
-    let text = after.trim_start();
-    let prefix = &first[..first.len() - text.len()];
-    let old_num = old.split_once(':').map(|x| x.1).unwrap_or("");
-    let tail = if let Some(t) = text.strip_prefix(old) {
-        if t.starts_with(|c: char| c.is_alphanumeric() || c == '_') {
-            return body.to_string();
-        }
-        t
-    } else if let Some(t) = text
-        .strip_prefix(old_num)
-        .and_then(|t| t.strip_prefix('.'))
-        .filter(|t| t.starts_with(char::is_whitespace))
-    {
-        t
-    } else {
-        return body.to_string();
-    };
-    let line = format!("{prefix}{new} {}", tail.trim_start())
-        .trim_end()
-        .to_string();
-    match rest {
-        Some(r) => format!("{line}\n{r}"),
-        None => line,
-    }
-}
-
-/// Moves an item to `kind` and `num` without the lock: its file and own
-/// documents renamed, its heading, and every `needs` and `docs` naming it
-/// rewritten. Shared by `set_kind` and sync's renumbering. Returns the new
-/// id.
-pub(crate) fn move_locked(p: &Project, id: &str, kind: &str, num: u32) -> Result<String> {
+/// Gives an item another number without the lock: its file and own
+/// documents renamed, its conflict record, and every reference to it in
+/// other items (`needs`, `docs`, `#n` in text) rewritten. Sync's
+/// renumbering of a number taken on the remote. Returns the new id.
+pub(crate) fn renumber_locked(p: &Project, id: &str, num: u32) -> Result<String> {
     let board = load(p)?;
     let old = board
         .get(id)
         .ok_or_else(|| anyhow!("no item {id}"))?
         .clone();
-    let new_id = id_of(kind, num);
-    let (old_stem, new_stem) = (stem(id), stem(&new_id));
+    let new_id = id_of(num);
+    let map: BTreeMap<String, String> = [(id.to_string(), new_id.clone())].into();
     let mut moved = old.clone();
     moved.id = new_id.clone();
-    moved.kind = kind.to_string();
     moved.num = num;
-    moved.body = rewrite_heading(&old.body, id, &new_id);
+    moved.body = crate::migrate::rewrite_refs(&old.body, &map);
     save(p, &moved)?;
     fs::remove_file(p.items_dir().join(file_name(id)))?;
+    let old_prefix = format!("{}.", stem(id));
     for d in board.own_docs(id) {
-        let to = d.name.replacen(&old_stem, &new_stem, 1);
+        let to = format!("{}.{}", stem(&new_id), &d.name[old_prefix.len()..]);
         fs::rename(p.items_dir().join(&d.name), p.items_dir().join(to))?;
     }
     crate::conflicts::rename(p, id, &new_id)?;
-    let (old_prefix, new_prefix) = (format!("items/{old_stem}."), format!("items/{new_stem}."));
     for it in board.items.iter().filter(|i| i.id != id) {
-        let needs: Vec<String> = it
+        let mut changed = it.clone();
+        changed.needs = it
             .needs
             .iter()
             .map(|n| if n == id { new_id.clone() } else { n.clone() })
             .collect();
-        let docs: Vec<String> = it
+        changed.docs = it
             .docs
             .iter()
-            .map(|d| match d.strip_prefix(&old_prefix) {
-                Some(rest) => format!("{new_prefix}{rest}"),
-                None => d.clone(),
-            })
+            .map(|d| crate::migrate::rewrite_refs(d, &map))
             .collect();
-        if needs != it.needs || docs != it.docs {
-            let mut it = it.clone();
-            it.needs = needs;
-            it.docs = docs;
-            save(p, &it)?;
+        changed.body = crate::migrate::rewrite_refs(&it.body, &map);
+        if changed != *it {
+            save(p, &changed)?;
         }
     }
     settle_locked(p)?;
     Ok(new_id)
 }
 
-/// Moves an open item to another lane: the next number there, everything
-/// naming it rewritten (`move_locked`). Returns the new id.
-pub fn set_kind(p: &Project, id: &str, kind: &str) -> Result<String> {
-    if !KINDS.contains(&kind) {
-        bail!("unknown kind {kind}");
-    }
-    change(p, |board| {
-        let old = board
-            .get(id)
-            .ok_or_else(|| anyhow!("no item {id}"))?
-            .clone();
-        if old.is_closed() {
-            bail!("{id} is closed; reopen it before changing kind");
-        }
-        if old.kind == kind {
-            return Ok((id.to_string(), String::new()));
-        }
-        let new_id = move_locked(p, id, kind, board.next_num(kind))?;
-        Ok((new_id.clone(), format!("{id} -> {new_id}")))
-    })
+/// Moves an item to another lane: one field, nothing renamed.
+pub fn set_kind(p: &Project, id: &str, kind: &str) -> Result<()> {
+    update(
+        p,
+        id,
+        Changes {
+            kind: Some(kind.to_string()),
+            ..Default::default()
+        },
+    )
 }
 
 /// Deletes an item and its own documents, and removes its id and documents
 /// from every other item. Returns the files removed.
 pub fn delete(p: &Project, id: &str) -> Result<Vec<String>> {
     change(p, |board| {
-        Ok((delete_locked(p, board, id)?, format!("{id}: delete")))
+        Ok((
+            delete_locked(p, board, id)?,
+            format!("{}: delete", label(id)),
+        ))
     })
 }
 
@@ -546,7 +515,7 @@ pub fn set_doc(p: &Project, id: &str, doc_type: &str, text: &str) -> Result<Stri
         write_atomic(&p.items_dir().join(&name), text)?;
         Ok((
             format!("items/{name}"),
-            format!("{id}: {doc_type} document"),
+            format!("{}: {doc_type} document", label(id)),
         ))
     })
 }
@@ -588,7 +557,8 @@ pub fn board_markdown(board: &Board, name: &str) -> String {
         out.push("## Conflicts\n".to_string());
         for (id, c) in &board.conflicts {
             out.push(format!(
-                "- [{id}](items/{}): {}",
+                "- [{}](items/{}): {}",
+                label(id),
                 file_name(id),
                 c.what().join(", ")
             ));
@@ -607,7 +577,7 @@ pub fn board_markdown(board: &Board, name: &str) -> String {
         for i in group {
             out.push(format!(
                 "| [{}](items/{}) | {} | {} | {} | {} | {:.1} | {} | {} |",
-                i.id,
+                label(&i.id),
                 file_name(&i.id),
                 i.impact,
                 i.urgency,
@@ -621,14 +591,14 @@ pub fn board_markdown(board: &Board, name: &str) -> String {
         out.push(String::new());
     }
     if !closed.is_empty() {
-        closed.sort_by(|a, b| a.kind.cmp(&b.kind).then(a.num.cmp(&b.num)));
+        closed.sort_by_key(|i| i.num);
         out.push("## Closed\n".into());
         out.push("| id | status | finished | title |".into());
         out.push("|---|---|---|---|".into());
         for i in closed {
             out.push(format!(
                 "| {} | {} | {} | {} |",
-                i.id,
+                label(&i.id),
                 i.status,
                 i.finished.as_deref().unwrap_or(""),
                 i.title
@@ -701,10 +671,7 @@ pub fn resolve(p: &Project, id: &str, what: &str, keep: Keep) -> Result<()> {
                 "urgency" => ch.urgency = Some(num()?),
                 "risk" => ch.risk = Some(num()?),
                 "effort" => ch.effort = Some(num()?),
-                "kind" => {
-                    let new_id = move_locked(p, id, &v, board.next_num(&v))?;
-                    c.id = new_id;
-                }
+                "kind" => ch.kind = Some(v.clone()),
                 "source" => {
                     let it = board.get_mut(id)?;
                     it.source = v.clone();
@@ -713,12 +680,12 @@ pub fn resolve(p: &Project, id: &str, what: &str, keep: Keep) -> Result<()> {
                 }
                 other => bail!("cannot resolve {other}"),
             }
-            if what != "source" && what != "kind" {
+            if what != "source" {
                 update_locked(p, board, id, ch)?;
             }
         }
         crate::conflicts::write(p, &c)?;
         settle_locked(p)?;
-        Ok(((), format!("{id}: resolve {what}")))
+        Ok(((), format!("{}: resolve {what}", label(id))))
     })
 }

@@ -5,9 +5,9 @@ description: Common errors and what to do.
 
 ## An item file is an error
 
-`primum: TODO-87.md:4: unknown status ...` names the file and line primum could not read. An
+`primum: 87.md:4: unknown status ...` names the file and line primum could not read. An
 edit outside primum left it in a form primum does not write; fix the line to
-match [item files](/reference/item-files/). `primum log TODO:87` shows the
+match [item files](/reference/item-files/). `primum log 87` shows the
 last good version.
 
 ## "choose a project with -p NAME: ..."

@@ -1,12 +1,11 @@
 ---
 title: primum kind
-description: Move an open item to another lane.
+description: Move an item to another lane.
 ---
 
 ```bash
-primum kind TODO:87 BUG       # prints BUG:12
+primum kind 87 BUG       # prints #87: kind BUG
 ```
 
-The item takes the next number in the new lane. Its file and documents are
-renamed, and every `needs` and `docs` that named the old id is rewritten.
-Only open items move; reopen a closed one first.
+Changes the item's `kind:` line, and nothing else: its number, file,
+documents and every reference to it stay as they are.

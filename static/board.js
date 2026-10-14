@@ -17,6 +17,7 @@ function remember(){try{localStorage.setItem(PREFS,JSON.stringify({kind,hideDone
 
 async function load(){
   ITEMS=await api('/items');
+  knowItems(ITEMS,'item/');
   draw();
 }
 
@@ -79,10 +80,10 @@ function drawFilters(){
 function drawNext(){
   const wip=ITEMS.filter(i=>i.status==='doing').sort(itemOrder);
   const c=nextItem();
-  const link=i=>`<a href="item/${i.stem}"><b>${i.id}</b></a>`;
+  const link=i=>`<a href="item/${i.stem}"><b>${label(i.id)}</b></a>`;
   if(wip.length){
     $('#next').innerHTML=`in progress &rarr; `+wip.map(link).join(', ')
-      +` &nbsp;<span class=mut>then ${c?c.id+' ('+esc(c.title)+')':'nothing unblocked'}</span>`;
+      +` &nbsp;<span class=mut>then ${c?label(c.id)+' ('+esc(c.title)+')':'nothing unblocked'}</span>`;
     return;
   }
   $('#next').innerHTML = c
@@ -116,14 +117,14 @@ function draw(){
   document.querySelectorAll('th[data-s]').forEach(th=>th.classList.toggle('sorted',th.dataset.s===sort));
   $('#rows').innerHTML=visible().map((i,n)=>`
    <tr class="item ${n%2?'alt':''} ${i.id===selectedId?'selected':''} ${i.status==='doing'?'doing':''} ${i.blocked?'blocked':''} ${isClosed(i)?'done':''}" data-id="${i.id}" data-stem="${i.stem}">
-    <td class="id ${kindClass(i.kind)}">${i.id}</td>
+    <td class="id ${kindClass(i.kind)}" title="${i.kind}">${label(i.id)}</td>
     <td class=title><a href="item/${i.stem}">${esc(i.title)}</a>${i.conflict?'<span class=conflict-mark title="changed on two sides: open to resolve">!</span>':''} ${i.body.trim()?'':'<span class=warn title="no text yet">&#9888;</span>'}</td>
     <td class=n><input class=num type=number min=1 max=10 value="${i.impact}" data-f=impact aria-label=impact ${fin(i)}></td>
     <td class=n><input class=num type=number min=1 max=10 value="${i.urgency}" data-f=urgency aria-label=urgency ${fin(i)}></td>
     <td class=n><input class=num type=number min=1 max=10 value="${i.risk}" data-f=risk aria-label=risk ${fin(i)}></td>
     <td class=n><input class=num type=number min=1 max=10 value="${i.effort}" data-f=effort aria-label=effort ${fin(i)}></td>
     <td class="n score">${i.score}</td>
-    <td>${i.blockers.length?'<span class=warn>'+i.blockers.join(', ')+'</span>':(i.needs.join(', ')||'-')}</td>
+    <td>${i.blockers.length?'<span class=warn>'+i.blockers.map(label).join(', ')+'</span>':(i.needs.map(label).join(', ')||'-')}</td>
     <td class=docs>${i.docs.map(d=>`<button type=button class=docbadge data-doc="${esc(d.path)}" title="${esc(d.name)}">${esc(d.kind)}</button>`).join('')}</td>
     <td><select data-f=status aria-label=status>${STATUSES.map(s=>
         `<option ${s===i.status?'selected':''}>${s}</option>`).join('')}</select></td>

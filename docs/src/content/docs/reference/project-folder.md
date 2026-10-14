@@ -8,9 +8,9 @@ my-app/
   project.json             the project's name and settings
   BOARD.md                 a read-only summary, rewritten on every change
   items/
-    TODO-87.md             an item
-    TODO-87.spec.md        its documents
-  conflicts/TODO-87.json   what a sync could not decide
+    87.md             an item
+    87.spec.md        its documents
+  conflicts/87.json   what a sync could not decide
   .primum/history.git      the project's history, a bare git repository
   .primum.lock             held while a change runs
 ```

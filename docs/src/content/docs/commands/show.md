@@ -4,8 +4,8 @@ description: One item with its scores, needs, text and documents.
 ---
 
 ```bash
-primum show TODO:87
-primum show TODO:87 --json
+primum show 87
+primum show 87 --json
 ```
 
 Prints the item's id and title, its scores, priority and status, its file,
