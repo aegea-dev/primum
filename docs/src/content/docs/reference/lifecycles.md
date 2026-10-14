@@ -17,7 +17,9 @@ meanwhile. Lifecycle files are tracked in the project's history.
 ## The built-in one: `manual`
 
 Every ticket without a lifecycle follows `manual`: a person moves it
-between `idle`, `doing`, `done` and `wontfix`.
+between `idle`, `doing`, `done` and `wontfix`. A ticket's status is always
+one of its lifecycle's states; it is closed in the states of the
+lifecycle's closing steps.
 
 ```toml
 name = "manual"
@@ -171,6 +173,19 @@ Every step has a version (a SHA-256 of its fields), and so does the whole
 lifecycle (of its header and its steps' versions). Changing any step, or
 an actionable's version, makes a new lifecycle version; comments and
 formatting do not. A ticket will finish on the version it started with.
+
+## Attaching a ticket
+
+```bash
+primum lifecycle attach 12 stakeholder-update   # pin the current version
+primum lifecycle detach 12                      # back to manual
+```
+
+`attach` writes two fields into the ticket, `lifecycle:
+stakeholder-update@<version>` and `step: notify` (the lifecycle's start),
+and sets its status to the start's state. The ticket keeps that version
+even when the file changes. `detach` removes both; a status `manual` does
+not have becomes `idle`.
 
 ## Commands
 

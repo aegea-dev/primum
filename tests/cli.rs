@@ -515,3 +515,20 @@ fn context_on_the_command_line() {
     assert_eq!(json["stored"]["start"], "2026-11-01");
     assert_eq!(json["computed"]["items"], 1);
 }
+
+#[test]
+fn start_on_a_lifecycle_without_doing_says_what_to_do() {
+    let t = T::new();
+    let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/lifecycles/stakeholder-update.toml");
+    let dir = t.dir.path().join("café/lifecycles");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::copy(&src, dir.join("stakeholder-update.toml")).unwrap();
+    t.out(&["add", "TODO", "Gölge"]);
+    t.out(&["lifecycle", "attach", "1", "stakeholder-update"]);
+    let e = t.err(&["start", "1"]);
+    assert!(
+        e.contains("is not one of effects, waiting, processing") && e.contains("--status"),
+        "{e}"
+    );
+}

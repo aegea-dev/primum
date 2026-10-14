@@ -148,3 +148,6 @@ pre.diff .del{color:var(--danger)}
 .conflict .bodies .md{border:1px solid var(--line);border-radius:6px;padding:8px;font-size:13px}
 .conflict-mark{color:var(--warn);font-weight:700;margin-left:4px}
 
+
+/* the item page's lifecycle: name, short version, step */
+#item-meta .lifecycle{font:12px/1.2 ui-monospace,Menlo,monospace;color:var(--mut);margin-left:12px;align-self:center}

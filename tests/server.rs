@@ -309,3 +309,17 @@ async fn context_is_served() {
     assert_eq!(v["computed"]["items"], 2);
     assert_eq!(v["lifecycle"], Value::Null);
 }
+
+#[tokio::test]
+async fn items_carry_their_states() {
+    let d = tempfile::tempdir().unwrap();
+    let (_p, app) = setup(d.path());
+    let (_, text) = get(&app, &format!("{API}/items")).await;
+    let items: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(
+        items[0]["states"],
+        json!(["idle", "doing", "done", "wontfix"])
+    );
+    assert_eq!(items[0]["closed"], false);
+    assert_eq!(items[0]["lifecycle"], Value::Null);
+}

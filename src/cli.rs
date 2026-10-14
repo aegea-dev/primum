@@ -706,7 +706,8 @@ fn set_status(p: &Project, id: &str, status: &str) -> Result<()> {
         status: Some(status.into()),
         ..Default::default()
     };
-    store::update(p, &id, c)?;
+    store::update(p, &id, c)
+        .map_err(|e| anyhow!("{e:#}; for another state use primum set {id} --status STATE"))?;
     println!("{}: {status}", label(&id));
     Ok(())
 }

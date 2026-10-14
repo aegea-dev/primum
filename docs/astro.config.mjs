@@ -90,6 +90,7 @@ export default defineConfig({
 						{ label: 'resolve', slug: 'commands/resolve' },
 						{ label: 'import', slug: 'commands/import' },
 						{ label: 'migrate', slug: 'commands/migrate' },
+						{ label: 'context', slug: 'commands/context' },
 					],
 				},
 				{
