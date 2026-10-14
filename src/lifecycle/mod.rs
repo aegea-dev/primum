@@ -48,7 +48,7 @@ pub fn parse(path: &Path, text: &str) -> Result<File, LifecycleError> {
 }
 
 /// A lifecycle that passed its checks.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct Lifecycle {
     pub file: File,
     /// The whole lifecycle's version (64 hex characters).
@@ -88,8 +88,20 @@ pub fn load_file(path: &Path) -> Result<Lifecycle, LifecycleError> {
     load_text(path, &text)
 }
 
+const MANUAL: &str = include_str!("manual.toml");
+
 /// The built-in lifecycle every ticket without one follows: a person moves
 /// it between idle, doing, done and wontfix.
 pub fn manual() -> File {
-    parse(Path::new("manual.toml"), include_str!("manual.toml")).expect("the built-in lifecycle")
+    built_in("manual").expect("the built-in lifecycle").file
+}
+
+/// A lifecycle primum ships, by name.
+pub fn built_in(name: &str) -> Option<Lifecycle> {
+    match name {
+        "manual" => Some(
+            load_text(Path::new("manual.toml"), MANUAL).expect("the built-in lifecycle is valid"),
+        ),
+        _ => None,
+    }
 }

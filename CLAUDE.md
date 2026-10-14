@@ -65,6 +65,7 @@ src/projects.rs    the workspace (primum.toml) and each project's project.json
 src/history.rs     the project's bare git repository; every git call
 src/merge.rs       three-way merge of one item, field by field
 src/migrate.rs     converting a board to one counter; rewriting references
+src/lifecycle/     lifecycle files: format, expressions, validation, versions
 src/conflicts.rs   conflicts/<n>.json: what a sync could not decide
 src/sync.rs        fetch, renumber, merge, settle, push
 src/import.rs      one-time import of a board.py board

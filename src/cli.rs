@@ -189,6 +189,25 @@ pub enum Cmd {
     Import { board_dir: PathBuf },
     /// Bring a board made by an earlier version up to date, once
     Migrate,
+    /// The project's lifecycles: check, show or list them
+    Lifecycle {
+        #[command(subcommand)]
+        cmd: LifecycleCmd,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum LifecycleCmd {
+    /// Validate a lifecycle (a name or a file), or every one in lifecycles/
+    Check { target: Option<String> },
+    /// A lifecycle's steps in order, and its versions
+    Show {
+        name: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// The project's lifecycles and their versions
+    List,
 }
 
 #[derive(Subcommand)]
@@ -297,6 +316,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 println!("  {f}");
             }
         }
+        Cmd::Lifecycle { cmd } => lifecycle_cmd(&project()?, cmd)?,
         Cmd::Migrate => {
             let p = project()?;
             let moved = crate::migrate::migrate(&p)?;
@@ -657,6 +677,103 @@ fn set_status(p: &Project, id: &str, status: &str) -> Result<()> {
     };
     store::update(p, &id, c)?;
     println!("{}: {status}", label(&id));
+    Ok(())
+}
+
+/// A project's lifecycle by name: a file in lifecycles/, else a built-in one.
+fn find_lifecycle(p: &Project, name: &str) -> Result<crate::lifecycle::Lifecycle> {
+    let file = crate::lifecycle::dir(p).join(format!("{name}.toml"));
+    if file.is_file() {
+        return Ok(crate::lifecycle::load_file(&file)?);
+    }
+    if let Some(l) = crate::lifecycle::built_in(name) {
+        return Ok(l);
+    }
+    bail!(
+        "no lifecycle {name} in {}",
+        crate::lifecycle::dir(p).display()
+    )
+}
+
+/// The project's lifecycle files, sorted.
+fn lifecycle_files(p: &Project) -> Vec<PathBuf> {
+    let mut v: Vec<PathBuf> = std::fs::read_dir(crate::lifecycle::dir(p))
+        .into_iter()
+        .flatten()
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|f| f.extension().is_some_and(|x| x == "toml"))
+        .collect();
+    v.sort();
+    v
+}
+
+fn lifecycle_cmd(p: &Project, cmd: LifecycleCmd) -> Result<()> {
+    use crate::lifecycle::{format::Next, load_file, short};
+    match cmd {
+        LifecycleCmd::Check { target } => {
+            let files = match target {
+                Some(t) if t.ends_with(".toml") => vec![PathBuf::from(t)],
+                Some(name) => vec![crate::lifecycle::dir(p).join(format!("{name}.toml"))],
+                None => lifecycle_files(p),
+            };
+            if files.is_empty() {
+                println!("no lifecycles in {}", crate::lifecycle::dir(p).display());
+            }
+            for f in files {
+                let l = load_file(&f)?;
+                println!("{}  {}", l.file.name, short(&l.version));
+            }
+        }
+        LifecycleCmd::Show { name, json } => {
+            let l = find_lifecycle(p, &name)?;
+            if json {
+                println!("{}", serde_json::to_string_pretty(&l)?);
+                return Ok(());
+            }
+            println!("{}  {}", l.file.name, short(&l.version));
+            if !l.file.description.is_empty() {
+                println!("{}", l.file.description);
+            }
+            for (s, (_, v)) in l.file.step.iter().zip(&l.steps) {
+                let what = match (&s.action, &s.wait) {
+                    (Some(a), _) => a.clone(),
+                    (_, Some(w)) => format!("wait for {}", w.kind),
+                    _ => "-".into(),
+                };
+                let next = match &s.next {
+                    Some(Next::Step(id)) => format!("-> {id}"),
+                    Some(Next::Branches(bs)) => {
+                        let gos: Vec<&str> = bs.iter().map(|b| b.go.as_str()).collect();
+                        format!("-> {}", gos.join(" | "))
+                    }
+                    None => String::new(),
+                };
+                let end = if s.end { "  (closes)" } else { "" };
+                println!(
+                    "  {:<14} {:<11} {:<18} {next}{end}  {}",
+                    s.id,
+                    s.state.as_deref().unwrap_or("-"),
+                    what,
+                    short(v)
+                );
+            }
+        }
+        LifecycleCmd::List => {
+            let manual = find_lifecycle(p, "manual")?;
+            println!("manual  {}  built in", short(&manual.version));
+            for f in lifecycle_files(p) {
+                match load_file(&f) {
+                    Ok(l) => println!(
+                        "{}  {}  {}",
+                        l.file.name,
+                        short(&l.version),
+                        l.file.description
+                    ),
+                    Err(e) => println!("{}  -  {e}", f.display()),
+                }
+            }
+        }
+    }
     Ok(())
 }
 
