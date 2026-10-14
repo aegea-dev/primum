@@ -37,7 +37,7 @@ export default defineConfig({
 		starlight({
 			title: 'primum',
 			description:
-				'Prioritized work items as plain markdown files, with a command line, a local web board, history, sync and GitHub Issues.',
+				'Prioritized work items as plain markdown files, with a command line, a local web board, history and sync.',
 			expressiveCode: {
 				themes: ['starlight-dark', 'github-light'],
 				useStarlightDarkModeSwitch: true,
@@ -88,7 +88,6 @@ export default defineConfig({
 						{ label: 'clone', slug: 'commands/clone' },
 						{ label: 'sync', slug: 'commands/sync' },
 						{ label: 'resolve', slug: 'commands/resolve' },
-						{ label: 'github', slug: 'commands/github' },
 						{ label: 'import', slug: 'commands/import' },
 					],
 				},
@@ -100,7 +99,6 @@ export default defineConfig({
 						{ label: 'Workspaces', slug: 'guides/workspaces' },
 						{ label: 'History and sync', slug: 'guides/history-and-sync' },
 						{ label: 'Conflicts', slug: 'guides/conflicts' },
-						{ label: 'GitHub Issues', slug: 'guides/github-issues' },
 						{ label: 'Working with AI agents', slug: 'guides/agents' },
 					],
 				},

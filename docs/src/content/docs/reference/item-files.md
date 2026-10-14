@@ -15,7 +15,6 @@ risk: 2
 effort: 4
 needs: [TODO:64]
 docs: [items/TODO-80.spec.md]
-github: 123
 finished: 2026-10-13
 source: "imported from board.py"
 ---
@@ -30,9 +29,8 @@ The item's text, as markdown.
 | `impact`, `urgency`, `risk`, `effort` | 1 to 10 | always |
 | `needs` | ids it waits for | always, `[]` when empty |
 | `docs` | other items' documents it shows | only when not empty |
-| `github` | its issue number | only when linked |
 | `finished` | the date it was done | only when set |
-| `source` | where it came from: `primum`, `GitHub #45`, or an imported board's value | only when not empty |
+| `source` | where it came from: `primum`, or an imported board's value | only when not empty |
 
 primum writes exactly this form, and reads only it. Anything else, such as a
 missing field, a score out of range, or an unknown status, is an error naming

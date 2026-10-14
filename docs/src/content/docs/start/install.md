@@ -34,8 +34,6 @@ Release binaries are built for macOS (Apple silicon and Intel) and Linux
 
 - **git 2.28 or later** for [history and sync](/guides/history-and-sync/).
   Without git, everything else works.
-- **[`gh`](https://cli.github.com)**, logged in with `gh auth login`, for
-  [GitHub Issues](/guides/github-issues/). primum never stores a token.
 
 Check the install:
 

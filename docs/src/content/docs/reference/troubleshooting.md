@@ -36,11 +36,6 @@ Install a newer git; the next change starts the history.
 remote (`git ls-remote URL`), and `primum remote` for the URL and branch.
 Changes are kept locally and go out with the next sync.
 
-## GitHub is not syncing
-
-`primum github status` says whether `gh` is installed and logged in. Run
-`gh auth status`, and `gh auth login` if needed.
-
 ## The board does not open
 
 Another program may hold port 8777: `primum serve --port 9000`.

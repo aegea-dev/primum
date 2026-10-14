@@ -24,7 +24,6 @@ description: Every primum command, what it does, and the option they all share.
 | [`clone`](/commands/clone/) | Make a project from a remote |
 | [`sync`](/commands/sync/) | Pull, merge and push now |
 | [`resolve`](/commands/resolve/) | Settle a conflict a sync left |
-| [`github`](/commands/github/) | Keep items and GitHub issues in step |
 | [`import`](/commands/import/) | Import a videre-board board, once |
 
 ## Choosing the project

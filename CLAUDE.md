@@ -23,8 +23,6 @@ plain JavaScript). This file is for contributing to primum.
 - **Every `git` call goes through `history`**, with primum's fixed flags
   (no hooks, no signing, no prompts). Merging items is `merge`'s job, never
   git's line merge.
-- **Every GitHub call goes through `github::Api`**; tests use
-  `github::Memory`, and `tests/fixtures/fake-gh` stands in for `gh`.
 - **Browser JavaScript is ES6+**: `const`/`let`, arrow functions, template
   literals; never ES5 style.
 - **Item files have one form.** `item_file::write` writes it and
@@ -57,8 +55,6 @@ src/history.rs     the project's bare git repository; every git call
 src/merge.rs       three-way merge of one item, field by field
 src/conflicts.rs   conflicts/<STEM>.json: what a sync could not decide
 src/sync.rs        fetch, renumber, merge, settle, push
-src/github.rs      GitHub issues: the Api trait, gh, an in-memory GitHub, the mapping
-src/github_sync.rs one GitHub sync: issues and items in step
 src/import.rs      one-time import of a board.py board
 src/cli.rs         the command line
 src/server.rs      axum routes, JSON API, askama pages
