@@ -111,6 +111,7 @@ export default defineConfig({
 						{ label: 'Lifecycles', slug: 'reference/lifecycles' },
 						{ label: 'The lifecycle manager', slug: 'reference/manager' },
 						{ label: 'The daemon', slug: 'reference/daemon' },
+						{ label: 'The worker', slug: 'reference/worker' },
 						{ label: 'A project folder', slug: 'reference/project-folder' },
 						{ label: 'The board', slug: 'reference/board' },
 						{ label: 'Board HTTP interface', slug: 'reference/http' },

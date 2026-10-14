@@ -5,9 +5,9 @@ description: The steps a ticket goes through, from created to closed, as a JSON 
 
 :::caution[In progress]
 A ticket on a lifecycle moves by itself while
-[`primum daemon`](/reference/daemon/) runs. Actions that need a worker
-(`http.request@1`, `command@1`, a project's own actionables) wait until
-workers exist; the rest of a lifecycle runs today.
+[`primum daemon`](/reference/daemon/) runs. Every built-in actionable and
+a project's `executable` actionables run today; `python@` and `bun@`
+actionables come next.
 :::
 
 A lifecycle is the list of steps one ticket goes through, from created to

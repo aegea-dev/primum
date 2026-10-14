@@ -84,3 +84,46 @@ pub fn with_example(dir: &Path) {
     std::fs::create_dir_all(dir.join("lifecycles")).unwrap();
     std::fs::write(dir.join("lifecycles/enrich-ticket.json"), example_json()).unwrap();
 }
+
+/// A one-request HTTP server answering `{"data": {"name": "Ürün"}}`; joining
+/// it gives the request's headers, lowercase.
+pub fn http_server() -> (
+    String,
+    std::thread::JoinHandle<serde_json::Map<String, serde_json::Value>>,
+) {
+    use std::io::{BufRead, BufReader, Read, Write};
+    let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("http://{}", l.local_addr().unwrap());
+    let h = std::thread::spawn(move || {
+        let (mut s, _) = l.accept().unwrap();
+        let mut r = BufReader::new(s.try_clone().unwrap());
+        let mut first = String::new();
+        r.read_line(&mut first).unwrap();
+        let mut headers = serde_json::Map::new();
+        let mut length = 0;
+        loop {
+            let mut line = String::new();
+            r.read_line(&mut line).unwrap();
+            let line = line.trim_end();
+            if line.is_empty() {
+                break;
+            }
+            let (k, v) = line.split_once(": ").unwrap();
+            if k.eq_ignore_ascii_case("content-length") {
+                length = v.parse().unwrap();
+            }
+            headers.insert(k.to_lowercase(), serde_json::json!(v));
+        }
+        let mut body = vec![0; length];
+        r.read_exact(&mut body).unwrap();
+        let answer = serde_json::json!({"data": {"name": "Ürün"}}).to_string();
+        write!(
+            s,
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{answer}",
+            answer.len()
+        )
+        .unwrap();
+        headers
+    });
+    (url, h)
+}

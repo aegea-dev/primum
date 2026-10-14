@@ -92,7 +92,7 @@ src/lifecycle/     lifecycle files (JSON): format, expressions, validation,
                    versions, built-in and project actionables
 src/engine/        the lifecycle engine: the manager's pure decision
                    (eval: CEL and templates; builtins; manager), the
-                   journal (SQLite) and the daemon's pass
+                   journal (SQLite), the daemon's pass, and the worker
 src/conflicts.rs   conflicts/<n>.json: what a sync could not decide
 src/sync.rs        fetch, renumber, merge, settle, push
 src/import.rs      one-time import of a board.py board

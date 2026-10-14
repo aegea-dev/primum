@@ -4,11 +4,9 @@ description: Runs tickets' lifecycles - turns ledger changes into events, asks t
 ---
 
 :::caution[In progress]
-The daemon runs lifecycles whose actions are built-ins that need no worker
-(`ticket.update@1`, `json.pick@1`, `event.emit@1`), waits and timers.
-Actions that need a worker (`http.request@1`, `command@1`, a project's own
-actionables) wait in the journal until workers exist. Running as a service,
-the watchdog and an HTTP port for outside events come later.
+The daemon runs every built-in and a project's `executable` actionables.
+`python@` and `bun@` actionables come next. Running as a service, the
+watchdog and an HTTP port for outside events come later.
 :::
 
 ```bash
@@ -37,6 +35,26 @@ and carries out.
    and saves the answer in one transaction.
 5. **Writes the ticket changes** the answer asks for to the ledger, each
    as a commit in the project's history.
+6. **Runs the jobs** the answers asked for, one at a time, each in a
+   [worker](/reference/worker/), and delivers each result to its ticket
+   (back to step 4) until nothing is left.
+
+## Workers, secrets and time limits
+
+Each job runs as its own process, `primum worker`, in its own process
+group: whatever it starts goes with it. At its time limit the group is
+killed and the action fails (`timed out after 60s`). Built-ins have 60
+seconds; a project actionable's `limits.timeout` sets its own.
+
+`${env.NAME}` in an action's arguments, or in an actionable's
+`environment`, is filled in from the daemon's own environment only when the
+job starts, and reaches only the worker: never the journal, the events or a
+log. A missing one fails the action (`secret API_KEY is not set`).
+
+An action that ran comes back as `action.finished` with its output, and its
+`expect` decides whether it worked; one that could not run (a missing
+secret, a connection refused, a time limit) comes back as `action.failed`
+with the reason. Either way the ticket's lifecycle carries on from there.
 
 A ticket keeps the lifecycle version it was attached at: the daemon keeps a
 copy of every pinned version. A version no longer in `lifecycles/` when the

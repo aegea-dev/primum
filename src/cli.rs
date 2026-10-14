@@ -204,6 +204,9 @@ pub enum Cmd {
     /// The lifecycle manager: one decision, JSON in on stdin, JSON out on stdout
     #[command(hide = true)]
     Manager,
+    /// A worker: one job, JSON in on stdin, its output as JSON on stdout
+    #[command(hide = true)]
+    Worker,
     /// Run tickets' lifecycles, for every project here, pass after pass
     Daemon {
         /// One pass, then stop
@@ -395,9 +398,9 @@ fn dispatch(cli: Cli) -> Result<()> {
                 };
                 for p in &projects {
                     match crate::engine::daemon::run_once(p, at, &manager) {
-                        Ok(pass) if pass.delivered + pass.written > 0 => eprintln!(
-                            "{}: {} events, {} changes written",
-                            p.name, pass.delivered, pass.written
+                        Ok(pass) if pass.delivered + pass.written + pass.worked > 0 => eprintln!(
+                            "{}: {} events, {} jobs, {} changes written",
+                            p.name, pass.delivered, pass.worked, pass.written
                         ),
                         Ok(_) => {}
                         Err(e) => eprintln!("{}: {e:#}", p.name),
@@ -432,6 +435,14 @@ fn dispatch(cli: Cli) -> Result<()> {
                     );
                 }
             }
+        }
+        Cmd::Worker => {
+            let mut text = String::new();
+            std::io::Read::read_to_string(&mut std::io::stdin(), &mut text)?;
+            let job: crate::engine::Job =
+                serde_json::from_str(&text).map_err(|e| anyhow!("the worker's job: {e}"))?;
+            let output = crate::engine::worker::run(&job).map_err(|e| anyhow!(e))?;
+            println!("{}", serde_json::json!({ "output": output }));
         }
         Cmd::Manager => {
             let mut text = String::new();
