@@ -6,6 +6,7 @@ pub mod daemon;
 pub mod eval;
 pub mod journal;
 pub mod manager;
+pub mod worker;
 
 use crate::lifecycle::File;
 use serde::{Deserialize, Serialize};
@@ -116,4 +117,44 @@ pub struct Answer {
     pub timers: Option<Vec<Timer>>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub log: Vec<String>,
+}
+
+/// One action for a worker: what `primum worker` reads on stdin.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Job {
+    pub action: String,
+    #[serde(default)]
+    pub with: Map<String, Value>,
+    /// The idempotency key: the same when the action runs again.
+    pub key: String,
+    #[serde(default)]
+    pub input: Value,
+    #[serde(default)]
+    pub prev: Value,
+    #[serde(default)]
+    pub ticket: Map<String, Value>,
+    #[serde(default)]
+    pub project: Map<String, Value>,
+    #[serde(default)]
+    pub args: Map<String, Value>,
+    /// The project's folder: where `command@1` runs.
+    pub root: std::path::PathBuf,
+    /// For a project actionable: the program that runs it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub program: Option<Program>,
+    /// Seconds it may take (the daemon kills it after that).
+    pub timeout: u64,
+}
+
+/// A project actionable as a program: given the job on stdin, it prints
+/// its output as JSON.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Program {
+    /// Where it runs.
+    pub folder: std::path::PathBuf,
+    pub executable: String,
+    #[serde(default)]
+    pub arguments: Vec<String>,
+    #[serde(default)]
+    pub environment: std::collections::BTreeMap<String, String>,
 }
