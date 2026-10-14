@@ -157,4 +157,26 @@ pub struct Program {
     pub arguments: Vec<String>,
     #[serde(default)]
     pub environment: std::collections::BTreeMap<String, String>,
+    /// For `python@` and `bun@`: what to prepare and call; the program is
+    /// then the interpreter itself.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub interpreter: Option<Interpreter>,
+}
+
+/// The interpreter a project actionable's function runs in.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "lowercase")]
+pub enum Interpreter {
+    Python {
+        version: String,
+        /// The virtual environment, relative to the folder.
+        home: String,
+        requirements: Option<String>,
+        module: String,
+        callable: String,
+    },
+    Bun {
+        file: String,
+        export: String,
+    },
 }

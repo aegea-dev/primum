@@ -329,30 +329,3 @@ fn a_job_past_its_time_limit_is_killed_and_fails() {
     assert_eq!(it.status, "failed");
     assert!(it.body.contains("timed out"), "{}", it.body);
 }
-
-#[test]
-fn python_actionables_wait_for_a_later_version() {
-    let d = tempfile::tempdir().unwrap();
-    let (p, _) = attached(d.path());
-    let a = d.path().join("actionables/checks");
-    std::fs::create_dir_all(&a).unwrap();
-    std::fs::copy(
-        Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("tests/fixtures/actionables/checks/actionable.json"),
-        a.join("actionable.json"),
-    )
-    .unwrap();
-    lifecycle(
-        d.path(),
-        "py",
-        r#"{ "name": "py", "states": ["yeni", "bitti"], "start": "yeni", "end": ["bitti"],
-             "transitions": [ { "from": "yeni", "on": "lifecycle.attached", "to": "bitti",
-               "do": [ "checks.is-valid@1" ] } ] }"#,
-    );
-    let id = insert(&p, "TODO", "Işık", Changes::default()).unwrap();
-    attach(&p, &id, "py", None).unwrap();
-    run_once(&p, now(), manager()).unwrap();
-    let it = load(&p).unwrap().get(&id).unwrap().clone();
-    assert_eq!(it.status, "failed");
-    assert!(it.body.contains("run in a later version"), "{}", it.body);
-}

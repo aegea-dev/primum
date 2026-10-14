@@ -130,6 +130,7 @@ fn a_program_gets_the_job_on_stdin_and_prints_its_output() {
         executable: "./araç.sh".into(),
         arguments: vec![],
         environment: [("BOLGE".to_string(), "eu".to_string())].into(),
+        interpreter: None,
     });
     let out = worker::run(&j).unwrap();
     assert_eq!(out["bölge"], "eu");

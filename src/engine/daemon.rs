@@ -5,7 +5,7 @@
 //! workers. The daemon decides nothing: every change comes from a
 //! manager's answer.
 use super::journal::{self, Envelope, Handled, Journal, Recorded};
-use super::{Answer, Event, Input, Job, Program, Runtime};
+use super::{Answer, Event, Input, Interpreter, Job, Program, Runtime};
 use crate::lifecycle::{File, split_pin};
 use crate::store::{self, Changes, Project};
 use anyhow::{Result, anyhow};
@@ -449,12 +449,22 @@ fn job(p: &Project, data: &Value) -> Result<Job, String> {
         Some(w) => folder.join(w),
         None => folder,
     };
-    if d.kind != "executable" {
-        return Err(format!(
-            "{} actionables run in a later version of primum",
-            d.kind
-        ));
-    }
+    let (kind, version) = d.kind.split_once('@').unwrap_or((d.kind.as_str(), ""));
+    let interpreter = match kind {
+        "executable" => None,
+        "python" => Some(Interpreter::Python {
+            version: version.to_string(),
+            home: d.home.clone().unwrap_or_else(|| ".venv".into()),
+            requirements: d.requirements.clone(),
+            module: t.module.clone().unwrap_or_default(),
+            callable: t.callable.clone().unwrap_or_default(),
+        }),
+        "bun" => Some(Interpreter::Bun {
+            file: t.file.clone().unwrap_or_default(),
+            export: t.export.clone().unwrap_or_default(),
+        }),
+        other => return Err(format!("unknown actionable type {other}")),
+    };
     let mut environment = std::collections::BTreeMap::new();
     for (k, v) in &d.environment {
         let filled = fill_secrets(&Value::String(v.clone()))?;
@@ -465,6 +475,7 @@ fn job(p: &Project, data: &Value) -> Result<Job, String> {
         executable: t.executable.clone().unwrap_or_default(),
         arguments: t.arguments.clone(),
         environment,
+        interpreter,
     });
     Ok(job)
 }
