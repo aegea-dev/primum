@@ -166,6 +166,14 @@ impl Journal {
         Ok(self.db.query_row(&sql, [], row).optional()?)
     }
 
+    /// The oldest job (an event for a worker) not yet run.
+    pub fn next_job(&self) -> Result<Option<Recorded>> {
+        let sql = format!(
+            "SELECT {COLUMNS} FROM events WHERE handled IS NULL AND subject LIKE '%.worker' ORDER BY seq LIMIT 1"
+        );
+        Ok(self.db.query_row(&sql, [], row).optional()?)
+    }
+
     /// Every event, or those about one subject, in order.
     pub fn events(&self, subject: Option<&str>) -> Result<Vec<Recorded>> {
         let sql =

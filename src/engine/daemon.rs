@@ -1,10 +1,11 @@
 //! The daemon's work for one project, one pass at a time: write ticket
 //! changes left from before, read the ledger for changes, fire due timers,
 //! deliver every waiting event to its ticket's manager, save each answer,
-//! and write the ticket changes it asks for. The daemon decides nothing:
-//! every change comes from a manager's answer.
+//! write the ticket changes it asks for, and run the jobs it asks for in
+//! workers. The daemon decides nothing: every change comes from a
+//! manager's answer.
 use super::journal::{self, Envelope, Handled, Journal, Recorded};
-use super::{Answer, Event, Input, Runtime};
+use super::{Answer, Event, Input, Job, Program, Runtime};
 use crate::lifecycle::{File, split_pin};
 use crate::store::{self, Changes, Project};
 use anyhow::{Result, anyhow};
@@ -22,6 +23,8 @@ pub struct Pass {
     pub delivered: usize,
     /// Ticket changes written to the ledger.
     pub written: usize,
+    /// Jobs run in workers.
+    pub worked: usize,
 }
 
 /// More events than this in one pass wait for the next.
@@ -51,13 +54,19 @@ pub fn run_once(p: &Project, now: DateTime<Utc>, manager: &Path) -> Result<Pass>
         );
         j.fire_timer(id, &e)?;
     }
-    while let Some(r) = j.next()? {
-        deliver(p, &mut j, &r, now, manager)?;
-        pass.delivered += 1;
-        pass.written += write_ledger(p, &j)?;
-        if pass.delivered >= MAX_EVENTS {
-            break;
+    // tickets' events first; then one job, whose result is the next event
+    loop {
+        while let Some(r) = j.next()? {
+            deliver(p, &mut j, &r, now, manager)?;
+            pass.delivered += 1;
+            pass.written += write_ledger(p, &j)?;
+            if pass.delivered >= MAX_EVENTS {
+                return Ok(pass);
+            }
         }
+        let Some(r) = j.next_job()? else { break };
+        work(p, &mut j, &r, now, manager)?;
+        pass.worked += 1;
     }
     Ok(pass)
 }
@@ -352,4 +361,225 @@ fn write_one(p: &Project, id: &str, changes: &Map<String, Value>) -> Result<()> 
         }
     }
     Ok(())
+}
+
+/// Seconds a built-in may take.
+const BUILT_IN_TIMEOUT: u64 = 60;
+
+/// `${env.NAME}` in every string, filled in from the daemon's environment.
+fn fill_secrets(v: &Value) -> Result<Value, String> {
+    Ok(match v {
+        Value::String(s) => {
+            let mut out = String::new();
+            let mut rest = s.as_str();
+            while let Some(i) = rest.find("${env.") {
+                out += &rest[..i];
+                let after = &rest[i + 6..];
+                let j = after
+                    .find('}')
+                    .ok_or_else(|| format!("unclosed `${{env.` in `{s}`"))?;
+                let name = after[..j].trim();
+                out += &std::env::var(name).map_err(|_| format!("secret {name} is not set"))?;
+                rest = &after[j + 1..];
+            }
+            Value::String(out + rest)
+        }
+        Value::Array(a) => Value::Array(a.iter().map(fill_secrets).collect::<Result<_, _>>()?),
+        Value::Object(o) => Value::Object(
+            o.iter()
+                .map(|(k, x)| Ok((k.clone(), fill_secrets(x)?)))
+                .collect::<Result<_, String>>()?,
+        ),
+        other => other.clone(),
+    })
+}
+
+/// The job for an `action.requested` event: arguments with secrets, and
+/// for a project actionable, the program that runs it.
+fn job(p: &Project, data: &Value) -> Result<Job, String> {
+    let get = |k: &str| data.get(k).cloned().unwrap_or(Value::Null);
+    let obj = |k: &str| get(k).as_object().cloned().unwrap_or_default();
+    let action = get("action").as_str().unwrap_or("").to_string();
+    let with = match fill_secrets(&get("with"))? {
+        Value::Object(o) => o,
+        _ => Map::new(),
+    };
+    let mut job = Job {
+        action: action.clone(),
+        with,
+        key: get("key").as_str().unwrap_or("").to_string(),
+        input: get("input"),
+        prev: get("prev"),
+        ticket: obj("ticket"),
+        project: obj("project"),
+        args: obj("args"),
+        root: p.root.clone(),
+        program: None,
+        timeout: BUILT_IN_TIMEOUT,
+    };
+    if action == "http.request@1" || action == "command@1" {
+        return Ok(job);
+    }
+    let (what, version) = action
+        .rsplit_once('@')
+        .ok_or_else(|| format!("unknown actionable {action}"))?;
+    let (name, target) = what
+        .split_once('.')
+        .ok_or_else(|| format!("unknown actionable {action}"))?;
+    let defs = crate::lifecycle::definitions::load_all(p).map_err(|e| e.to_string())?;
+    let d = defs
+        .iter()
+        .find(|d| d.name == name)
+        .ok_or_else(|| format!("no actionable {name} in actionables/"))?;
+    if d.version.to_string() != version {
+        return Err(format!(
+            "actionable {name} is at version {} now, not {version}",
+            d.version
+        ));
+    }
+    let t = d
+        .targets
+        .get(target)
+        .ok_or_else(|| format!("actionable {name} has no target {target}"))?;
+    if let Some(limit) = d.limits.as_ref().and_then(|l| l.timeout.as_deref()) {
+        job.timeout = crate::lifecycle::expr::duration(limit)?.as_secs().max(1);
+    }
+    let folder = crate::lifecycle::definitions::dir(p).join(&d.name);
+    let folder = match &d.working_directory {
+        Some(w) => folder.join(w),
+        None => folder,
+    };
+    if d.kind != "executable" {
+        return Err(format!(
+            "{} actionables run in a later version of primum",
+            d.kind
+        ));
+    }
+    let mut environment = std::collections::BTreeMap::new();
+    for (k, v) in &d.environment {
+        let filled = fill_secrets(&Value::String(v.clone()))?;
+        environment.insert(k.clone(), filled.as_str().unwrap_or("").to_string());
+    }
+    job.program = Some(Program {
+        folder,
+        executable: t.executable.clone().unwrap_or_default(),
+        arguments: t.arguments.clone(),
+        environment,
+    });
+    Ok(job)
+}
+
+/// Runs `primum worker` on a job in its own process group, killing the
+/// group at the job's time limit.
+fn spawn_worker(manager: &Path, job: &Job) -> Result<Value, String> {
+    let mut c = Command::new(manager);
+    c.arg("worker")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    #[cfg(unix)]
+    std::os::unix::process::CommandExt::process_group(&mut c, 0);
+    let mut child = c
+        .spawn()
+        .map_err(|e| format!("cannot start a worker: {e}"))?;
+    let text = serde_json::to_string(job).map_err(|e| e.to_string())?;
+    child
+        .stdin
+        .take()
+        .expect("piped")
+        .write_all(text.as_bytes())
+        .map_err(|e| e.to_string())?;
+    let read = |r: Option<Box<dyn std::io::Read + Send>>| {
+        std::thread::spawn(move || {
+            let mut buf = vec![];
+            if let Some(mut r) = r {
+                let _ = r.read_to_end(&mut buf);
+            }
+            buf
+        })
+    };
+    let out = read(
+        child
+            .stdout
+            .take()
+            .map(|s| Box::new(s) as Box<dyn std::io::Read + Send>),
+    );
+    let err = read(
+        child
+            .stderr
+            .take()
+            .map(|s| Box::new(s) as Box<dyn std::io::Read + Send>),
+    );
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(job.timeout);
+    let status = loop {
+        if let Some(s) = child.try_wait().map_err(|e| e.to_string())? {
+            break s;
+        }
+        if std::time::Instant::now() >= deadline {
+            #[cfg(unix)]
+            // SAFETY: killpg only sends a signal to the worker's own group
+            unsafe {
+                libc::killpg(child.id() as i32, libc::SIGKILL);
+            }
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(format!("{}: timed out after {}s", job.action, job.timeout));
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    };
+    let (out, err) = (
+        out.join().unwrap_or_default(),
+        err.join().unwrap_or_default(),
+    );
+    if !status.success() {
+        let why = String::from_utf8_lossy(&err).trim().to_string();
+        let why = why.strip_prefix("error: ").unwrap_or(&why).to_string();
+        return Err(if why.is_empty() {
+            "the worker failed".into()
+        } else {
+            why
+        });
+    }
+    let v: Value = serde_json::from_slice(&out).map_err(|e| format!("the worker's answer: {e}"))?;
+    Ok(v.get("output").cloned().unwrap_or(Value::Null))
+}
+
+/// Runs one job and sends its result to the ticket, in one transaction.
+fn work(
+    p: &Project,
+    j: &mut Journal,
+    r: &Recorded,
+    now: DateTime<Utc>,
+    manager: &Path,
+) -> Result<()> {
+    let data = &r.event.data;
+    let ticket = data
+        .pointer("/ticket/id")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
+    let outcome = job(p, data).and_then(|job| spawn_worker(manager, &job));
+    let (kind, result) = match outcome {
+        Ok(output) => ("action.finished", json!({"output": output})),
+        Err(why) => ("action.failed", json!({"error": why})),
+    };
+    let mut result = result;
+    result["run"] = data.get("run").cloned().unwrap_or(Value::Null);
+    result["index"] = data.get("index").cloned().unwrap_or(Value::Null);
+    let e = Envelope::new(
+        &format!("worker/{}", r.event.id),
+        kind,
+        &journal::subject(&p.name, &ticket),
+        &stamp(now),
+        Some(r.event.id.clone()),
+        result,
+    );
+    j.handle(Handled {
+        seq: r.seq,
+        error: None,
+        ticket: None,
+        timers: None,
+        events: vec![e],
+        ledger: None,
+    })
 }
