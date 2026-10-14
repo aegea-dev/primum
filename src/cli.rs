@@ -201,6 +201,9 @@ pub enum Cmd {
         #[command(subcommand)]
         cmd: LifecycleCmd,
     },
+    /// The lifecycle manager: one decision, JSON in on stdin, JSON out on stdout
+    #[command(hide = true)]
+    Manager,
 }
 
 #[derive(Subcommand)]
@@ -347,6 +350,14 @@ fn dispatch(cli: Cli) -> Result<()> {
         }
         Cmd::Lifecycle { cmd } => lifecycle_cmd(&project()?, cmd)?,
         Cmd::Context { cmd, json } => context_cmd(&project()?, cmd, json)?,
+        Cmd::Manager => {
+            let mut text = String::new();
+            std::io::Read::read_to_string(&mut std::io::stdin(), &mut text)?;
+            let input: crate::engine::Input =
+                serde_json::from_str(&text).map_err(|e| anyhow!("the manager's input: {e}"))?;
+            let answer = crate::engine::manager::decide(&input).map_err(|e| anyhow!(e))?;
+            println!("{}", serde_json::to_string(&answer)?);
+        }
         Cmd::Migrate => {
             let p = project()?;
             let moved = crate::migrate::migrate(&p)?;
