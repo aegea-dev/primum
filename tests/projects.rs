@@ -8,76 +8,32 @@ fn project_json_round_trip_keeps_unknown_keys() {
     fs::create_dir_all(d.path().join("items")).unwrap();
     fs::write(
         d.path().join("project.json"),
-        "{\"name\": \"café\", \"later\": {\"x\": 1}}\n",
+        "{\"name\": \"café\", \"github\": {\"repo\": \"owner/cafe\"}, \"later\": {\"x\": 1}}\n",
     )
     .unwrap();
-    let mut s = Settings::read(d.path()).unwrap().unwrap();
+    let s = Settings::read(d.path()).unwrap().unwrap();
     assert_eq!(s.name(), Some("café"));
-    s.set_github_repo(Some("owner/cafe"));
     s.write(d.path()).unwrap();
     let v: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(d.path().join("project.json")).unwrap()).unwrap();
-    assert_eq!(v["github"]["repo"], "owner/cafe");
-    assert_eq!(v["later"]["x"], 1, "unknown keys survive");
-    let p = projects::open(d.path()).unwrap();
-    assert_eq!(
-        projects::github_repo(&p).unwrap().as_deref(),
-        Some("owner/cafe")
-    );
-}
-
-#[test]
-fn github_settings_live_in_project_json() {
-    let d = tempfile::tempdir().unwrap();
-    let p = projects::init(&d.path().join("über"), None).unwrap();
-    assert_eq!(projects::github_repo(&p).unwrap(), None);
-    projects::set_github(&p, Some("owner/uber")).unwrap();
-    assert_eq!(
-        projects::github_repo(&p).unwrap().as_deref(),
-        Some("owner/uber")
-    );
-    assert!(
-        projects::set_github(&p, Some("uber")).is_err(),
-        "owner/repo"
-    );
-    // ids is kept when the repository changes, and read as a style
-    let json = p.root.join("project.json");
-    let mut v: serde_json::Value =
-        serde_json::from_str(&fs::read_to_string(&json).unwrap()).unwrap();
-    v["github"]["ids"] = "title".into();
-    fs::write(&json, v.to_string()).unwrap();
-    projects::set_github(&p, Some("owner/other")).unwrap();
-    assert!(projects::github_ids(&p).unwrap().title());
-    v["github"]["ids"] = "badge".into();
-    v["github"]["repo"] = "owner/other".into();
-    fs::write(&json, v.to_string()).unwrap();
-    assert!(projects::github_ids(&p).is_err(), "none or title");
-    projects::set_github(&p, None).unwrap();
-    assert_eq!(projects::github_repo(&p).unwrap(), None);
-    assert_eq!(
-        fs::read_to_string(&json).unwrap(),
-        "{\n  \"name\": \"über\"\n}\n"
-    );
+    assert_eq!(v["github"]["repo"], "owner/cafe", "unknown keys survive");
+    assert_eq!(v["later"]["x"], 1);
+    assert_eq!(projects::open(d.path()).unwrap().name, "café");
 }
 
 #[test]
 fn a_legacy_primum_toml_reads_as_a_project() {
     let d = tempfile::tempdir().unwrap();
     fs::create_dir_all(d.path().join("items")).unwrap();
-    fs::write(
-        d.path().join("primum.toml"),
-        "name = \"ışık\"\n\n[github]\nrepo = \"owner/isik\"\nids = \"title\"\n",
-    )
-    .unwrap();
+    fs::write(d.path().join("primum.toml"), "name = \"ışık\"\n").unwrap();
     let p = projects::open(d.path()).unwrap();
     assert_eq!(p.name, "ışık");
-    assert_eq!(
-        projects::github_repo(&p).unwrap().as_deref(),
-        Some("owner/isik")
-    );
-    assert!(projects::github_ids(&p).unwrap().title());
-    // writing a setting moves it to project.json; the legacy file goes
-    projects::set_github(&p, None).unwrap();
+    // writing the settings moves them to project.json; the legacy file goes
+    Settings::read(d.path())
+        .unwrap()
+        .unwrap()
+        .write(d.path())
+        .unwrap();
     assert!(d.path().join("project.json").is_file());
     assert!(!d.path().join("primum.toml").exists());
     assert_eq!(projects::open(d.path()).unwrap().name, "ışık");

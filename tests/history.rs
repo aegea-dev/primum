@@ -168,3 +168,14 @@ fn a_history_from_an_earlier_version_tracks_project_json() {
     h.commit("move settings to project.json").unwrap();
     assert_eq!(common::tracked(&p), ["project.json"]);
 }
+
+#[test]
+fn the_github_folder_is_not_tracked() {
+    let d = tempfile::tempdir().unwrap();
+    let p = common::project(d.path());
+    fs::write(d.path().join("project.json"), "{\"name\": \"deneme\"}\n").unwrap();
+    fs::create_dir_all(d.path().join("github")).unwrap();
+    fs::write(d.path().join("github/1.json"), "{}\n").unwrap();
+    History::open(&p).unwrap().unwrap();
+    assert_eq!(common::tracked(&p), ["project.json"]);
+}

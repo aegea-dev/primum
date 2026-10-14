@@ -22,9 +22,9 @@ project.
 ## The item page
 
 The item's text, rendered, with its documents as tabs beside it; every field
-editable; its history with each change's diff; a link to its GitHub issue
-when linked; and, after a sync that could not decide something, each
-conflicting field's two sides to choose between.
+editable; its history with each change's diff; and, after a sync that
+could not decide something, each conflicting field's two sides to choose
+between.
 
 ## Light and dark
 

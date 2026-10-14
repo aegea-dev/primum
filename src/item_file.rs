@@ -9,7 +9,6 @@
 //! impact: 5                   urgency, risk, effort the same
 //! needs: [BUG:1, TODO:2]      always written, [] when empty
 //! docs: [items/X-1.spec.md]   only when non-empty
-//! github: 123                 only when linked to an issue
 //! finished: 2026-10-13        only when set
 //! source: "..."               only when non-empty
 //! ---
@@ -92,9 +91,6 @@ pub fn write(item: &Item) -> String {
     if !item.docs.is_empty() {
         out += &format!("docs: {}\n", list(&item.docs));
     }
-    if let Some(n) = item.github {
-        out += &format!("github: {n}\n");
-    }
     if let Some(f) = &item.finished {
         out += &format!("finished: {f}\n");
     }
@@ -158,12 +154,6 @@ fn set_field(item: &mut Item, key: &str, raw: &str) -> Result<(), String> {
         "effort" => item.effort = score_value(key, raw)?,
         "needs" => item.needs = list_value(raw)?,
         "docs" => item.docs = list_value(raw)?,
-        "github" => {
-            let n = raw
-                .parse()
-                .map_err(|_| format!("github must be an issue number, not `{raw}`"))?;
-            item.github = Some(n);
-        }
         "finished" => item.finished = (!raw.is_empty()).then(|| raw.to_string()),
         "source" => item.source = text_value(raw)?,
         other => return Err(format!("unknown field `{other}`")),

@@ -82,18 +82,3 @@ test("the second project's tab shows its own items", async ({ page, board }) => 
   expect(await ids(page)).toEqual(["URGENT:1"]);
   await expect(page.locator(".header h1")).toHaveText("ödev");
 });
-
-test("a linked item shows its GitHub issue", async ({ page, board }) => {
-  const { readFile, writeFile } = await import("node:fs/promises");
-  const settings = JSON.parse(await readFile(join(board.root, "project.json"), "utf8"));
-  await writeFile(join(board.root, "project.json"), JSON.stringify({ ...settings, github: { repo: "ozgur/isler" } }));
-  const file = join(board.root, "items/DEBT-1.md");
-  const text = await readFile(file, "utf8");
-  await writeFile(file, text.replace("needs: []\n", "needs: []\ngithub: 7\n"));
-  await page.goto(`${board.baseURL}/p/i%C5%9Fler/item/DEBT-1`);
-  const link = page.locator("#item-meta a.issue");
-  await expect(link).toHaveText("#7");
-  await expect(link).toHaveAttribute("href", "https://github.com/ozgur/isler/issues/7");
-  await page.goto(board.baseURL);
-  await expect(page.locator("tr.item[data-id='DEBT:1'] a.issue")).toHaveText("#7");
-});

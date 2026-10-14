@@ -85,15 +85,7 @@ fn names() {
 }
 
 #[test]
-fn the_github_link() {
-    let mut it = Item::new("TODO", 3, "Gökçe");
-    it.github = Some(123);
-    let text = write(&it);
-    assert!(text.contains("needs: []\ngithub: 123\n---\n"), "{text}");
-    assert_eq!(parse("TODO-3.md", &text).unwrap(), it);
-    let e = parse("TODO-3.md", "---\ntitle: x\ngithub: #12\n---\n").unwrap_err();
-    assert_eq!(
-        e.to_string(),
-        "TODO-3.md:3: github must be an issue number, not `#12`"
-    );
+fn a_github_line_is_an_unknown_field() {
+    let e = parse("TODO-3.md", "---\ntitle: x\ngithub: 12\n---\n").unwrap_err();
+    assert_eq!(e.to_string(), "TODO-3.md:3: unknown field `github`");
 }

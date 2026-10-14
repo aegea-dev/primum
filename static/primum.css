@@ -141,5 +141,3 @@ pre.diff .del{color:var(--danger)}
 .conflict .bodies .md{border:1px solid var(--line);border-radius:6px;padding:8px;font-size:13px}
 .conflict-mark{color:var(--warn);font-weight:700;margin-left:4px}
 
-/* A linked GitHub issue. */
-.issue{font:12px ui-monospace,Menlo,monospace;margin-left:6px;color:var(--accent)}

@@ -11,7 +11,6 @@ my-app/
     TODO-87.md             an item
     TODO-87.spec.md        its documents
   conflicts/TODO-87.json   what a sync could not decide
-  github/TODO-87.json      the last version agreed with its issue
   .primum/history.git      the project's history, a bare git repository
   .primum.lock             held while a change runs
 ```
@@ -20,16 +19,13 @@ my-app/
 
 ```json
 {
-  "name": "my-app",
-  "github": { "repo": "owner/repo", "ids": "title" }
+  "name": "my-app"
 }
 ```
 
 | Key | Value |
 |---|---|
 | `name` | The project's name, shown on tabs and used by `-p` |
-| `github.repo` | The repository its issues are kept in step with |
-| `github.ids` | How ids show on issues: `"none"` (default) or `"title"` |
 
 Written by primum, tracked in the history; unknown keys are kept. A project
 from an earlier version has a `primum.toml` with `name` instead, read until

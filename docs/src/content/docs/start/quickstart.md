@@ -50,4 +50,3 @@ open an item, edit its scores in place, or add one with **+ new**.
 
 - [Items, lanes and scores](/start/concepts/): how the order is computed.
 - [History and sync](/guides/history-and-sync/): the same board on two machines.
-- [GitHub Issues](/guides/github-issues/): items and issues in step.

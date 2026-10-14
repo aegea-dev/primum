@@ -23,10 +23,6 @@ pub struct Report {
     pub kept: Vec<String>,
     pub offline: Option<String>,
     pub no_remote: bool,
-    /// What the GitHub part did, when the project is connected.
-    pub github: Option<crate::github_sync::Report>,
-    /// Why the GitHub part did not run.
-    pub github_off: Option<String>,
 }
 
 /// Whether changes to `p` sync by themselves: it has a remote, and sync
@@ -36,61 +32,7 @@ pub fn is_auto(p: &Project) -> bool {
         .ok()
         .flatten()
         .and_then(|h| h.remote().ok().flatten());
-    match remote {
-        Some(r) => !r.manual,
-        None => crate::projects::github_repo(p).ok().flatten().is_some(),
-    }
-}
-
-/// The GitHub part of a sync, when the project is connected: after the
-/// history is pulled (so links other machines wrote are seen), before it is
-/// pushed. Commits what it changed.
-fn github(p: &Project, h: &History, report: &mut Report) -> Result<()> {
-    let Some(repo) = crate::projects::github_repo(p)? else {
-        return Ok(());
-    };
-    if let Err(why) = crate::github::Gh::available() {
-        report.github_off = Some(why);
-        return Ok(());
-    }
-    let config = |key: &str| -> Result<Option<String>> {
-        let out = h.run(&["config", "--get", key])?;
-        Ok(out
-            .status
-            .success()
-            .then(|| String::from_utf8_lossy(&out.stdout).trim().to_string()))
-    };
-    // a few minutes of overlap: GitHub's list can lag an edit by seconds,
-    // and an issue seen twice is skipped as unchanged
-    let since = config("primum.github-since")?.map(|s| {
-        chrono::DateTime::parse_from_rfc3339(&s)
-            .map(|t| (t - chrono::Duration::minutes(5)).to_rfc3339())
-            .unwrap_or(s)
-    });
-    let style = crate::projects::github_ids(p)?;
-    let applied = config("primum.github-ids")?.unwrap_or_else(|| "none".into());
-    let options = crate::github_sync::Options {
-        since,
-        all: config("primum.github-all")?.as_deref() == Some("true"),
-        style,
-        rewrite: applied != style.name(),
-    };
-    let api = crate::github::Gh { repo };
-    let (gr, newest) = crate::github_sync::run_with(p, &api, &options)?;
-    if let Some(n) = newest {
-        h.git(&["config", "primum.github-since", &n])?;
-    }
-    h.git(&["config", "primum.github-ids", style.name()])?;
-    let message = format!(
-        "GitHub sync: {} new issues, {} new items, {} updated",
-        gr.created.len(),
-        gr.added.len(),
-        gr.updated_items.len() + gr.updated_issues.len() + gr.closed_by.len()
-    );
-    h.commit(&message)?;
-    report.conflicts.extend(gr.conflicts.iter().cloned());
-    report.github = Some(gr);
-    Ok(())
+    remote.is_some_and(|r| !r.manual)
 }
 
 pub fn sync(p: &Project) -> Result<Report> {
@@ -99,31 +41,20 @@ pub fn sync(p: &Project) -> Result<Report> {
         bail!("history is off: git not found");
     };
     let mut report = Report::default();
-    let connected = crate::projects::github_repo(p)?.is_some();
     let Some(remote) = h.remote()? else {
         report.no_remote = true;
-        if connected {
-            h.record_outside()?;
-            github(p, &h, &mut report)?;
-        }
         return Ok(report);
     };
     h.record_outside()?;
     let theirs = format!("refs/remotes/origin/{}", remote.branch);
-    for attempt in 0..3 {
+    for _ in 0..3 {
         match h.fetch(&remote)? {
             Fetched::Offline(why) => {
                 report.offline = Some(why);
-                if attempt == 0 {
-                    github(p, &h, &mut report)?;
-                }
                 return Ok(report);
             }
             Fetched::Empty => {}
             Fetched::Ok => pull(p, &h, &theirs, &remote, &mut report)?,
-        }
-        if attempt == 0 {
-            github(p, &h, &mut report)?;
         }
         if h.head()?.is_none() {
             return Ok(report);

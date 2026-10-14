@@ -55,8 +55,7 @@ between machines and arrives with `primum clone`:
 
 ```json
 {
-  "name": "my-app",
-  "github": { "repo": "me/my-app", "ids": "title" }
+  "name": "my-app"
 }
 ```
 
