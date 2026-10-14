@@ -8,8 +8,8 @@ primum next
 primum next -n 5
 ```
 
-Prints the items in progress, then the highest priority open items that are
-not blocked.
+Prints the items in progress, then the highest priority items waiting in
+their lifecycle's first state (`idle` for most) that are not blocked.
 
 | Option | Effect |
 |---|---|

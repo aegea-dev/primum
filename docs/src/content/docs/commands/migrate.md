@@ -19,6 +19,8 @@ a board once:
 - rewrites references: `needs: [TODO:7]` becomes `needs: [3]`, `TODO:7` in
   item text and documents becomes `#3`, `items/TODO-7.` paths follow;
 - writes each item's `kind:`;
+- turns the status `open` into `idle` (the built-in `manual` lifecycle's
+  first state); a board numbered earlier gets this step alone;
 - commits once, `number every item`, and prints each old id with its new
   number.
 

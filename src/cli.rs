@@ -1,7 +1,7 @@
 //! The command line. Writes go through `store`, reads through `store::load`
 //! and the same `ItemView` the web page gets, so the terminal and the page
 //! always agree.
-use crate::model::{KINDS, STATUSES, id_of, label, parse_id};
+use crate::model::{KINDS, id_of, label, parse_id};
 use crate::projects;
 use crate::server::{ItemView, views};
 use crate::store::{self, Changes, Project};
@@ -189,10 +189,28 @@ pub enum Cmd {
     Import { board_dir: PathBuf },
     /// Bring a board made by an earlier version up to date, once
     Migrate,
+    /// The project's context variables, stored and computed, or set one
+    Context {
+        #[command(subcommand)]
+        cmd: Option<ContextCmd>,
+        #[arg(long)]
+        json: bool,
+    },
     /// The project's lifecycles: check, show or list them
     Lifecycle {
         #[command(subcommand)]
         cmd: LifecycleCmd,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum ContextCmd {
+    /// Store KEY (VALUE as JSON, else as text), or remove it with --unset
+    Set {
+        key: String,
+        value: Option<String>,
+        #[arg(long)]
+        unset: bool,
     },
 }
 
@@ -208,6 +226,10 @@ pub enum LifecycleCmd {
     },
     /// The project's lifecycles and their versions
     List,
+    /// Make a ticket follow a lifecycle, pinned at its current version
+    Attach { id: String, name: String },
+    /// Make a ticket follow the built-in manual lifecycle again
+    Detach { id: String },
 }
 
 #[derive(Subcommand)]
@@ -317,14 +339,19 @@ fn dispatch(cli: Cli) -> Result<()> {
             }
         }
         Cmd::Lifecycle { cmd } => lifecycle_cmd(&project()?, cmd)?,
+        Cmd::Context { cmd, json } => context_cmd(&project()?, cmd, json)?,
         Cmd::Migrate => {
             let p = project()?;
             let moved = crate::migrate::migrate(&p)?;
-            if moved.is_empty() {
+            let statuses = crate::migrate::migrate_statuses(&p)?;
+            if moved.is_empty() && statuses == 0 {
                 println!("nothing to migrate");
             }
             for (old, new) in moved {
                 println!("{old} -> {}", label(&new));
+            }
+            if statuses > 0 {
+                println!("{statuses} items: open -> idle");
             }
         }
         Cmd::Workspace {
@@ -336,6 +363,10 @@ fn dispatch(cli: Cli) -> Result<()> {
                     let n = crate::migrate::migrate(&p)?.len();
                     if n > 0 {
                         done.push(format!("{}: numbered {n} items", p.name));
+                    }
+                    let s = crate::migrate::migrate_statuses(&p)?;
+                    if s > 0 {
+                        done.push(format!("{}: {s} items open -> idle", p.name));
                     }
                 }
             }
@@ -675,8 +706,41 @@ fn set_status(p: &Project, id: &str, status: &str) -> Result<()> {
         status: Some(status.into()),
         ..Default::default()
     };
-    store::update(p, &id, c)?;
+    store::update(p, &id, c)
+        .map_err(|e| anyhow!("{e:#}; for another state use primum set {id} --status STATE"))?;
     println!("{}: {status}", label(&id));
+    Ok(())
+}
+
+fn context_cmd(p: &Project, cmd: Option<ContextCmd>, json: bool) -> Result<()> {
+    match cmd {
+        Some(ContextCmd::Set { key, value, unset }) => {
+            let value = match (value, unset) {
+                (_, true) => None,
+                (Some(v), false) => {
+                    Some(serde_json::from_str(&v).unwrap_or(serde_json::Value::String(v)))
+                }
+                (None, false) => bail!("give a value, or --unset"),
+            };
+            projects::set_context(p, &key, value)?;
+        }
+        None => {
+            let stored = projects::context(p)?;
+            let computed = store::computed_context(&store::load(p)?);
+            if json {
+                let v = serde_json::json!({
+                    "stored": stored,
+                    "computed": computed,
+                    "lifecycle": projects::project_lifecycle(p)?,
+                });
+                println!("{}", serde_json::to_string_pretty(&v)?);
+                return Ok(());
+            }
+            for (k, v) in stored.iter().chain(computed.iter()) {
+                println!("{k} = {v}");
+            }
+        }
+    }
     Ok(())
 }
 
@@ -758,6 +822,16 @@ fn lifecycle_cmd(p: &Project, cmd: LifecycleCmd) -> Result<()> {
                 );
             }
         }
+        LifecycleCmd::Attach { id, name } => {
+            let id = norm_id(&id)?;
+            let v = crate::store::attach(p, &id, &name)?;
+            println!("{}: {name} {}", label(&id), short(&v));
+        }
+        LifecycleCmd::Detach { id } => {
+            let id = norm_id(&id)?;
+            crate::store::detach(p, &id)?;
+            println!("{}: manual", label(&id));
+        }
         LifecycleCmd::List => {
             let manual = find_lifecycle(p, "manual")?;
             println!("manual  {}  built in", short(&manual.version));
@@ -810,14 +884,9 @@ fn list(
     all: bool,
     json: bool,
 ) -> Result<()> {
-    let statuses: Vec<String> = match (&status, all) {
-        (Some(s), _) => s.split(',').map(|x| x.trim().to_lowercase()).collect(),
-        (None, true) => STATUSES.iter().map(|s| s.to_string()).collect(),
-        (None, false) => vec!["open".into(), "doing".into()],
-    };
-    if let Some(bad) = statuses.iter().find(|s| !STATUSES.contains(&s.as_str())) {
-        bail!("unknown status {bad}");
-    }
+    let statuses: Option<Vec<String>> = status
+        .as_ref()
+        .map(|s| s.split(',').map(|x| x.trim().to_lowercase()).collect());
     let kind = kind.map(|k| k.to_uppercase());
     if let Some(k) = &kind
         && !KINDS.contains(&k.as_str())
@@ -828,7 +897,10 @@ fn list(
     let rows: Vec<ItemView> = views(&board)
         .into_iter()
         .filter(|v| kind.as_ref().is_none_or(|k| &v.kind == k))
-        .filter(|v| statuses.contains(&v.status))
+        .filter(|v| match &statuses {
+            Some(s) => s.contains(&v.status),
+            None => all || !v.closed,
+        })
         .collect();
     if json {
         println!("{}", serde_json::to_string_pretty(&rows)?);
@@ -863,6 +935,17 @@ fn show(p: &Project, id: &str, json: bool) -> Result<()> {
             String::new()
         };
         println!("needs {}{blocked}", v.needs.join(", "));
+    }
+    if let (Some(pin), Some(step)) = (&v.lifecycle, &v.step) {
+        let (name, version) = crate::lifecycle::split_pin(pin);
+        let gone = match crate::lifecycle::resolve(p, name) {
+            Some(Ok(l)) if l.version == version => "",
+            _ => "  (that version is no longer in lifecycles/)",
+        };
+        println!(
+            "lifecycle {name} {}  step {step}{gone}",
+            crate::lifecycle::short(version)
+        );
     }
     if let Some(f) = &v.finished {
         println!("finished {f}");
@@ -933,7 +1016,7 @@ fn next(p: &Project, n: usize) -> Result<()> {
     let style = Style::detect();
     let open: Vec<&ItemView> = rows
         .iter()
-        .filter(|v| v.status == "open" && !v.blocked)
+        .filter(|v| v.states.first() == Some(&v.status) && !v.blocked)
         .take(n)
         .collect();
     if open.is_empty() {

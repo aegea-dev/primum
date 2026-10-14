@@ -39,7 +39,7 @@ fn blockers_are_open_needs_only() {
     b2.status = "done".into();
     let b3 = item("BUG", 3, 5, 3, 3, 5);
     assert_eq!(
-        blockers(&a, &[a.clone(), b2, b3]),
+        blockers(&a, &[a.clone(), b2, b3], |i| i.status == "done"),
         vec!["3".to_string(), "9".to_string()]
     );
 }

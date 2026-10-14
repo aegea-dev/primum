@@ -30,11 +30,15 @@ text or document links to it. A number is never reused, even after a
 delete. Moving an item to another lane ([`primum kind`](/commands/kind/))
 changes its `kind:` line and nothing else.
 
-## Statuses
+## Statuses and lifecycles
 
-`open`, `doing`, `done` and `wontfix`. `done` and `wontfix` are closed: they
-leave `primum list` and the board's default view, and their ids are removed
-from every other item's `needs`.
+An item's status is its state in its [lifecycle](/reference/lifecycles/).
+Items follow the built-in `manual` lifecycle unless attached to another:
+`idle`, `doing`, `done` and `wontfix`, moved by a person. `done` and
+`wontfix` are closed: they leave `primum list` and the board's default
+view, and their ids are removed from every other item's `needs`. An item
+attached to another lifecycle has that lifecycle's states, and is closed in
+the states of its closing steps.
 
 ## Scores and priority
 
@@ -88,7 +92,7 @@ The differences are deliberate:
 - **Times ten** keeps the priority readable (`32.0` rather than `3.2`); the
   order is the same.
 
-primum's statuses (`open`, `doing`, `done`) form a Kanban-style pull flow, and
+primum's statuses (`idle`, `doing`, `done`) form a Kanban-style pull flow, and
 the board shows items in progress before the next one: finish what is
 started before starting more. There are no sprints, story points or
 velocity; primum is a backlog and a flow, not a sprint planner.

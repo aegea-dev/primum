@@ -45,8 +45,11 @@ fn hand_written_plain_title_is_accepted() {
 
 #[test]
 fn errors_name_the_line() {
-    let e = parse("1.md", "---\ntitle: \"x\"\nstatus: bitti\n---\n").unwrap_err();
-    assert_eq!(e.to_string(), "1.md:3: unknown status `bitti`");
+    let e = parse("1.md", "---\ntitle: \"x\"\nstatus: Bitti!\n---\n").unwrap_err();
+    assert_eq!(
+        e.to_string(),
+        "1.md:3: status must be a lowercase word, not `Bitti!`"
+    );
     let e = parse("1.md", "---\ntitle: \"x\"\nstatus: open\n---\n").unwrap_err();
     assert_eq!(e.to_string(), "1.md:1: front matter has no `kind`");
     let e = parse("1.md", "---\ntitle: \"x\"\nkind: EPIC\n---\n").unwrap_err();
@@ -93,4 +96,27 @@ fn names() {
 fn a_github_line_is_an_unknown_field() {
     let e = parse("3.md", "---\ntitle: x\ngithub: 12\n---\n").unwrap_err();
     assert_eq!(e.to_string(), "3.md:3: unknown field `github`");
+}
+
+#[test]
+fn an_attached_ticket_carries_its_lifecycle_and_step() {
+    let mut it = Item::new("TODO", 4, "Işık");
+    it.status = "waiting".into();
+    it.lifecycle = Some(format!("stakeholder-update@{}", "a".repeat(64)));
+    it.step = Some("await-reply".into());
+    let text = write(&it);
+    assert!(
+        text.contains(&format!(
+            "needs: []\nlifecycle: stakeholder-update@{}\nstep: await-reply\n",
+            "a".repeat(64)
+        )),
+        "{text}"
+    );
+    assert_eq!(parse("4.md", &text).unwrap(), it);
+    let lonely = text.replace("step: await-reply\n", "");
+    let e = parse("4.md", &lonely).unwrap_err();
+    assert!(
+        e.to_string().contains("lifecycle and step go together"),
+        "{e}"
+    );
 }

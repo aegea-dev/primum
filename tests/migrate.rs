@@ -149,3 +149,31 @@ fn a_failed_migration_changes_nothing() {
     names.sort();
     assert_eq!(names, ["TODO-1.md", "TODO-1.spec.md", "TODO-2.md"]);
 }
+
+#[test]
+fn open_becomes_idle_once() {
+    let d = tempfile::tempdir().unwrap();
+    let p = common::project(d.path());
+    let items = d.path().join("items");
+    let item = |status: &str| {
+        format!(
+            "---\ntitle: \"Çay\"\nkind: TODO\nstatus: {status}\nimpact: 5\nurgency: 3\nrisk: 3\neffort: 5\nneeds: []\n---\n"
+        )
+    };
+    fs::write(items.join("1.md"), item("open")).unwrap();
+    fs::write(items.join("2.md"), item("doing")).unwrap();
+    assert_eq!(primum::migrate::migrate_statuses(&p).unwrap(), 1);
+    assert!(
+        fs::read_to_string(items.join("1.md"))
+            .unwrap()
+            .contains("status: idle")
+    );
+    assert!(
+        fs::read_to_string(items.join("2.md"))
+            .unwrap()
+            .contains("status: doing")
+    );
+    assert_eq!(common::subjects(&p)[0], "statuses for lifecycles");
+    assert_eq!(primum::migrate::migrate_statuses(&p).unwrap(), 0);
+    assert!(primum::store::load(&p).is_ok());
+}

@@ -16,7 +16,7 @@
 //!
 //! body
 //! ```
-use crate::model::{Item, KINDS, STATUSES, parse_id};
+use crate::model::{Item, KINDS, parse_id};
 use std::fmt;
 
 #[derive(Debug, PartialEq)]
@@ -97,6 +97,9 @@ pub fn write(item: &Item) -> String {
     if !item.docs.is_empty() {
         out += &format!("docs: {}\n", list(&item.docs));
     }
+    if let (Some(l), Some(s)) = (&item.lifecycle, &item.step) {
+        out += &format!("lifecycle: {l}\nstep: {s}\n");
+    }
     if let Some(f) = &item.finished {
         out += &format!("finished: {f}\n");
     }
@@ -155,8 +158,12 @@ fn set_field(item: &mut Item, key: &str, raw: &str) -> Result<(), String> {
             item.kind = raw.to_string();
         }
         "status" => {
-            if !STATUSES.contains(&raw) {
-                return Err(format!("unknown status `{raw}`"));
+            let word = raw.starts_with(|c: char| c.is_ascii_lowercase())
+                && raw
+                    .chars()
+                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
+            if !word {
+                return Err(format!("status must be a lowercase word, not `{raw}`"));
             }
             item.status = raw.to_string();
         }
@@ -166,6 +173,8 @@ fn set_field(item: &mut Item, key: &str, raw: &str) -> Result<(), String> {
         "effort" => item.effort = score_value(key, raw)?,
         "needs" => item.needs = list_value(raw)?,
         "docs" => item.docs = list_value(raw)?,
+        "lifecycle" => item.lifecycle = Some(raw.to_string()),
+        "step" => item.step = Some(raw.to_string()),
         "finished" => item.finished = (!raw.is_empty()).then(|| raw.to_string()),
         "source" => item.source = text_value(raw)?,
         other => return Err(format!("unknown field `{other}`")),
@@ -216,6 +225,9 @@ pub fn parse(file: &str, text: &str) -> Result<Item, ParseError> {
     }
     if !seen_kind {
         return Err(err(1, "front matter has no `kind`".into()));
+    }
+    if item.lifecycle.is_some() != item.step.is_some() {
+        return Err(err(1, "lifecycle and step go together".into()));
     }
     let rest: String = lines.collect();
     item.body = rest.strip_prefix('\n').unwrap_or(&rest).to_string();

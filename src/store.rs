@@ -3,7 +3,8 @@
 //! closed ids from every `needs`, and rewrites BOARD.md.
 use crate::history::History;
 use crate::item_file::{self, file_name, parse_doc_name, parse_item_name, stem};
-use crate::model::{Item, KINDS, STATUSES, clamp_score, id_of, label, priority_cmp};
+use crate::lifecycle::Rules;
+use crate::model::{Item, KINDS, clamp_score, id_of, label, priority_cmp};
 use anyhow::{Context, Result, anyhow, bail};
 use fs2::FileExt;
 use std::collections::BTreeMap;
@@ -43,11 +44,30 @@ pub struct Board {
     /// The highest number any document file carries, item or not: such a
     /// number is taken, so a new item never inherits stray documents.
     pub doc_max: u32,
+    /// The rules of the built-in `manual` lifecycle, which tickets without
+    /// a lifecycle follow.
+    pub manual: Rules,
+    /// The rules of every other lifecycle a ticket follows, by name.
+    pub rules: BTreeMap<String, Rules>,
 }
 
 impl Board {
     pub fn get(&self, id: &str) -> Option<&Item> {
         self.items.iter().find(|i| i.id == id)
+    }
+
+    /// The rules of the lifecycle an item follows.
+    pub fn rules_of(&self, it: &Item) -> &Rules {
+        it.lifecycle
+            .as_deref()
+            .map(|pin| crate::lifecycle::split_pin(pin).0)
+            .and_then(|name| self.rules.get(name))
+            .unwrap_or(&self.manual)
+    }
+
+    /// Whether an item is closed in its lifecycle.
+    pub fn is_closed(&self, it: &Item) -> bool {
+        it.is_closed_in(&self.rules_of(it).closed)
     }
 
     fn get_mut(&mut self, id: &str) -> Result<&mut Item> {
@@ -248,11 +268,47 @@ pub fn load(p: &Project) -> Result<Board> {
         .filter_map(|id| crate::model::parse_id(id))
         .max()
         .unwrap_or(0);
+    let manual = Rules::manual();
+    // each lifecycle a ticket follows: its file's rules, or the defaults
+    // when the file is gone (the engine keeps pinned versions)
+    let mut rules: BTreeMap<String, Rules> = BTreeMap::new();
+    for pin in items.iter().filter_map(|i| i.lifecycle.as_deref()) {
+        let name = crate::lifecycle::split_pin(pin).0;
+        if !rules.contains_key(name) {
+            let r = match crate::lifecycle::resolve(p, name) {
+                Some(Ok(l)) => Rules::of(&l.file),
+                Some(Err(e)) => return Err(anyhow!(e)),
+                None => Rules {
+                    states: crate::lifecycle::validate::DEFAULT_STATES
+                        .iter()
+                        .map(|s| s.to_string())
+                        .collect(),
+                    closed: vec!["done".into(), "wontfix".into()],
+                },
+            };
+            rules.insert(name.to_string(), r);
+        }
+    }
+    for it in &items {
+        let r = it
+            .lifecycle
+            .as_deref()
+            .and_then(|pin| rules.get(crate::lifecycle::split_pin(pin).0))
+            .unwrap_or(&manual);
+        check_status(&it.id, &it.status, r).map_err(|e| {
+            anyhow!(
+                "items/{}: {e:#}; boards made before lifecycles: run primum migrate",
+                file_name(&it.id)
+            )
+        })?;
+    }
     Ok(Board {
         items,
         docs,
         conflicts,
         doc_max,
+        manual,
+        rules,
     })
 }
 
@@ -270,7 +326,7 @@ fn settle(p: &Project, board: &mut Board) -> Result<()> {
     let closed: Vec<String> = board
         .items
         .iter()
-        .filter(|i| i.is_closed())
+        .filter(|i| board.is_closed(i))
         .map(|i| i.id.clone())
         .collect();
     for it in board.items.iter_mut() {
@@ -301,12 +357,22 @@ pub(crate) fn settle_locked(p: &Project) -> Result<()> {
     settle(p, &mut board)
 }
 
-fn apply(it: &mut Item, c: Changes) -> Result<()> {
+/// Checks that `status` is one of the rules' states.
+fn check_status(id: &str, status: &str, rules: &Rules) -> Result<()> {
+    if !rules.states.iter().any(|s| s == status) {
+        bail!(
+            "{}: status \"{status}\" is not one of {}",
+            label(id),
+            rules.states.join(", ")
+        );
+    }
+    Ok(())
+}
+
+fn apply(it: &mut Item, c: Changes, rules: &Rules) -> Result<()> {
     if let Some(s) = c.status {
-        if !STATUSES.contains(&s.as_str()) {
-            bail!("unknown status {s}");
-        }
-        it.finished = (s == "done" || s == "wontfix").then(today);
+        check_status(&it.id, &s, rules)?;
+        it.finished = rules.closed.contains(&s).then(today);
         it.status = s;
     }
     if let Some(t) = c.title {
@@ -370,7 +436,7 @@ pub fn insert(p: &Project, kind: &str, title: &str, c: Changes) -> Result<String
     change(p, |board| {
         let mut it = Item::new(kind, board.next_num(&deleted), &title);
         it.source = "primum".into();
-        apply(&mut it, c)?;
+        apply(&mut it, c, &board.manual.clone())?;
         save(p, &it)?;
         let id = it.id.clone();
         let message = format!("{}: add {}", label(&id), serde_json::to_string(&it.title)?);
@@ -381,8 +447,11 @@ pub fn insert(p: &Project, kind: &str, title: &str, c: Changes) -> Result<String
 }
 
 fn update_locked(p: &Project, board: &mut Board, id: &str, c: Changes) -> Result<()> {
+    let rules = board
+        .rules_of(board.get(id).ok_or_else(|| anyhow!("no item {id}"))?)
+        .clone();
     let it = board.get_mut(id)?;
-    apply(it, c)?;
+    apply(it, c, &rules)?;
     let it = it.clone();
     save(p, &it)?;
     settle(p, board)
@@ -470,6 +539,61 @@ pub fn set_kind(p: &Project, id: &str, kind: &str) -> Result<()> {
     )
 }
 
+/// Context variables derived from the board: items, open, closed, and a
+/// count per status (`status.idle`, ...).
+pub fn computed_context(board: &Board) -> serde_json::Map<String, serde_json::Value> {
+    let mut m = serde_json::Map::new();
+    let closed = board.items.iter().filter(|i| board.is_closed(i)).count();
+    m.insert("items".into(), board.items.len().into());
+    m.insert("open".into(), (board.items.len() - closed).into());
+    m.insert("closed".into(), closed.into());
+    let mut by: BTreeMap<&str, usize> = BTreeMap::new();
+    for it in &board.items {
+        *by.entry(it.status.as_str()).or_default() += 1;
+    }
+    for (s, n) in by {
+        m.insert(format!("status.{s}"), n.into());
+    }
+    m
+}
+
+/// Attaches an item to a lifecycle at its current version: its step is the
+/// lifecycle's start, its status the start's state. Returns the version.
+pub fn attach(p: &Project, id: &str, name: &str) -> Result<String> {
+    let l = crate::lifecycle::resolve(p, name)
+        .ok_or_else(|| anyhow!("no lifecycle {name} in lifecycles/"))??;
+    change(p, |board| {
+        let it = board.get_mut(id)?;
+        it.lifecycle = Some(format!("{name}@{}", l.version));
+        it.step = Some(l.file.start.clone());
+        it.status = crate::lifecycle::first_state(&l.file);
+        it.finished = None;
+        let it = it.clone();
+        save(p, &it)?;
+        settle(p, board)?;
+        Ok((l.version.clone(), format!("{}: attach {name}", label(id))))
+    })
+}
+
+/// Detaches an item from its lifecycle: it follows `manual` again, and a
+/// status `manual` does not have becomes `idle`.
+pub fn detach(p: &Project, id: &str) -> Result<()> {
+    change(p, |board| {
+        let manual = board.manual.clone();
+        let it = board.get_mut(id)?;
+        it.lifecycle = None;
+        it.step = None;
+        if !manual.states.contains(&it.status) {
+            it.status = manual.states[0].clone();
+        }
+        it.finished = manual.closed.contains(&it.status).then(today);
+        let it = it.clone();
+        save(p, &it)?;
+        settle(p, board)?;
+        Ok(((), format!("{}: detach", label(id))))
+    })
+}
+
 /// Deletes an item and its own documents, and removes its id and documents
 /// from every other item. Returns the files removed.
 pub fn delete(p: &Project, id: &str) -> Result<Vec<String>> {
@@ -551,8 +675,8 @@ const KIND_TITLES: [(&str, &str); 5] = [
 /// board.py's export_markdown, its links pointing at the item files. The
 /// bodies are not repeated: each is one click away.
 pub fn board_markdown(board: &Board, name: &str) -> String {
-    let open: Vec<&Item> = board.items.iter().filter(|i| !i.is_closed()).collect();
-    let mut closed: Vec<&Item> = board.items.iter().filter(|i| i.is_closed()).collect();
+    let open: Vec<&Item> = board.items.iter().filter(|i| !board.is_closed(i)).collect();
+    let mut closed: Vec<&Item> = board.items.iter().filter(|i| board.is_closed(i)).collect();
     let mut out = vec![
         format!("# {name}\n"),
         "Generated by primum on every change. **Do not edit this file**: change items with `primum` or in `items/`.\n".to_string(),
@@ -688,9 +812,33 @@ pub fn resolve(p: &Project, id: &str, what: &str, keep: Keep) -> Result<()> {
                     let it = it.clone();
                     save(p, &it)?;
                 }
+                // "<name>@<version> <step>", or "manual"
+                "lifecycle" => {
+                    let (pin, step) = match v.split_once(' ') {
+                        Some((pin, step)) => (Some(pin.to_string()), Some(step.to_string())),
+                        None => (None, None),
+                    };
+                    // the status follows the side kept: one its lifecycle has
+                    let rules = match &pin {
+                        Some(pin) => {
+                            match crate::lifecycle::resolve(p, crate::lifecycle::split_pin(pin).0) {
+                                Some(Ok(l)) => Rules::of(&l.file),
+                                _ => board.manual.clone(),
+                            }
+                        }
+                        None => board.manual.clone(),
+                    };
+                    let it = board.get_mut(id)?;
+                    (it.lifecycle, it.step) = (pin, step);
+                    if !rules.states.contains(&it.status) {
+                        it.status = rules.states[0].clone();
+                    }
+                    let it = it.clone();
+                    save(p, &it)?;
+                }
                 other => bail!("cannot resolve {other}"),
             }
-            if what != "source" {
+            if what != "source" && what != "lifecycle" {
                 update_locked(p, board, id, ch)?;
             }
         }

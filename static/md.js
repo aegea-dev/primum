@@ -48,9 +48,9 @@ function md(src){
 
 // Shared by the board and item pages.
 const KINDS=['URGENT','BUG','DEBT','KILLER','TODO'];
-const STATUSES=['open','doing','done','wontfix'];
 const kindClass=k=>'kind-'+String(k||'').toLowerCase();
-const isClosed=i=>i.status==='done'||i.status==='wontfix';
+// Closed in the item's own lifecycle (the server knows which states close).
+const isClosed=i=>i.closed;
 // How people see an id: #12.
 const label=id=>'#'+id;
 // What #12 in text links to: every item's kind and title, by id.
@@ -64,4 +64,4 @@ async function api(path,body){
   if(!r.ok)throw new Error(data.error||('HTTP '+r.status));
   return data;
 }
-Object.assign(window,{esc,md,mdInline,KINDS,STATUSES,kindClass,isClosed,label,knowItems,api});
+Object.assign(window,{esc,md,mdInline,KINDS,kindClass,isClosed,label,knowItems,api});

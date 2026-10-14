@@ -423,7 +423,7 @@ fn a_closed_pipe_ends_quietly() {
     let items = t.dir.path().join("café/items");
     for n in 1..=2000 {
         let text = format!(
-            "---\ntitle: \"Satır {n}\"\nkind: TODO\nstatus: open\nimpact: 5\nurgency: 3\nrisk: 3\neffort: 5\nneeds: []\n---\n"
+            "---\ntitle: \"Satır {n}\"\nkind: TODO\nstatus: idle\nimpact: 5\nurgency: 3\nrisk: 3\neffort: 5\nneeds: []\n---\n"
         );
         std::fs::write(items.join(format!("{n}.md")), text).unwrap();
     }
@@ -474,4 +474,61 @@ fn lifecycle_commands() {
     let o = t.run(&["lifecycle", "check"]);
     assert_eq!(o.status.code(), Some(1));
     assert!(String::from_utf8_lossy(&o.stderr).contains("kırık.toml"));
+}
+
+#[test]
+fn attach_and_detach_on_the_command_line() {
+    let t = T::new();
+    let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/lifecycles/stakeholder-update.toml");
+    let dir = t.dir.path().join("café/lifecycles");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::copy(&src, dir.join("stakeholder-update.toml")).unwrap();
+    t.out(&["add", "TODO", "Gölge"]);
+    let out = t.out(&["lifecycle", "attach", "1", "stakeholder-update"]);
+    assert!(out.starts_with("#1: stakeholder-update "), "{out}");
+    let show = t.out(&["show", "1"]);
+    assert!(
+        show.contains("lifecycle stakeholder-update") && show.contains("step notify"),
+        "{show}"
+    );
+    assert_eq!(t.out(&["lifecycle", "detach", "#1"]).trim(), "#1: manual");
+    assert!(!t.out(&["show", "1"]).contains("lifecycle "));
+}
+
+#[test]
+fn context_on_the_command_line() {
+    let t = T::new();
+    t.out(&["add", "TODO", "Çay"]);
+    t.out(&["context", "set", "start", "2026-11-01"]);
+    t.out(&["context", "set", "owner", "\"Ada\""]);
+    let out = t.out(&["context"]);
+    assert!(out.contains("start = \"2026-11-01\""), "{out}");
+    assert!(out.contains("owner = \"Ada\""), "{out}");
+    assert!(
+        out.contains("items = 1") && out.contains("status.idle = 1"),
+        "{out}"
+    );
+    t.out(&["context", "set", "owner", "--unset"]);
+    assert!(!t.out(&["context"]).contains("owner"));
+    let json: serde_json::Value = serde_json::from_str(&t.out(&["context", "--json"])).unwrap();
+    assert_eq!(json["stored"]["start"], "2026-11-01");
+    assert_eq!(json["computed"]["items"], 1);
+}
+
+#[test]
+fn start_on_a_lifecycle_without_doing_says_what_to_do() {
+    let t = T::new();
+    let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/lifecycles/stakeholder-update.toml");
+    let dir = t.dir.path().join("café/lifecycles");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::copy(&src, dir.join("stakeholder-update.toml")).unwrap();
+    t.out(&["add", "TODO", "Gölge"]);
+    t.out(&["lifecycle", "attach", "1", "stakeholder-update"]);
+    let e = t.err(&["start", "1"]);
+    assert!(
+        e.contains("is not one of effects, waiting, processing") && e.contains("--status"),
+        "{e}"
+    );
 }

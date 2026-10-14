@@ -88,6 +88,90 @@ pub fn load_file(path: &Path) -> Result<Lifecycle, LifecycleError> {
     load_text(path, &text)
 }
 
+/// A lifecycle's states, in order: its declared `states`, else the states
+/// its steps name (first use), else the defaults.
+pub fn states(f: &File) -> Vec<String> {
+    if let Some(s) = &f.states {
+        return s.clone();
+    }
+    let mut out: Vec<String> = vec![];
+    for s in f.step.iter().filter_map(|s| s.state.as_ref()) {
+        if !out.contains(s) {
+            out.push(s.clone());
+        }
+    }
+    if out.is_empty() {
+        out = validate::DEFAULT_STATES
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+    }
+    out
+}
+
+/// The states a ticket is closed in: those of the lifecycle's closing
+/// steps (a closing step without `state` keeps the previous step's).
+pub fn closed_states(f: &File) -> Vec<String> {
+    let mut out: Vec<String> = vec![];
+    let mut current: Option<&String> = None;
+    for s in &f.step {
+        if s.state.is_some() {
+            current = s.state.as_ref();
+        }
+        if s.end
+            && let Some(c) = current
+            && !out.contains(c)
+        {
+            out.push(c.clone());
+        }
+    }
+    out
+}
+
+/// The state a ticket starts in.
+pub fn first_state(f: &File) -> String {
+    let start = f.step.iter().find(|s| s.id == f.start);
+    start
+        .and_then(|s| s.state.clone())
+        .unwrap_or_else(|| states(f).into_iter().next().unwrap_or_default())
+}
+
+/// A lifecycle by name: the project's file, else a built-in one.
+pub fn resolve(p: &Project, name: &str) -> Option<Result<Lifecycle, LifecycleError>> {
+    let file = dir(p).join(format!("{name}.toml"));
+    if file.is_file() {
+        return Some(load_file(&file));
+    }
+    built_in(name).map(Ok)
+}
+
+/// `stakeholder-update@f2c...` is ("stakeholder-update", "f2c...").
+pub fn split_pin(pin: &str) -> (&str, &str) {
+    pin.split_once('@').unwrap_or((pin, ""))
+}
+
+/// What the ledger needs of a ticket's lifecycle: its states, in order,
+/// and the ones it is closed in.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct Rules {
+    pub states: Vec<String>,
+    pub closed: Vec<String>,
+}
+
+impl Rules {
+    pub fn of(f: &File) -> Rules {
+        Rules {
+            states: states(f),
+            closed: closed_states(f),
+        }
+    }
+
+    /// `manual`'s: idle, doing, done, wontfix.
+    pub fn manual() -> Rules {
+        Rules::of(&manual())
+    }
+}
+
 const MANUAL: &str = include_str!("manual.toml");
 
 /// The built-in lifecycle every ticket without one follows: a person moves

@@ -17,6 +17,6 @@ priority order (lane, then score). Blocked items are marked.
 | Option | Effect |
 |---|---|
 | `--kind KIND` | One lane only |
-| `--status LIST` | Statuses to show, like `open,doing` |
+| `--status LIST` | Statuses to show, like `idle,doing` (any state of a lifecycle) |
 | `--all` | Every item, closed ones too |
 | `--json` | The items as a JSON array, with `score`, `blocked` and `blockers` |

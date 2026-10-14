@@ -45,7 +45,8 @@ function itemOrder(a,b){
   return (a.num||0)-(b.num||0);
 }
 function nextItem(){
-  return ITEMS.filter(i=>i.status==='open'&&!i.blocked).sort(itemOrder)[0];
+  // the next ticket waiting in its lifecycle's first state
+  return ITEMS.filter(i=>i.status===i.states[0]&&!i.blocked).sort(itemOrder)[0];
 }
 function compareIds(a,b){
   if(kind==='ALL'){
@@ -126,7 +127,7 @@ function draw(){
     <td class="n score">${i.score}</td>
     <td>${i.blockers.length?'<span class=warn>'+i.blockers.map(label).join(', ')+'</span>':(i.needs.map(label).join(', ')||'-')}</td>
     <td class=docs>${i.docs.map(d=>`<button type=button class=docbadge data-doc="${esc(d.path)}" title="${esc(d.name)}">${esc(d.kind)}</button>`).join('')}</td>
-    <td><select data-f=status aria-label=status>${STATUSES.map(s=>
+    <td><select data-f=status aria-label=status>${i.states.map(s=>
         `<option ${s===i.status?'selected':''}>${s}</option>`).join('')}</select></td>
    </tr>`).join('');
 

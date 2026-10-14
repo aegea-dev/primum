@@ -129,7 +129,7 @@ async fn update_writes_the_file_and_reopening_clears_finished() {
     post(
         &app,
         &format!("{API}/items"),
-        json!({"id": "2", "status": "open"}),
+        json!({"id": "2", "status": "idle"}),
     )
     .await;
     assert!(!common::read(&p.root, "items/2.md").contains("finished:"));
@@ -141,7 +141,10 @@ async fn update_writes_the_file_and_reopening_clears_finished() {
     .await;
     assert_eq!(
         (code, v["error"].as_str()),
-        (StatusCode::BAD_REQUEST, Some("unknown status bitti"))
+        (
+            StatusCode::BAD_REQUEST,
+            Some("#2: status \"bitti\" is not one of idle, doing, done, wontfix")
+        )
     );
     let (code, _) = post(&app, &format!("{API}/items"), json!({"id": "9", "risk": 2})).await;
     assert_eq!(code, StatusCode::NOT_FOUND);
@@ -292,4 +295,31 @@ async fn a_conflict_shows_and_resolves() {
         StatusCode::OK
     );
     assert!(common::read(&p.root, "items/2.md").contains("effort: 2"));
+}
+
+#[tokio::test]
+async fn context_is_served() {
+    let d = tempfile::tempdir().unwrap();
+    let (p, app) = setup(d.path());
+    primum::projects::set_context(&p, "start", Some("2026-11-01".into())).unwrap();
+    let (code, text) = get(&app, &format!("{API}/context")).await;
+    assert_eq!(code, StatusCode::OK);
+    let v: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(v["stored"]["start"], "2026-11-01");
+    assert_eq!(v["computed"]["items"], 2);
+    assert_eq!(v["lifecycle"], Value::Null);
+}
+
+#[tokio::test]
+async fn items_carry_their_states() {
+    let d = tempfile::tempdir().unwrap();
+    let (_p, app) = setup(d.path());
+    let (_, text) = get(&app, &format!("{API}/items")).await;
+    let items: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(
+        items[0]["states"],
+        json!(["idle", "doing", "done", "wontfix"])
+    );
+    assert_eq!(items[0]["closed"], false);
+    assert_eq!(items[0]["lifecycle"], Value::Null);
 }
