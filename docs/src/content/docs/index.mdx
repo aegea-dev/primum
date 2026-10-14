@@ -1,0 +1,77 @@
+---
+title: Prioritized work items as plain markdown files
+description: primum keeps a project's work items as one markdown file each, ranks them, and shows them on a local board, with history, sync and GitHub Issues.
+template: splash
+hero:
+  title: primum
+  tagline: Your work items as plain markdown files, ranked by what matters most. A command line, a local web board, history and sync built in, and GitHub Issues when you want them.
+  actions:
+    - text: Quickstart
+      link: start/quickstart/
+      icon: right-arrow
+    - text: Install
+      link: start/install/
+      variant: minimal
+    - text: View on GitHub
+      link: https://github.com/erhangundogan/primum
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+import { Picture } from 'astro:assets';
+import light from '../../assets/board-light.png';
+import dark from '../../assets/board-dark.png';
+
+<Picture src={light} alt="The primum board: items in priority order, lanes as filters, next up above the table" class="light:sl-block dark:sl-hidden" formats={['webp']} />
+<Picture src={dark} alt="The primum board in dark mode" class="light:sl-hidden dark:sl-block" formats={['webp']} />
+
+## What it does
+
+<CardGrid stagger>
+	<Card title="One file per item" icon="document">
+		`items/TODO-87.md` is `TODO:87`: front matter for its scores, markdown
+		for its text. Edit it with primum, the board, or any editor.
+	</Card>
+	<Card title="Ranked for you" icon="list-format">
+		Impact, urgency and risk over effort give each item a score; lanes and
+		scores order the board, and `primum next` says what to do now.
+	</Card>
+	<Card title="A local board" icon="laptop">
+		`primum serve` opens every project in the browser: filter by lane, edit
+		in place, read specs and plans beside the item.
+	</Card>
+	<Card title="History built in" icon="seti:git">
+		Every change is a commit in a git repository primum keeps for the
+		project. The folder itself need not be a git repository.
+	</Card>
+	<Card title="Sync without merges" icon="random">
+		Set a remote and every change syncs. primum merges field by field;
+		only the same field changed two ways is a conflict.
+	</Card>
+	<Card title="GitHub Issues, both ways" icon="github">
+		Items and issues kept in step through `gh`: titles, text, status,
+		kinds and needs, and `Fixes TODO:87` in a pull request.
+	</Card>
+</CardGrid>
+
+## Why primum
+
+**Plain files you own.** A project is a folder of markdown files and one
+`BOARD.md` summary. Read them on GitHub, grep them, review them in a pull
+request. Stop using primum and they are still your notes.
+
+**A priority, not a pile.** Every item carries four scores from 1 to 10 and a
+lane (`URGENT`, `BUG`, `DEBT`, `KILLER`, `TODO`). The order is computed, so
+"what next" is a command, not a meeting. Items that wait on other open items
+are marked blocked and skipped.
+
+**Specs and plans beside the work.** `items/TODO-87.spec.md` belongs to
+`TODO:87` by its name; the board shows it as a tab next to the item.
+
+**Made for scripts and agents.** Every command takes plain arguments, text
+comes from files or standard input, and `list`, `show` and `log` answer in
+`--json`. See [working with AI agents](/guides/agents/).
+
+**One binary.** Rust, no runtime, no service, no account. The board listens
+on 127.0.0.1 only.
