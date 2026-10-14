@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <style>g{fill:#2a6db5}@media (prefers-color-scheme:dark){g{fill:#5b9be6}}</style>
+  <g>
+    <rect x="6" y="8" width="52" height="12" rx="4"/>
+    <rect x="6" y="26" width="38" height="12" rx="4" opacity=".7"/>
+    <rect x="6" y="44" width="24" height="12" rx="4" opacity=".45"/>
+  </g>
+</svg>

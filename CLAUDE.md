@@ -40,6 +40,7 @@ make fmt          # format; use this, not bare `cargo fmt`
 make fmt-check    # what CI runs
 make lint-check   # clippy with -D warnings, as CI runs it
 make e2e          # Playwright against target/debug/primum
+cd docs && yarn build   # the documentation site, when docs/ changed
 ```
 
 ## Layout
@@ -62,6 +63,7 @@ templates/         askama templates (nav.html shared)
 static/            CSS and JavaScript, embedded with include_str!
 tests/             integration tests; tests/common/ is shared
 e2e/               Playwright tests for the board
+docs/              the documentation site (Astro + Starlight); see docs/README.md
 ```
 
 ## The commit guard

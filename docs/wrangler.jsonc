@@ -1,0 +1,14 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "primum-doc",
+	"compatibility_date": "2026-10-01",
+	// A static site, so there is no `main` entry point: this is an assets-only
+	// Worker. Cloudflare serves the built files directly.
+	"assets": {
+		// Relative to this file; the dashboard's root directory is `docs`, so
+		// this is the `dist/` that `yarn build` writes.
+		"directory": "./dist",
+		// Starlight's 404.html for unknown paths, not a bare Cloudflare error.
+		"not_found_handling": "404-page"
+	}
+}

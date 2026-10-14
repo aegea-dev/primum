@@ -1,0 +1,5 @@
+# Documentation for primum, prioritized work items as plain markdown files.
+# https://github.com/erhangundogan/primum
+
+User-agent: *
+Allow: /
