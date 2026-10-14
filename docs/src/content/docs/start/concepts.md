@@ -38,7 +38,7 @@ Items follow the built-in `manual` lifecycle unless attached to another:
 `wontfix` are closed: they leave `primum list` and the board's default
 view, and their ids are removed from every other item's `needs`. An item
 attached to another lifecycle has that lifecycle's states, and is closed in
-the states of its closing steps.
+its `end` states.
 
 ## Scores and priority
 
