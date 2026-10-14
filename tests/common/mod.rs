@@ -70,7 +70,8 @@ pub fn person(dir: &Path, name: &str) -> Project {
 /// with its project actionable replaced by a built-in, for projects that
 /// define no actionables.
 pub fn example_json() -> String {
-    let p = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/lifecycles/enrich-ticket.json");
+    let p =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/lifecycles/enrich-ticket.json");
     std::fs::read_to_string(p).unwrap().replace(
         r#"{ "action": "checks.is-valid@1", "with": { "ticket": "${ticket}" },
           "expect": "output.ok" }"#,

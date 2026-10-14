@@ -16,7 +16,11 @@ pub const BUILT_IN: [&str; 5] = [
 
 /// Checks that `name` is a built-in, or one of `defs` at its version, and
 /// that `with` has what it needs.
-pub fn check(name: &str, with: Option<&Map<String, Value>>, defs: &[Definition]) -> Result<(), String> {
+pub fn check(
+    name: &str,
+    with: Option<&Map<String, Value>>,
+    defs: &[Definition],
+) -> Result<(), String> {
     let empty = Map::new();
     let with = with.unwrap_or(&empty);
     let text = |k: &str| with.get(k).is_some_and(Value::is_string);
@@ -26,7 +30,9 @@ pub fn check(name: &str, with: Option<&Map<String, Value>>, defs: &[Definition])
     };
     match name {
         "ticket.update@1" => {
-            only(&["title", "impact", "urgency", "risk", "effort", "needs", "body", "note"])?;
+            only(&[
+                "title", "impact", "urgency", "risk", "effort", "needs", "body", "note",
+            ])?;
             if with.is_empty() {
                 return Err("ticket.update@1 needs at least one of with.title, impact, urgency, risk, effort, needs, body, note".into());
             }
@@ -77,7 +83,10 @@ fn project<'a>(name: &str, defs: &'a [Definition]) -> Result<&'a Definition, Str
         return Err(format!("actionable {def} has no target {target}"));
     }
     if version != d.version.to_string() {
-        return Err(format!("actionable {def} is at version {}, not {version}", d.version));
+        return Err(format!(
+            "actionable {def} is at version {}, not {version}",
+            d.version
+        ));
     }
     Ok(d)
 }

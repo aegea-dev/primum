@@ -1,0 +1,13 @@
+{
+  "name": "checks",
+  "version": 1,
+  "description": "Checks on data from outside; dış veri.",
+  "type": "python@3.12",
+  "requirements": "requirements.txt",
+  "environment": { "API_KEY": "${env.API_KEY}" },
+  "limits": { "timeout": "30s" },
+  "targets": {
+    "is-valid": { "module": "rules", "callable": "is_valid" },
+    "score": { "module": "rules", "callable": "score" }
+  }
+}

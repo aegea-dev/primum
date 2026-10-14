@@ -80,7 +80,11 @@ pub fn short(version: &str) -> &str {
 
 /// Parses and checks a lifecycle's text against the project's actionables;
 /// `path` names it.
-pub fn load_text(path: &Path, text: &str, defs: &[Definition]) -> Result<Lifecycle, LifecycleError> {
+pub fn load_text(
+    path: &Path,
+    text: &str,
+    defs: &[Definition],
+) -> Result<Lifecycle, LifecycleError> {
     let file = parse(path, text)?;
     validate::validate(path, &file, defs)?;
     Ok(Lifecycle {
@@ -167,7 +171,8 @@ pub fn manual() -> File {
 pub fn built_in(name: &str) -> Option<Lifecycle> {
     match name {
         "manual" => Some(
-            load_text(Path::new("manual.json"), MANUAL, &[]).expect("the built-in lifecycle is valid"),
+            load_text(Path::new("manual.json"), MANUAL, &[])
+                .expect("the built-in lifecycle is valid"),
         ),
         _ => None,
     }

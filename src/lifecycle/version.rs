@@ -8,7 +8,10 @@ use sha2::{Digest, Sha256};
 fn hash(v: &serde_json::Value) -> String {
     // serde_json's maps are sorted (no preserve_order), so this is canonical
     let text = serde_json::to_string(v).expect("JSON serializes");
-    Sha256::digest(text.as_bytes()).iter().map(|b| format!("{b:02x}")).collect()
+    Sha256::digest(text.as_bytes())
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
 }
 
 /// The lifecycle's version, given the project actionables it names.

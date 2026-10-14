@@ -8,7 +8,9 @@ use std::path::Path;
 
 /// A lowercase word: letters, digits and `-`.
 pub fn is_word(s: &str) -> bool {
-    !s.is_empty() && s.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+    !s.is_empty()
+        && s.chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
 }
 
 /// Every string inside a JSON value, for its templates.
@@ -91,20 +93,27 @@ pub fn validate(path: &Path, f: &File, defs: &[Definition]) -> Result<(), Lifecy
     };
     let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
     if f.name != stem {
-        return Err(whole(format!("name \"{}\" must match the file name \"{stem}\"", f.name)));
+        return Err(whole(format!(
+            "name \"{}\" must match the file name \"{stem}\"",
+            f.name
+        )));
     }
     if f.states.is_empty() {
         return Err(whole("states is empty".into()));
     }
     for (i, s) in f.states.iter().enumerate() {
         if !is_word(s) {
-            return Err(whole(format!("state \"{s}\" is lowercase letters, digits and -")));
+            return Err(whole(format!(
+                "state \"{s}\" is lowercase letters, digits and -"
+            )));
         }
         if f.states[..i].contains(s) {
             return Err(whole(format!("state \"{s}\" is listed twice")));
         }
         if s == FAILED {
-            return Err(whole("\"failed\" is the engine's own state; do not list it".into()));
+            return Err(whole(
+                "\"failed\" is the engine's own state; do not list it".into(),
+            ));
         }
     }
     if !f.states.contains(&f.start) {

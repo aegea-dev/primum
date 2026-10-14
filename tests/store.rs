@@ -450,7 +450,15 @@ fn attach_pins_a_lifecycle_and_detach_returns_to_manual() {
     assert_eq!(it.status, "create");
     assert_eq!(
         b.rules_of(it).states,
-        ["create", "idle", "waiting", "processing", "finished", "timed-out", "failed"]
+        [
+            "create",
+            "idle",
+            "waiting",
+            "processing",
+            "finished",
+            "timed-out",
+            "failed"
+        ]
     );
     assert_eq!(common::subjects(&p)[0], "#1: attach enrich-ticket");
     let doing = Changes {

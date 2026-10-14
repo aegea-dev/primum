@@ -462,7 +462,9 @@ fn lifecycle_commands() {
     );
     let show = t.out(&["lifecycle", "show", "enrich-ticket"]);
     assert!(
-        show.contains("idle -> processing") && show.contains("http.request@1") && show.contains("while waiting"),
+        show.contains("idle -> processing")
+            && show.contains("http.request@1")
+            && show.contains("while waiting"),
         "{show}"
     );
     let json: serde_json::Value =
@@ -478,7 +480,6 @@ fn lifecycle_commands() {
 fn attach_and_detach_on_the_command_line() {
     let t = T::new();
     common::with_example(&t.dir.path().join("café"));
-    let dir = t.dir.path().join("café/lifecycles");
     t.out(&["add", "TODO", "Gölge"]);
     let out = t.out(&["lifecycle", "attach", "1", "enrich-ticket"]);
     assert!(out.starts_with("#1: enrich-ticket "), "{out}");
@@ -515,7 +516,6 @@ fn context_on_the_command_line() {
 fn start_on_a_lifecycle_without_doing_says_what_to_do() {
     let t = T::new();
     common::with_example(&t.dir.path().join("café"));
-    let dir = t.dir.path().join("café/lifecycles");
     t.out(&["add", "TODO", "Gölge"]);
     t.out(&["lifecycle", "attach", "1", "enrich-ticket"]);
     let e = t.err(&["start", "1"]);
