@@ -29,6 +29,17 @@ plain JavaScript). This file is for contributing to primum.
   `item_file::parse` reads only it; anything else is an error naming the
   file and line, never a silent default.
 - **Dependencies** use `~x.y.z` requirements; `=` only for prereleases.
+- **One worktree per change.** Never work in the main checkout: start every
+  change in its own worktree under `.claude/worktrees/` (ignored by git), on a new
+  branch from `origin/main`, and remove it once the PR is merged:
+
+  ```bash
+  git fetch && git worktree add .claude/worktrees/my-change -b my-change origin/main
+  git worktree remove .claude/worktrees/my-change    # after the merge
+  ```
+
+  Each worktree builds into its own `target/`; run every command from inside
+  it.
 - **Getting a change in.** Stage files by name, never `git add -A`. Open a
   PR against `main`; checks must be green.
 
