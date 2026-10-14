@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use std::process::{Command, Output, Stdio};
 
 /// What the history tracks: primum's files and nothing else.
-const EXCLUDE: &str = "/*\n!/project.json\n!/primum.toml\n!/BOARD.md\n!/items/\n/items/*\n!/items/*.md\n!/conflicts/\n";
+const EXCLUDE: &str = "/*\n!/project.json\n!/primum.toml\n!/BOARD.md\n!/items/\n/items/*\n!/items/*.md\n!/conflicts/\n!/lifecycles/\n/lifecycles/*\n!/lifecycles/*.toml\n";
 
 pub fn git_binary() -> String {
     std::env::var("PRIMUM_GIT").unwrap_or_else(|_| "git".into())
@@ -208,7 +208,7 @@ pub struct Entry {
 }
 
 /// A path the history API may name: project.json, primum.toml, BOARD.md, or a file
-/// directly in items/ or conflicts/.
+/// directly in items/, conflicts/ or lifecycles/.
 fn tracked_path(path: &str) -> bool {
     let in_dir = |d: &str| {
         path.strip_prefix(d)
@@ -219,6 +219,7 @@ fn tracked_path(path: &str) -> bool {
         || path == "BOARD.md"
         || in_dir("items/")
         || in_dir("conflicts/")
+        || in_dir("lifecycles/")
 }
 
 impl History {

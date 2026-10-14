@@ -177,3 +177,15 @@ fn the_github_folder_is_not_tracked() {
     History::open(&p).unwrap().unwrap();
     assert_eq!(common::tracked(&p), ["project.json"]);
 }
+
+#[test]
+fn lifecycle_files_are_tracked() {
+    let d = tempfile::tempdir().unwrap();
+    let p = common::project(d.path());
+    fs::write(d.path().join("project.json"), "{\"name\": \"deneme\"}\n").unwrap();
+    fs::create_dir_all(d.path().join("lifecycles")).unwrap();
+    fs::write(d.path().join("lifecycles/çay.toml"), "name = \"çay\"\n").unwrap();
+    fs::write(d.path().join("lifecycles/notes.txt"), "not a lifecycle\n").unwrap();
+    History::open(&p).unwrap().unwrap();
+    assert_eq!(common::tracked(&p), ["lifecycles/çay.toml", "project.json"]);
+}
