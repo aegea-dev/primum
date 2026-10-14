@@ -107,6 +107,7 @@ export default defineConfig({
 					label: 'Reference',
 					items: [
 						{ label: 'Item files', slug: 'reference/item-files' },
+						{ label: 'Lifecycles', slug: 'reference/lifecycles' },
 						{ label: 'A project folder', slug: 'reference/project-folder' },
 						{ label: 'The board', slug: 'reference/board' },
 						{ label: 'Board HTTP interface', slug: 'reference/http' },

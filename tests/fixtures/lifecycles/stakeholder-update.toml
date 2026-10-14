@@ -1,0 +1,67 @@
+name = "stakeholder-update"
+description = "Tell the stakeholders, wait for their answer, call the API, report back, close."
+start = "notify"
+
+# what the lifecycle reads, so a ticket or project can be checked before it starts
+[needs]
+stakeholders = "project.context.stakeholders"   # a list of addresses
+api_url = "project.context.api_url"
+
+[[step]]
+id = "notify"
+state = "effects"
+do = "command@1"                                 # an actionable and its version
+with = { run = ["./notify.sh", "${ticket.id}", "${ticket.title}"] }
+target = "output.exit == 0"
+next = "await-reply"
+
+[[step]]
+id = "await-reply"
+state = "waiting"
+wait = { for = "input", when = "input.source == 'http' && input.ticket == ticket.id", timeout = "7d" }
+on_timeout = "notify"                            # remind: send again
+next = "call-api"
+
+[[step]]
+id = "call-api"
+state = "processing"
+do = "http@1"
+with = { method = "POST", url = "${needs.api_url}/updates", json = { ticket = "${ticket.id}", reply = "${steps['await-reply'].input.text}" } }
+target = "output.status >= 200 && output.status < 300"
+retry = { attempts = 3, backoff = "30s" }
+next = "mark-doing"
+
+[[step]]
+id = "mark-doing"
+do = "ledger@1"
+with = { state = "doing", note = "Stakeholders answered; API updated." }
+next = "await-input"
+
+[[step]]
+id = "await-input"
+state = "waiting"
+wait = { for = "input", when = "input.source == 'ledger' && input.ticket == ticket.id && input.field == 'note'" }
+next = "report"
+
+[[step]]
+id = "report"
+state = "effects"
+do = "command@1"
+with = { run = ["./notify.sh", "${ticket.id}", "${steps['await-input'].input.text}"] }
+target = "output.exit == 0"
+next = "approve"
+
+[[step]]
+id = "approve"
+state = "waiting"
+wait = { for = "approval", recommend = "finish", timeout = "2d" }   # continue with the recommendation after 2 days
+next = [
+  { when = "input.approved", go = "finish" },
+  { go = "await-input" },
+]
+
+[[step]]
+id = "finish"
+do = "ledger@1"
+with = { state = "done" }
+end = true

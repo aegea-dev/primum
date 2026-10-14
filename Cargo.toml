@@ -22,6 +22,9 @@ chrono = "~0.4.45"
 fs2 = "~0.4.3"
 regex = "~1.13.1"
 anyhow = "~1.0.104"
+cel-interpreter = "~0.9.1"
+sha2 = "~0.11.1"
+humantime = "~2.4.0"
 
 # Only to restore the default SIGPIPE: `primum list | head` ends quietly.
 [target.'cfg(unix)'.dependencies]

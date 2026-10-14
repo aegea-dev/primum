@@ -1,0 +1,10 @@
+name = "nothing-to-do"
+start = "a"
+
+[[step]]
+id = "a"
+next = "b"
+
+[[step]]
+id = "b"
+end = true

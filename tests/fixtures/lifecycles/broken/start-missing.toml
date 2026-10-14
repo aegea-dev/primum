@@ -1,0 +1,12 @@
+name = "start-missing"
+start = "nowhere"
+
+[[step]]
+id = "a"
+do = "ledger@1"
+with = { state = "done" }
+next = "b"
+
+[[step]]
+id = "b"
+end = true

@@ -1,0 +1,12 @@
+name = "bad-id"
+start = "Çağrı"
+
+[[step]]
+id = "Çağrı"
+do = "ledger@1"
+with = { state = "done" }
+next = "b"
+
+[[step]]
+id = "b"
+end = true

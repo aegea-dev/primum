@@ -1,0 +1,12 @@
+name = "with-without-do"
+start = "a"
+
+[[step]]
+id = "a"
+wait = { for = "approval" }
+with = { state = "done" }
+next = "b"
+
+[[step]]
+id = "b"
+end = true

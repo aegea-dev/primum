@@ -445,3 +445,33 @@ fn a_closed_pipe_ends_quietly() {
     let err = String::from_utf8_lossy(&o.stderr);
     assert!(!err.contains("panicked"), "{err}");
 }
+
+#[test]
+fn lifecycle_commands() {
+    let t = T::new();
+    let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/lifecycles/stakeholder-update.toml");
+    let dir = t.dir.path().join("café/lifecycles");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::copy(&src, dir.join("stakeholder-update.toml")).unwrap();
+    let out = t.out(&["lifecycle", "check"]);
+    assert!(out.starts_with("stakeholder-update  "), "{out}");
+    assert_eq!(out.split_whitespace().nth(1).unwrap().len(), 12);
+    let list = t.out(&["lifecycle", "list"]);
+    assert!(
+        list.contains("manual") && list.contains("built in") && list.contains("stakeholder-update"),
+        "{list}"
+    );
+    let show = t.out(&["lifecycle", "show", "stakeholder-update"]);
+    assert!(
+        show.contains("notify") && show.contains("command@1") && show.contains("-> await-reply"),
+        "{show}"
+    );
+    let json: serde_json::Value =
+        serde_json::from_str(&t.out(&["lifecycle", "show", "manual", "--json"])).unwrap();
+    assert_eq!(json["file"]["start"], "idle");
+    std::fs::write(dir.join("kırık.toml"), "name = \"kırık\"\n").unwrap();
+    let o = t.run(&["lifecycle", "check"]);
+    assert_eq!(o.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&o.stderr).contains("kırık.toml"));
+}
