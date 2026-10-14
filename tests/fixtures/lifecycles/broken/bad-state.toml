@@ -1,0 +1,13 @@
+name = "bad-state"
+start = "a"
+
+[[step]]
+id = "a"
+state = "dreaming"
+do = "ledger@1"
+with = { state = "done" }
+next = "b"
+
+[[step]]
+id = "b"
+end = true

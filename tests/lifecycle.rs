@@ -75,3 +75,70 @@ fn expressions_templates_and_durations() {
         assert!(expr::duration(bad).is_err(), "{bad}");
     }
 }
+
+#[test]
+fn every_broken_file_says_what_is_wrong() {
+    let cases = [
+        (
+            "name-mismatch",
+            "name \"other\" must match the file name \"name-mismatch\"",
+        ),
+        ("start-missing", "start \"nowhere\" is not a step"),
+        ("duplicate-id", "step \"a\": the id is used twice"),
+        (
+            "bad-id",
+            "step \"Çağrı\": an id is lowercase letters, digits and -",
+        ),
+        ("next-missing", "step \"a\": next \"nowhere\" is not a step"),
+        (
+            "both-do-wait",
+            "step \"a\": a step either does something (do) or waits (wait), not both",
+        ),
+        (
+            "nothing-to-do",
+            "step \"a\": a step does something (do) or waits (wait); only a closing step (end = true) may do neither",
+        ),
+        (
+            "neither-next-end",
+            "step \"a\": a step needs next, or end = true",
+        ),
+        ("unreachable", "step \"b\": not reachable from start"),
+        (
+            "no-way-out",
+            "step \"a\": no closing step is reachable from here",
+        ),
+        ("unknown-action", "step \"a\": unknown actionable fax@1"),
+        (
+            "command-no-run",
+            "step \"a\": command@1 needs with.run, a list of strings",
+        ),
+        ("with-without-do", "step \"a\": with goes with do"),
+        (
+            "bad-state",
+            "step \"a\": state \"dreaming\" is not one of idle, waiting, processing, effects, done, wontfix",
+        ),
+        ("bad-target", "step \"a\": bad expression"),
+        ("bad-template", "step \"a\": unclosed"),
+        ("bad-duration", "step \"a\": a duration is like"),
+        (
+            "bad-wait",
+            "step \"a\": wait for \"input\" or \"approval\", not \"email\"",
+        ),
+    ];
+    for (name, want) in cases {
+        let p = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join(format!("tests/fixtures/lifecycles/broken/{name}.toml"));
+        let e = lifecycle::load_file(&p).unwrap_err().to_string();
+        assert!(e.contains(want), "{name}: {e}");
+        assert!(e.contains(&format!("{name}.toml: ")), "{name}: {e}");
+    }
+}
+
+#[test]
+fn the_example_and_the_manual_lifecycle_are_valid() {
+    let (p, _) = fixture("stakeholder-update");
+    // approve -> await-input loops back, with a way out
+    lifecycle::load_file(&p).unwrap();
+    lifecycle::validate::validate(std::path::Path::new("manual.toml"), &lifecycle::manual())
+        .unwrap();
+}

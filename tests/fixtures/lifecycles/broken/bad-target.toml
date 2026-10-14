@@ -1,0 +1,13 @@
+name = "bad-target"
+start = "a"
+
+[[step]]
+id = "a"
+do = "command@1"
+with = { run = ["ls"] }
+target = "output.exit =="
+next = "b"
+
+[[step]]
+id = "b"
+end = true

@@ -1,0 +1,13 @@
+name = "both-do-wait"
+start = "a"
+
+[[step]]
+id = "a"
+do = "ledger@1"
+with = { state = "done" }
+wait = { for = "approval" }
+next = "b"
+
+[[step]]
+id = "b"
+end = true

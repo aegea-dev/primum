@@ -1,0 +1,12 @@
+name = "duplicate-id"
+start = "a"
+
+[[step]]
+id = "a"
+do = "ledger@1"
+with = { state = "done" }
+next = "b"
+
+[[step]]
+id = "a"
+end = true

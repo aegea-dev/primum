@@ -1,0 +1,11 @@
+name = "unknown-action"
+start = "a"
+
+[[step]]
+id = "a"
+do = "fax@1"
+next = "b"
+
+[[step]]
+id = "b"
+end = true

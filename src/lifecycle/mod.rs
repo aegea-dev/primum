@@ -1,8 +1,10 @@
 //! Lifecycles: what a ticket goes through, step by step, as a TOML file in
 //! the project (`lifecycles/<name>.toml`). This module reads, checks and
 //! versions them; running them is the engine's job.
+pub mod actionables;
 pub mod expr;
 pub mod format;
+pub mod validate;
 
 use crate::store::Project;
 use std::fmt;
@@ -42,6 +44,29 @@ pub fn parse(path: &Path, text: &str) -> Result<File, LifecycleError> {
         step: None,
         message: e.message().to_string(),
     })
+}
+
+/// A lifecycle that passed its checks.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Lifecycle {
+    pub file: File,
+}
+
+/// Parses and checks a lifecycle's text; `path` names it.
+pub fn load_text(path: &Path, text: &str) -> Result<Lifecycle, LifecycleError> {
+    let file = parse(path, text)?;
+    validate::validate(path, &file)?;
+    Ok(Lifecycle { file })
+}
+
+/// Reads, parses and checks a lifecycle file.
+pub fn load_file(path: &Path) -> Result<Lifecycle, LifecycleError> {
+    let text = std::fs::read_to_string(path).map_err(|e| LifecycleError {
+        file: path.display().to_string(),
+        step: None,
+        message: format!("cannot read it: {e}"),
+    })?;
+    load_text(path, &text)
 }
 
 /// The built-in lifecycle every ticket without one follows: a person moves
