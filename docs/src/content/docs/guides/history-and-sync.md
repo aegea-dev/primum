@@ -17,7 +17,7 @@ primum log               # the project
 primum log TODO:87       # one item, across renames
 ```
 
-The history tracks `primum.toml`, `BOARD.md`, `items/*.md`, and the
+The history tracks `project.json`, `BOARD.md`, `items/*.md`, and the
 `conflicts/` and `github/` folders; anything else in the folder is ignored.
 
 History needs git 2.28 or later. Without git, everything else works.

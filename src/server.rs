@@ -152,10 +152,11 @@ pub fn router(entries: Vec<Entry>) -> Router {
 }
 
 /// Serves the board on 127.0.0.1 until interrupted.
-pub fn serve(port: u16, open_browser: bool) -> anyhow::Result<()> {
-    let entries = projects::list()?;
+pub fn serve(entries: Vec<Entry>, port: u16, open_browser: bool) -> anyhow::Result<()> {
     if entries.iter().all(|e| e.project.is_err()) {
-        anyhow::bail!("no projects to show: run `primum init` in a folder");
+        anyhow::bail!(
+            "no primum project here: run primum serve in a workspace or a board, or `primum init`"
+        );
     }
     let rt = tokio::runtime::Runtime::new()?;
     rt.block_on(async move {

@@ -5,7 +5,7 @@ description: What primum keeps in a project's folder, and what the history track
 
 ```text
 my-app/
-  primum.toml              the project's name and settings
+  project.json             the project's name and settings
   BOARD.md                 a read-only summary, rewritten on every change
   items/
     TODO-87.md             an item
@@ -16,22 +16,29 @@ my-app/
   .primum.lock             held while a change runs
 ```
 
-## primum.toml
+## project.json
 
-```toml
-name = "my-app"
-
-[github]
-repo = "owner/repo"
-ids = "title"     # how ids show on issues: "none" (default) or "title"
+```json
+{
+  "name": "my-app",
+  "github": { "repo": "owner/repo", "ids": "title" }
+}
 ```
 
-## This machine
+| Key | Value |
+|---|---|
+| `name` | The project's name, shown on tabs and used by `-p` |
+| `github.repo` | The repository its issues are kept in step with |
+| `github.ids` | How ids show on issues: `"none"` (default) or `"title"` |
 
-- `~/.config/primum/projects.toml`: the projects this machine shows, in tab
-  order.
-- The remote and sync settings live in the history's own git config, per
-  machine.
+Written by primum, tracked in the history; unknown keys are kept. A project
+from an earlier version has a `primum.toml` with `name` instead, read until
+[`primum workspace migrate`](/commands/workspace/).
+
+The project's folder sits in a [workspace](/guides/workspaces/), whose
+`primum.toml` lists it. Nothing about it is kept elsewhere on the machine:
+the remote and sync settings live in the history's own git config, per
+machine.
 
 ## Changes
 

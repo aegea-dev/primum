@@ -153,7 +153,26 @@ fn change<T>(p: &Project, f: impl FnOnce(&mut Board) -> Result<(T, String)>) -> 
     Ok(out)
 }
 
-fn write_atomic(path: &Path, text: &str) -> Result<()> {
+/// Changes a project's settings files under the lock, as one commit named
+/// `message`, after any edits made outside primum.
+pub(crate) fn change_settings(
+    p: &Project,
+    message: &str,
+    f: impl FnOnce() -> Result<()>,
+) -> Result<()> {
+    let _l = lock(p)?;
+    let history = History::open(p)?;
+    if let Some(h) = &history {
+        h.record_outside()?;
+    }
+    f()?;
+    if let Some(h) = &history {
+        h.commit(message)?;
+    }
+    Ok(())
+}
+
+pub(crate) fn write_atomic(path: &Path, text: &str) -> Result<()> {
     let mut tmp = path.as_os_str().to_owned();
     tmp.push(".tmp");
     let tmp = PathBuf::from(tmp);

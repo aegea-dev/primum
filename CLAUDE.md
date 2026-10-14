@@ -15,6 +15,8 @@ plain JavaScript). This file is for contributing to primum.
 - **Fixtures cover non-ASCII text.** Titles, bodies and paths in tests
   include letters such as `ı`, `ş`, `ğ`, `ü` and `é`, so Unicode handling
   stays tested. Keep them in neutral titles and words, not personal names.
+- **Nothing machine-wide.** primum finds everything from the folder it runs
+  in: the project above it, and the workspace above that.
 - **Every change leaves a project consistent.** A change takes the project
   lock, writes files through a temporary file and a rename, removes closed
   ids from every `needs`, and rewrites `BOARD.md` before it returns.
@@ -50,7 +52,7 @@ cd docs && yarn build   # the documentation site, when docs/ changed
 src/model.rs       items, lanes, score, priority order
 src/item_file.rs   an item's file: names, front matter
 src/store.rs       a project's items on disk: load and every change
-src/projects.rs    primum.toml and the machine's projects.toml
+src/projects.rs    the workspace (primum.toml) and each project's project.json
 src/history.rs     the project's bare git repository; every git call
 src/merge.rs       three-way merge of one item, field by field
 src/conflicts.rs   conflicts/<STEM>.json: what a sync could not decide

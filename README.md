@@ -28,8 +28,9 @@ cargo install primum --locked
 ## Quick start
 
 ```bash
-cd ~/projects/my-app
-primum init                                  # primum.toml and an empty items/
+mkdir ~/boards && cd ~/boards
+primum workspace init                        # this folder holds your boards
+primum init my-app && cd my-app              # a project: project.json and items/
 primum add TODO "Export to CSV" --body-file why.md
 primum list                                  # open items, highest priority first
 primum next                                  # what to work on now
@@ -101,19 +102,30 @@ document by listing it: `docs: [items/TODO-80.spec.md]`.
 primum doc TODO:87 spec --file spec.md
 ```
 
-## Many projects
+## Workspaces
 
-Each project describes itself in its `primum.toml`. Your machine's list of
-projects, in tab order, is `~/.config/primum/projects.toml`:
+primum finds everything from the folder it runs in; nothing lives in
+`~/.config`. A workspace is a folder with a `primum.toml` and one subfolder
+per project, and each project carries its own settings in `project.json`:
 
-```toml
-projects = ["~/projects/my-app", "~/projects/my-lib"]
+```text
+~/boards/
+  primum.toml          projects = ["my-app", "my-lib"]   (optional; tab order)
+  my-app/
+    project.json       {"name": "my-app", "github": {"repo": "me/my-app"}}
+    items/
+  my-lib/
 ```
 
-`primum projects` lists them, `primum projects add PATH` and
-`primum projects remove NAME` edit the list. The board shows one tab per
-project. On the command line, `-p NAME` picks a project; without it primum
-uses the project you are in, else the only one listed.
+`primum init NAME` makes a project in the workspace, `primum projects` lists
+them, and `primum projects add FOLDER` and `primum projects remove NAME`
+edit the list. `primum serve` shows one tab per project. On the command line,
+`-p NAME` picks a project; without it primum uses the project you are in,
+else the workspace's only one. A project with no workspace above it works
+on its own.
+
+Boards made by earlier versions keep working. To convert them, run
+`primum workspace migrate` in the folder that holds them.
 
 ## History and sync
 

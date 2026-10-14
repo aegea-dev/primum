@@ -44,14 +44,17 @@ the issue when it merges, and the item becomes `done`. primum's ids work too:
 ## Ids on issues
 
 By default an issue shows its item's id only in the hidden block. To show it
-in the title as well (`[TODO:87] Export open items as CSV`), set this in the
-project's `primum.toml`:
+in the title as well (`[TODO:87] Export open items as CSV`), set `ids` in
+the project's `project.json`:
 
-```toml
-[github]
-repo = "owner/repo"
-ids = "title"          # or "none", the default
+```json
+{
+  "name": "my-app",
+  "github": { "repo": "owner/repo", "ids": "title" }
+}
 ```
+
+`ids` is `"title"` or `"none"`, the default.
 
 primum never makes a label per item.
 

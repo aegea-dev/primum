@@ -148,3 +148,23 @@ fn push_fetch_and_clone() {
     let gone = h.set_remote("/yok/remote.git", None, false).unwrap();
     assert!(matches!(h.fetch(&gone).unwrap(), Fetched::Offline(_)));
 }
+
+#[test]
+fn a_history_from_an_earlier_version_tracks_project_json() {
+    let d = tempfile::tempdir().unwrap();
+    let p = common::project(d.path());
+    fs::write(d.path().join("primum.toml"), "name = \"deneme\"\n").unwrap();
+    History::open(&p).unwrap().unwrap();
+    // the allowlist an earlier version wrote
+    let exclude = d.path().join(".primum/history.git/info/exclude");
+    fs::write(
+        &exclude,
+        "/*\n!/primum.toml\n!/BOARD.md\n!/items/\n/items/*\n!/items/*.md\n",
+    )
+    .unwrap();
+    fs::write(d.path().join("project.json"), "{\"name\": \"deneme\"}\n").unwrap();
+    fs::remove_file(d.path().join("primum.toml")).unwrap();
+    let h = History::open(&p).unwrap().unwrap();
+    h.commit("move settings to project.json").unwrap();
+    assert_eq!(common::tracked(&p), ["project.json"]);
+}
