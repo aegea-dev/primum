@@ -65,36 +65,31 @@ is blocked.
 Edit the files with primum, the board, or any text editor. Every change
 rewrites `BOARD.md`, a read-only summary of the whole project.
 
-## Adding many items at once
+## Adding items
 
-Write each item's text as a markdown file in a scratch folder, then add
-them with one `primum add` each. `--body-file` reads the text from a file
-(`-` reads standard input), so nothing has to be quoted on the command line.
+`primum add KIND TITLE` prints the new item's id. Scores left out default
+to impact 5, urgency 3, risk 3, effort 5.
 
 ```bash
-dir=$(mktemp -d)
-
-cat > "$dir/csv.md" <<'EOF'
-## Why
-
-Işıl wants the open items as CSV for the weekly review.
-EOF
-
-cat > "$dir/crash.md" <<'EOF'
-## Steps
-
-1. Open the board with an empty `items/` folder.
-2. Click "+ new".
-EOF
-
-primum add TODO "Export open items as CSV" --impact 6 --effort 3 --body-file "$dir/csv.md"
-primum add BUG "Empty board crashes on + new" --urgency 8 --body-file "$dir/crash.md"
-rm -r "$dir"
+primum add TODO "Export open items as CSV" --impact 6 --effort 3 --body-file csv.md
+primum add BUG "Empty board crashes on + new" --urgency 8 --body-file crash.md
+primum add URGENT "Login fails after the 2.3 upgrade" --impact 9 --urgency 10 --risk 8 --effort 2
+primum add DEBT "Split server.rs into routes and pages" --effort 6 --needs TODO:12
+primum add KILLER "Offline mode" --impact 9 --effort 8 --needs DEBT:3,BUG:7
+primum add TODO "Dark mode for print" --body-file - < notes.md
+primum add TODO "Weekly digest" -p my-lib
 ```
 
-Each `add` takes the next number in its lane, writes `items/<ID>.md`,
-rewrites `BOARD.md` and is one commit in the history. Specs and plans go
-beside an item the same way: `primum doc TODO:7 spec --file "$dir/spec.md"`.
+| argument | what it sets |
+|---|---|
+| `--impact`, `--urgency`, `--risk`, `--effort` | scores, 1 to 10 |
+| `--needs TODO:1,BUG:2` | items it waits for |
+| `--body-file FILE` | its text, from a markdown file; `-` reads standard input |
+| `-p NAME` | the project, when not the one you are in |
+
+To add many items, write each text to a file first and run one `add` per
+item; nothing has to be quoted on the command line, and each `add` is one
+commit in the history.
 
 ## Documents beside items
 
