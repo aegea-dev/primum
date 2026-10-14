@@ -21,8 +21,8 @@ pub struct Item {
     pub docs: Vec<String>,
     /// The lifecycle it follows, `<name>@<version>`; None follows `manual`.
     pub lifecycle: Option<String>,
-    /// Where it is in that lifecycle.
-    pub step: Option<String>,
+    /// The arguments its lifecycle's actions read as `args`, when attached.
+    pub args: Option<serde_json::Map<String, serde_json::Value>>,
     pub finished: Option<String>,
     pub source: String,
     pub body: String,
@@ -63,7 +63,7 @@ impl Item {
             needs: vec![],
             docs: vec![],
             lifecycle: None,
-            step: None,
+            args: None,
             finished: None,
             source: String::new(),
             body: String::new(),

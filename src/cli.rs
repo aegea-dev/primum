@@ -227,7 +227,14 @@ pub enum LifecycleCmd {
     /// The project's lifecycles and their versions
     List,
     /// Make a ticket follow a lifecycle, pinned at its current version
-    Attach { id: String, name: String },
+    Attach {
+        id: String,
+        name: String,
+        /// An argument its actions read as `args`; a value that reads as
+        /// JSON stays JSON
+        #[arg(long = "arg", value_name = "KEY=VALUE")]
+        args: Vec<String>,
+    },
     /// Make a ticket follow the built-in manual lifecycle again
     Detach { id: String },
 }
@@ -840,9 +847,9 @@ fn lifecycle_cmd(p: &Project, cmd: LifecycleCmd) -> Result<()> {
                 println!("{}", transition_line(t));
             }
         }
-        LifecycleCmd::Attach { id, name } => {
+        LifecycleCmd::Attach { id, name, args } => {
             let id = norm_id(&id)?;
-            let v = crate::store::attach(p, &id, &name)?;
+            let v = crate::store::attach(p, &id, &name, lifecycle_args(&args)?)?;
             println!("{}: {name} {}", label(&id), short(&v));
         }
         LifecycleCmd::Detach { id } => {
@@ -868,6 +875,24 @@ fn lifecycle_cmd(p: &Project, cmd: LifecycleCmd) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// `--arg key=value` pairs as a JSON object: a value that reads as JSON
+/// stays JSON (`3`, `true`, `["a"]`), anything else is text.
+fn lifecycle_args(pairs: &[String]) -> Result<Option<serde_json::Map<String, serde_json::Value>>> {
+    if pairs.is_empty() {
+        return Ok(None);
+    }
+    let mut m = serde_json::Map::new();
+    for p in pairs {
+        let (k, v) = p
+            .split_once('=')
+            .ok_or_else(|| anyhow!("--arg {p}: give KEY=VALUE"))?;
+        let v =
+            serde_json::from_str(v).unwrap_or_else(|_| serde_json::Value::String(v.to_string()));
+        m.insert(k.to_string(), v);
+    }
+    Ok(Some(m))
 }
 
 /// `12` and `#12` are `12`; anything that is not an id is an error.
@@ -955,16 +980,19 @@ fn show(p: &Project, id: &str, json: bool) -> Result<()> {
         };
         println!("needs {}{blocked}", v.needs.join(", "));
     }
-    if let (Some(pin), Some(step)) = (&v.lifecycle, &v.step) {
+    if let Some(pin) = &v.lifecycle {
         let (name, version) = crate::lifecycle::split_pin(pin);
         let gone = match crate::lifecycle::resolve(p, name) {
             Some(Ok(l)) if l.version == version => "",
             _ => "  (that version is no longer in lifecycles/)",
         };
         println!(
-            "lifecycle {name} {}  step {step}{gone}",
+            "lifecycle {name} {}{gone}",
             crate::lifecycle::short(version)
         );
+        if let Some(a) = &v.args {
+            println!("args {}", serde_json::to_string(a)?);
+        }
     }
     if let Some(f) = &v.finished {
         println!("finished {f}");

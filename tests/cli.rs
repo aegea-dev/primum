@@ -481,12 +481,33 @@ fn attach_and_detach_on_the_command_line() {
     let t = T::new();
     common::with_example(&t.dir.path().join("café"));
     t.out(&["add", "TODO", "Gölge"]);
-    let out = t.out(&["lifecycle", "attach", "1", "enrich-ticket"]);
+    let out = t.out(&[
+        "lifecycle",
+        "attach",
+        "1",
+        "enrich-ticket",
+        "--arg",
+        "bölge=eu",
+        "--arg",
+        "deneme=3",
+    ]);
     assert!(out.starts_with("#1: enrich-ticket "), "{out}");
     let show = t.out(&["show", "1"]);
+    assert!(show.contains("lifecycle enrich-ticket"), "{show}");
     assert!(
-        show.contains("lifecycle enrich-ticket") && show.contains("step create"),
+        show.contains("args {\"bölge\":\"eu\",\"deneme\":3}"),
         "{show}"
+    );
+    assert!(
+        t.err(&[
+            "lifecycle",
+            "attach",
+            "1",
+            "enrich-ticket",
+            "--arg",
+            "eşitsiz"
+        ])
+        .contains("KEY=VALUE")
     );
     assert_eq!(t.out(&["lifecycle", "detach", "#1"]).trim(), "#1: manual");
     assert!(!t.out(&["show", "1"]).contains("lifecycle "));

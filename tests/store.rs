@@ -438,7 +438,7 @@ fn attach_pins_a_lifecycle_and_detach_returns_to_manual() {
     let p = common::project(d.path());
     with_example(d.path());
     let id = insert(&p, "TODO", "Gölge", ch()).unwrap();
-    let version = attach(&p, &id, "enrich-ticket").unwrap();
+    let version = attach(&p, &id, "enrich-ticket", None).unwrap();
     assert_eq!(version.len(), 64);
     let b = load(&p).unwrap();
     let it = b.get(&id).unwrap();
@@ -446,7 +446,7 @@ fn attach_pins_a_lifecycle_and_detach_returns_to_manual() {
         it.lifecycle.as_deref(),
         Some(format!("enrich-ticket@{version}").as_str())
     );
-    assert_eq!(it.step.as_deref(), Some("create"));
+    assert_eq!(it.args, None);
     assert_eq!(it.status, "create");
     assert_eq!(
         b.rules_of(it).states,
@@ -471,10 +471,10 @@ fn attach_pins_a_lifecycle_and_detach_returns_to_manual() {
         ..ch()
     };
     update(&p, &id, waiting).unwrap();
-    assert!(attach(&p, &id, "yok").is_err());
+    assert!(attach(&p, &id, "yok", None).is_err());
     detach(&p, &id).unwrap();
     let it = load(&p).unwrap().get(&id).unwrap().clone();
-    assert_eq!((it.lifecycle, it.step), (None, None));
+    assert_eq!((it.lifecycle, it.args), (None, None));
     assert_eq!(it.status, "idle", "waiting is not a manual state");
     assert_eq!(common::subjects(&p)[0], "#1: detach");
 }
@@ -486,12 +486,12 @@ fn a_lifecycle_conflict_is_resolved_to_one_side() {
     let p = common::project(d.path());
     with_example(d.path());
     let id = insert(&p, "TODO", "Gölge", ch()).unwrap();
-    let version = attach(&p, &id, "enrich-ticket").unwrap();
+    let version = attach(&p, &id, "enrich-ticket", None).unwrap();
     let side = |a: &str| Side {
         author: a.into(),
         date: String::new(),
     };
-    let ours = format!("enrich-ticket@{version} create");
+    let ours = format!("enrich-ticket@{version} {{\"bölge\":\"eu\"}}");
     write(
         &p,
         &Conflict {
@@ -506,9 +506,42 @@ fn a_lifecycle_conflict_is_resolved_to_one_side() {
         },
     )
     .unwrap();
+    resolve(&p, &id, "lifecycle", Keep::First).unwrap();
+    let it = load(&p).unwrap().get(&id).unwrap().clone();
+    assert_eq!(
+        it.lifecycle.as_deref(),
+        Some(format!("enrich-ticket@{version}").as_str())
+    );
+    assert_eq!(it.args.unwrap()["bölge"], "eu");
+    write(
+        &p,
+        &Conflict {
+            id: id.clone(),
+            sides: [side("Ada"), side("Can")],
+            fields: vec![FieldValues {
+                field: "lifecycle".into(),
+                values: [format!("enrich-ticket@{version}"), "manual".into()],
+            }],
+            body: None,
+            documents: vec![],
+        },
+    )
+    .unwrap();
     resolve(&p, &id, "lifecycle", Keep::Second).unwrap();
     let it = load(&p).unwrap().get(&id).unwrap().clone();
-    assert_eq!((it.lifecycle, it.step), (None, None));
+    assert_eq!((it.lifecycle, it.args), (None, None));
+}
+
+#[test]
+fn attach_keeps_the_tickets_arguments() {
+    let d = tempfile::tempdir().unwrap();
+    let p = common::project(d.path());
+    with_example(d.path());
+    let id = insert(&p, "TODO", "Gölge", ch()).unwrap();
+    let mut args = serde_json::Map::new();
+    args.insert("bölge".into(), "eu".into());
+    attach(&p, &id, "enrich-ticket", Some(args.clone())).unwrap();
+    assert_eq!(load(&p).unwrap().get(&id).unwrap().args, Some(args));
 }
 
 #[test]
