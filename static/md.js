@@ -13,6 +13,12 @@ function mdInline(s){
      .replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>')
      .replace(/(^|[^*\w])\*([^*\n]+)\*(?![*\w])/g,'$1<em>$2</em>')
      .replace(/:([a-z_+0-9]+):/g,(m,n)=>MDEMOJI[n]||m);
+  // #12 links to item 12 when the page knows it: its kind's colour, its
+  // title on hover; an unknown number stays text
+  if(window.ITEM_TITLES)s=s.replace(/(^|[\s(>\[])#(\d+)\b/g,(m,pre,n)=>{
+    const it=window.ITEM_TITLES[n];
+    return it?`${pre}<a href="${window.ITEM_BASE||''}${n}" class="ref ${kindClass(it.kind)}" title="${esc(it.kind+': '+it.title)}">#${n}</a>`:m;
+  });
   return s.replace(/\u0000(\d+)\u0000/g,(_,i)=>'<code>'+codes[+i]+'</code>');
 }
 function md(src){
@@ -45,10 +51,17 @@ const KINDS=['URGENT','BUG','DEBT','KILLER','TODO'];
 const STATUSES=['open','doing','done','wontfix'];
 const kindClass=k=>'kind-'+String(k||'').toLowerCase();
 const isClosed=i=>i.status==='done'||i.status==='wontfix';
+// How people see an id: #12.
+const label=id=>'#'+id;
+// What #12 in text links to: every item's kind and title, by id.
+const knowItems=(items,base)=>{
+  window.ITEM_TITLES=Object.fromEntries(items.map(i=>[i.id,{title:i.title,kind:i.kind}]));
+  window.ITEM_BASE=base;
+};
 async function api(path,body){
   const r=await fetch(API+path,body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   const data=await r.json().catch(()=>({}));
   if(!r.ok)throw new Error(data.error||('HTTP '+r.status));
   return data;
 }
-Object.assign(window,{esc,md,mdInline,KINDS,STATUSES,kindClass,isClosed,api});
+Object.assign(window,{esc,md,mdInline,KINDS,STATUSES,kindClass,isClosed,label,knowItems,api});
