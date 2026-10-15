@@ -113,9 +113,13 @@ struct Group(std::process::Child);
 #[cfg(unix)]
 impl Drop for Group {
     fn drop(&mut self) {
-        let _ = std::process::Command::new("kill")
-            .args(["-9", &format!("-{}", self.0.id())])
-            .status();
+        // not `kill -9 -<pgid>`: Linux's kill takes no negative pid that way,
+        // and the wait below would then never end
+        // SAFETY: killpg only sends a signal to the group this test started,
+        // which the child leads (process_group(0))
+        unsafe {
+            libc::killpg(self.0.id() as i32, libc::SIGKILL);
+        }
         let _ = self.0.wait();
     }
 }
@@ -132,6 +136,8 @@ fn a_watchdog_restarts_a_daemon_that_dies() {
         .local_addr()
         .unwrap()
         .port();
+    let logs = tempfile::tempdir().unwrap();
+    let log = logs.path().join("watchdog.log");
     let mut c = std::process::Command::new(env!("CARGO_BIN_EXE_primum"));
     c.args([
         "watchdog",
@@ -139,6 +145,8 @@ fn a_watchdog_restarts_a_daemon_that_dies() {
         &port.to_string(),
         "--check-every",
         "1",
+        "--log",
+        log.to_str().unwrap(),
     ])
     .current_dir(d.path())
     .env("PRIMUM_NO_SECRET_STORE", "1")
@@ -164,17 +172,16 @@ fn a_watchdog_restarts_a_daemon_that_dies() {
             }
             assert!(
                 std::time::Instant::now() < until,
-                "timed out waiting for {what}"
+                "timed out waiting for {what}; the watchdog's log:\n{}",
+                std::fs::read_to_string(&log).unwrap_or_default()
             );
             std::thread::sleep(std::time::Duration::from_millis(100));
         }
     };
     let first = wait("the daemon", &|| pid(&client));
-    let killed = std::process::Command::new("kill")
-        .args(["-9", &first.to_string()])
-        .status()
-        .unwrap();
-    assert!(killed.success());
+    // SAFETY: sends a signal to the daemon this test's watchdog started
+    let killed = unsafe { libc::kill(first as i32, libc::SIGKILL) };
+    assert_eq!(killed, 0, "{}", std::io::Error::last_os_error());
     let second = wait("a new daemon", &|| pid(&client).filter(|p| *p != first));
     assert_ne!(first, second);
 }
