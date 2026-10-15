@@ -4,20 +4,61 @@ description: Runs tickets' lifecycles - turns ledger changes into events, asks t
 ---
 
 :::caution[In progress]
-The daemon runs every actionable type. Running as a service, the watchdog
-and an HTTP port for outside events come later.
+Running the daemon as a service, with a watchdog that restarts it, comes
+next; until then it runs in a terminal.
 :::
 
 ```bash
-primum daemon            # every project here, a pass every second
-primum daemon --once     # one pass, then stop
-primum daemon --interval 5
+primum daemon               # every project here; serves the board on 8777
+primum daemon --port 9000
+primum daemon --no-serve    # the passes only
+primum daemon --once        # one pass, then stop
+primum daemon --interval 5  # seconds between passes (1 by default)
 ```
 
 Run in a workspace, the daemon runs every project in it; `-p NAME` runs
 one. It decides nothing itself: every change to a ticket comes from the
 [lifecycle manager](/reference/manager/)'s answer, which the daemon saves
 and carries out.
+
+## What it serves
+
+On 127.0.0.1 only (outside webhooks need a relay or a tunnel to reach it):
+
+- **the board**, as [`primum serve`](/commands/serve/) serves it;
+- **`GET /health`**: `{"ok": true, "projects": [...], "started", "passes",
+  "last_pass", "last_error"}`;
+- **`POST /p/<project>/api/events`**: an event from outside, saved in the
+  journal; the daemon runs a pass at once.
+
+```bash
+curl -s localhost:8777/p/videre/api/events \
+  -H 'content-type: application/json' \
+  -d '{"type": "input.received", "ticket": "12", "data": {"reply": "yes"}}'
+# {"id": "0192f3c4-..."}   (202 Accepted)
+```
+
+| Field | What |
+|---|---|
+| `type` | lowercase words joined by dots: `input.received`, `lifecycle.resume`, `campaign.started` |
+| `ticket` | a ticket on a lifecycle (`12` or `#12`); leave it out for the project |
+| `data` | a JSON object (`{}` when left out) |
+
+Refused: the engine's own types (`action.*`, `timer.*`, `ticket.*`,
+`lifecycle.attached`, so nothing outside can forge a worker's result, a
+timer or a change to the ledger), a ticket not on a lifecycle (409), an
+unknown ticket or project (404), and anything malformed (400). Errors come
+as `{"error": "..."}`.
+
+## The inbox
+
+A file dropped in a project's `inbox/` becomes an `input.received` event on
+the next pass, with `{"file": "inbox/done/<name>", "name": "<name>"}`, and
+moves to `inbox/done/` (a name already there gets `-2`, `-3`, ...). A file
+named `<id>.<anything>` (`12.reply.txt`) goes to that ticket when it is on
+a lifecycle; any other goes to the project. Files starting with `.` are left
+alone, so write a file under a dot-name and rename it when it is complete
+(what `rsync` does). The inbox is not in the project's history.
 
 ## A pass
 

@@ -168,6 +168,22 @@ pub fn serve(entries: Vec<Entry>, port: u16, open_browser: bool) -> anyhow::Resu
             "no primum project here: run primum serve in a workspace or a board, or `primum init`"
         );
     }
+    let projects = entries
+        .iter()
+        .filter_map(|e| e.project.clone().ok())
+        .collect();
+    serve_app(router(entries), projects, port, open_browser)
+}
+
+/// Serves `app` (the board's router, or one built on it) on 127.0.0.1
+/// until interrupted, syncing those of `projects` that sync by themselves
+/// every minute.
+pub fn serve_app(
+    app: Router,
+    projects: Vec<Project>,
+    port: u16,
+    open_browser: bool,
+) -> anyhow::Result<()> {
     let rt = tokio::runtime::Runtime::new()?;
     rt.block_on(async move {
         let listener = tokio::net::TcpListener::bind(("127.0.0.1", port))
@@ -183,10 +199,6 @@ pub fn serve(entries: Vec<Entry>, port: u16, open_browser: bool) -> anyhow::Resu
             };
             let _ = std::process::Command::new(opener).arg(&url).spawn();
         }
-        let projects: Vec<Project> = entries
-            .iter()
-            .filter_map(|e| e.project.clone().ok())
-            .collect();
         tokio::spawn(async move {
             let mut tick = tokio::time::interval(std::time::Duration::from_secs(60));
             loop {
@@ -196,7 +208,7 @@ pub fn serve(entries: Vec<Entry>, port: u16, open_browser: bool) -> anyhow::Resu
                 }
             }
         });
-        axum::serve(listener, router(entries)).await?;
+        axum::serve(listener, app).await?;
         Ok(())
     })
 }

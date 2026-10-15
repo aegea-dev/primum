@@ -215,8 +215,14 @@ pub enum Cmd {
         /// Seconds between passes
         #[arg(long, default_value_t = 1)]
         interval: u64,
-        /// The time to run at (tests)
-        #[arg(long, hide = true)]
+        /// The port it serves the board, /health and outside events on
+        #[arg(long, default_value_t = 8777)]
+        port: u16,
+        /// Run the passes only: no board, no events from outside
+        #[arg(long)]
+        no_serve: bool,
+        /// The time to run at, with --once (tests)
+        #[arg(long, hide = true, requires = "once")]
         now: Option<String>,
     },
     /// The engine's journal: a ticket's events in order, or every event
@@ -391,20 +397,32 @@ fn dispatch(cli: Cli) -> Result<()> {
         Cmd::Daemon {
             once,
             interval,
+            port,
+            no_serve,
             now,
         } => {
+            use crate::engine::daemon::{self, Health};
             let manager = std::env::current_exe()?;
+            // the board shows the projects the daemon runs: -p NAME, or all
+            let entries: Vec<projects::Entry> = projects::entries(&cwd)
+                .into_iter()
+                .filter(|e| {
+                    cli.project
+                        .as_deref()
+                        .is_none_or(|name| e.project.as_ref().is_ok_and(|p| p.name == name))
+                })
+                .collect();
             let projects: Vec<Project> = match cli.project.as_deref() {
                 Some(_) => vec![project()?],
-                None => projects::entries(&cwd)
-                    .into_iter()
-                    .filter_map(|e| e.project.ok())
+                None => entries
+                    .iter()
+                    .filter_map(|e| e.project.clone().ok())
                     .collect(),
             };
             if projects.is_empty() {
                 bail!("no primum project here: cd into a board or a workspace");
             }
-            loop {
+            if once {
                 let at = match &now {
                     Some(t) => t
                         .parse::<chrono::DateTime<chrono::Utc>>()
@@ -412,23 +430,37 @@ fn dispatch(cli: Cli) -> Result<()> {
                     None => chrono::Utc::now(),
                 };
                 for p in &projects {
-                    match crate::engine::daemon::run_once(p, at, &manager) {
-                        Ok(pass)
-                            if pass.delivered + pass.written + pass.worked + pass.deferred > 0 =>
-                        {
-                            eprintln!(
-                                "{}: {} events, {} jobs, {} changes written, {} waiting",
-                                p.name, pass.delivered, pass.worked, pass.written, pass.deferred
-                            )
-                        }
-                        Ok(_) => {}
-                        Err(e) => eprintln!("{}: {e:#}", p.name),
-                    }
+                    report_pass(p, &daemon::run_once(p, at, &manager));
                 }
-                if once {
-                    break;
-                }
-                std::thread::sleep(std::time::Duration::from_secs(interval));
+                return Ok(());
+            }
+            let (wake, woken) = std::sync::mpsc::channel();
+            let engine = std::sync::Arc::new(crate::engine::http::Engine {
+                health: std::sync::Mutex::new(Health::starting(&daemon::stamp(chrono::Utc::now()))),
+                wake,
+            });
+            let looping = {
+                let engine = engine.clone();
+                let projects = projects.clone();
+                let interval = std::time::Duration::from_secs(interval);
+                std::thread::spawn(move || {
+                    daemon::run_loop(
+                        &projects,
+                        interval,
+                        &manager,
+                        &woken,
+                        &engine.health,
+                        report_pass,
+                    )
+                })
+            };
+            if no_serve {
+                looping
+                    .join()
+                    .map_err(|_| anyhow!("the daemon's loop stopped unexpectedly"))?;
+            } else {
+                let app = crate::engine::http::router(entries, engine);
+                crate::server::serve_app(app, projects, port, false)?;
             }
         }
         Cmd::Secret { cmd } => {
@@ -1040,6 +1072,18 @@ fn lifecycle_cmd(p: &Project, cmd: LifecycleCmd) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// What a daemon pass did, on stderr: only when it did something, or failed.
+fn report_pass(p: &Project, pass: &Result<crate::engine::daemon::Pass>) {
+    match pass {
+        Ok(pass) if pass.delivered + pass.written + pass.worked + pass.deferred > 0 => eprintln!(
+            "{}: {} events, {} jobs, {} changes written, {} waiting",
+            p.name, pass.delivered, pass.worked, pass.written, pass.deferred
+        ),
+        Ok(_) => {}
+        Err(e) => eprintln!("{}: {e:#}", p.name),
+    }
 }
 
 /// `--arg key=value` pairs as a JSON object: a value that reads as JSON

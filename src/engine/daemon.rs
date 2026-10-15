@@ -16,6 +16,8 @@ use std::collections::BTreeSet;
 use std::io::Write;
 use std::path::Path;
 use std::process::{Command, Stdio};
+use std::sync::mpsc::{Receiver, RecvTimeoutError};
+use std::sync::{Mutex, PoisonError};
 use wait_timeout::ChildExt;
 
 /// What one pass did.
@@ -50,8 +52,68 @@ enum Delivered {
     Deferred,
 }
 
-fn stamp(t: DateTime<Utc>) -> String {
+pub(crate) fn stamp(t: DateTime<Utc>) -> String {
     t.to_rfc3339_opts(SecondsFormat::Secs, true)
+}
+
+/// How the daemon's loop is doing, for `/health` (and C2b's watchdog).
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct Health {
+    pub started: String,
+    /// Passes over every project so far.
+    pub passes: u64,
+    /// When the last pass ran.
+    pub last_pass: Option<String>,
+    /// What went wrong in the last pass, if anything.
+    pub last_error: Option<String>,
+}
+
+impl Health {
+    pub fn starting(at: &str) -> Health {
+        Health {
+            started: at.to_string(),
+            passes: 0,
+            last_pass: None,
+            last_error: None,
+        }
+    }
+}
+
+/// Runs passes over `projects` until `wake`'s sender is gone: one every
+/// `interval`, or at once when something arrives on `wake` (an event from
+/// outside). Each pass is recorded in `health`; `report` hears of every
+/// project's pass. One project's error never stops the others.
+pub fn run_loop(
+    projects: &[Project],
+    interval: std::time::Duration,
+    manager: &Path,
+    wake: &Receiver<()>,
+    health: &Mutex<Health>,
+    report: impl Fn(&Project, &Result<Pass>),
+) {
+    loop {
+        let now = Utc::now();
+        let mut error = None;
+        for p in projects {
+            let r = run_once(p, now, manager);
+            if let Err(e) = &r {
+                error = Some(format!("{}: {e:#}", p.name));
+            }
+            report(p, &r);
+        }
+        {
+            let mut h = health.lock().unwrap_or_else(PoisonError::into_inner);
+            h.passes += 1;
+            h.last_pass = Some(stamp(now));
+            h.last_error = error;
+        }
+        match wake.recv_timeout(interval) {
+            Ok(()) | Err(RecvTimeoutError::Timeout) => {}
+            Err(RecvTimeoutError::Disconnected) => return,
+        }
+        // several wake-ups while a pass ran need only one more pass
+        while wake.try_recv().is_ok() {}
+    }
 }
 
 /// One pass over a project; `manager` is the primum binary to run as
@@ -64,6 +126,7 @@ pub fn run_once(p: &Project, now: DateTime<Utc>, manager: &Path) -> Result<Pass>
     // changes left from a pass that stopped early, then the feed's own
     pass.written += write_ledger(p, &j, &mut tried)?;
     feed(p, &j, now)?;
+    inbox(p, &j, now)?;
     pass.written += write_ledger(p, &j, &mut tried)?;
     for (id, ticket, data) in j.due_timers(&stamp(now))? {
         let e = Envelope::new(
@@ -206,6 +269,89 @@ fn feed(p: &Project, j: &Journal, now: DateTime<Utc>) -> Result<()> {
             j.forget_seen(id)?;
             j.forget_ticket(id)?;
         }
+    }
+    Ok(())
+}
+
+/// `dir/name`, or `dir/<stem>-2.<ext>` (and so on) when that is taken: a
+/// handled file never overwrites another.
+fn free_name(dir: &Path, name: &str) -> std::path::PathBuf {
+    let first = dir.join(name);
+    if !first.exists() {
+        return first;
+    }
+    let (stem, ext) = match name.rsplit_once('.') {
+        Some((s, e)) if !s.is_empty() => (s, format!(".{e}")),
+        _ => (name, String::new()),
+    };
+    (2..)
+        .map(|n| dir.join(format!("{stem}-{n}{ext}")))
+        .find(|f| !f.exists())
+        .expect("some number is free")
+}
+
+/// Turns files dropped in `inbox/` into `input.received` events, then moves
+/// each to `inbox/done/`. A file named `<id>.<anything>` goes to that ticket
+/// when it is on a lifecycle, any other to the project. Dot-files (still
+/// being written, by convention) are left alone. An event's id comes from
+/// the file's name, size and modification time, so a pass stopped between
+/// saving the event and moving the file does not make a second event.
+fn inbox(p: &Project, j: &Journal, now: DateTime<Utc>) -> Result<()> {
+    let dir = p.root.join("inbox");
+    let entries = match std::fs::read_dir(&dir) {
+        Ok(e) => e,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(anyhow!("cannot read {}: {e}", dir.display())),
+    };
+    let mut files: Vec<std::path::PathBuf> = vec![];
+    for e in entries {
+        let e = e?;
+        if e.file_type()?.is_file() && !e.file_name().to_string_lossy().starts_with('.') {
+            files.push(e.path());
+        }
+    }
+    if files.is_empty() {
+        return Ok(());
+    }
+    files.sort();
+    let board = store::load(p)?;
+    let done = dir.join("done");
+    std::fs::create_dir_all(&done)?;
+    for f in files {
+        let name = f
+            .file_name()
+            .expect("a file")
+            .to_string_lossy()
+            .into_owned();
+        let meta = std::fs::metadata(&f)?;
+        let modified = meta
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map_or(0, |d| d.as_nanos());
+        let target = name
+            .split('.')
+            .next()
+            .filter(|id| board.get(id).is_some_and(|it| it.lifecycle.is_some()))
+            .unwrap_or("project");
+        let to = free_name(&done, &name);
+        let moved = format!(
+            "inbox/done/{}",
+            to.file_name().expect("a file").to_string_lossy()
+        );
+        let key = format!("{}\0{name}\0{}\0{modified}", p.name, meta.len());
+        let e = Envelope {
+            id: uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_URL, key.as_bytes()).to_string(),
+            source: "inbox".into(),
+            kind: "input.received".into(),
+            subject: journal::subject(&p.name, target),
+            time: stamp(now),
+            cause: None,
+            data: json!({ "file": moved, "name": name }),
+        };
+        j.publish(&e)?;
+        std::fs::rename(&f, &to)
+            .map_err(|e| anyhow!("cannot move {} to {}: {e}", f.display(), to.display()))?;
     }
     Ok(())
 }
