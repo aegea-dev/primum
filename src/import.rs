@@ -6,7 +6,7 @@
 //! belongs to an item by its file name.
 use crate::item_file::{self, file_name, parse_item_name, stem};
 use crate::migrate::rewrite_refs;
-use crate::model::{Item, KINDS, clamp_score, id_of};
+use crate::model::{Item, KINDS, STATUSES, clamp_score, id_of};
 use crate::store::{self, Project};
 use anyhow::{Context, Result, bail};
 use regex::Regex;
@@ -107,16 +107,12 @@ fn item_from_row(row: &Value) -> Result<Item> {
     // the board.py id until `run` numbers the items
     let mut it = Item::new(kind, num, &text(row.get("title")));
     it.id = id.to_string();
-    // board.py's statuses are manual's, with idle called open
+    // board.py's statuses are primum's, with idle called open
     let status = match row["status"].as_str().unwrap_or("open") {
         "open" => "idle",
         s => s,
     };
-    if !crate::lifecycle::Rules::manual()
-        .states
-        .iter()
-        .any(|x| x == status)
-    {
+    if !STATUSES.contains(&status) {
         bail!("{id}: unknown status {status}");
     }
     it.status = status.to_string();

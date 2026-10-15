@@ -298,28 +298,10 @@ async fn a_conflict_shows_and_resolves() {
 }
 
 #[tokio::test]
-async fn context_is_served() {
-    let d = tempfile::tempdir().unwrap();
-    let (p, app) = setup(d.path());
-    primum::projects::set_context(&p, "start", Some("2026-11-01".into())).unwrap();
-    let (code, text) = get(&app, &format!("{API}/context")).await;
-    assert_eq!(code, StatusCode::OK);
-    let v: Value = serde_json::from_str(&text).unwrap();
-    assert_eq!(v["stored"]["start"], "2026-11-01");
-    assert_eq!(v["computed"]["items"], 2);
-    assert_eq!(v["lifecycle"], Value::Null);
-}
-
-#[tokio::test]
-async fn items_carry_their_states() {
+async fn items_say_whether_they_are_closed() {
     let d = tempfile::tempdir().unwrap();
     let (_p, app) = setup(d.path());
     let (_, text) = get(&app, &format!("{API}/items")).await;
     let items: Value = serde_json::from_str(&text).unwrap();
-    assert_eq!(
-        items[0]["states"],
-        json!(["idle", "doing", "done", "wontfix"])
-    );
     assert_eq!(items[0]["closed"], false);
-    assert_eq!(items[0]["lifecycle"], Value::Null);
 }

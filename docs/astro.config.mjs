@@ -90,8 +90,6 @@ export default defineConfig({
 						{ label: 'resolve', slug: 'commands/resolve' },
 						{ label: 'import', slug: 'commands/import' },
 						{ label: 'migrate', slug: 'commands/migrate' },
-						{ label: 'context', slug: 'commands/context' },
-						{ label: 'secret', slug: 'commands/secret' },
 					],
 				},
 				{
@@ -109,10 +107,6 @@ export default defineConfig({
 					label: 'Reference',
 					items: [
 						{ label: 'Item files', slug: 'reference/item-files' },
-						{ label: 'Lifecycles', slug: 'reference/lifecycles' },
-						{ label: 'The lifecycle manager', slug: 'reference/manager' },
-						{ label: 'The daemon', slug: 'reference/daemon' },
-						{ label: 'The worker', slug: 'reference/worker' },
 						{ label: 'A project folder', slug: 'reference/project-folder' },
 						{ label: 'The board', slug: 'reference/board' },
 						{ label: 'Board HTTP interface', slug: 'reference/http' },

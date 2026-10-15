@@ -177,37 +177,3 @@ fn the_github_folder_is_not_tracked() {
     History::open(&p).unwrap().unwrap();
     assert_eq!(common::tracked(&p), ["project.json"]);
 }
-
-#[test]
-fn lifecycle_and_actionable_files_are_tracked() {
-    let d = tempfile::tempdir().unwrap();
-    let p = common::project(d.path());
-    fs::write(d.path().join("project.json"), "{\"name\": \"deneme\"}\n").unwrap();
-    fs::create_dir_all(d.path().join("lifecycles")).unwrap();
-    fs::write(d.path().join("lifecycles/çay.json"), "{}\n").unwrap();
-    fs::write(d.path().join("lifecycles/eski.toml"), "name = \"eski\"\n").unwrap();
-    fs::write(d.path().join("lifecycles/notes.txt"), "not a lifecycle\n").unwrap();
-    let a = d.path().join("actionables/denetim");
-    for sub in ["", ".venv/lib", "node_modules/x", "__pycache__"] {
-        fs::create_dir_all(a.join(sub)).unwrap();
-    }
-    fs::write(a.join("actionable.json"), "{}\n").unwrap();
-    fs::write(
-        a.join("kurallar.py"),
-        "def is_valid(x):\n    return {'ok': True}\n",
-    )
-    .unwrap();
-    fs::write(a.join(".venv/lib/site.py"), "\n").unwrap();
-    fs::write(a.join("node_modules/x/index.js"), "\n").unwrap();
-    fs::write(a.join("__pycache__/kurallar.pyc"), "\n").unwrap();
-    History::open(&p).unwrap().unwrap();
-    assert_eq!(
-        common::tracked(&p),
-        [
-            "actionables/denetim/actionable.json",
-            "actionables/denetim/kurallar.py",
-            "lifecycles/çay.json",
-            "project.json"
-        ]
-    );
-}

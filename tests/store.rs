@@ -395,7 +395,7 @@ fn a_missing_title_comes_from_the_first_heading() {
 }
 
 #[test]
-fn statuses_come_from_the_lifecycle() {
+fn statuses_are_idle_doing_done_and_wontfix() {
     let d = tempfile::tempdir().unwrap();
     let p = common::project(d.path());
     let id = insert(&p, "TODO", "Çay", ch()).unwrap();
@@ -415,7 +415,7 @@ fn statuses_come_from_the_lifecycle() {
         update(&p, &id, open).unwrap_err().to_string(),
         "#1: status \"open\" is not one of idle, doing, done, wontfix"
     );
-    // a board from before lifecycles says how to convert it
+    // a board from before `idle` says how to convert it
     let f = d.path().join("items/1.md");
     let text = std::fs::read_to_string(&f)
         .unwrap()
@@ -426,142 +426,4 @@ fn statuses_come_from_the_lifecycle() {
         e.contains("items/1.md") && e.contains("run primum migrate"),
         "{e}"
     );
-}
-
-fn with_example(d: &std::path::Path) {
-    common::with_example(d);
-}
-
-#[test]
-fn attach_pins_a_lifecycle_and_detach_returns_to_manual() {
-    let d = tempfile::tempdir().unwrap();
-    let p = common::project(d.path());
-    with_example(d.path());
-    let id = insert(&p, "TODO", "Gölge", ch()).unwrap();
-    let version = attach(&p, &id, "enrich-ticket", None).unwrap();
-    assert_eq!(version.len(), 64);
-    let b = load(&p).unwrap();
-    let it = b.get(&id).unwrap();
-    assert_eq!(
-        it.lifecycle.as_deref(),
-        Some(format!("enrich-ticket@{version}").as_str())
-    );
-    assert_eq!(it.args, None);
-    assert_eq!(it.status, "create");
-    assert_eq!(
-        b.rules_of(it).states,
-        [
-            "create",
-            "idle",
-            "waiting",
-            "processing",
-            "finished",
-            "timed-out",
-            "failed"
-        ]
-    );
-    assert_eq!(common::subjects(&p)[0], "#1: attach enrich-ticket");
-    let doing = Changes {
-        status: Some("doing".into()),
-        ..ch()
-    };
-    assert!(update(&p, &id, doing).is_err(), "not one of its states");
-    let waiting = Changes {
-        status: Some("waiting".into()),
-        ..ch()
-    };
-    update(&p, &id, waiting).unwrap();
-    assert!(attach(&p, &id, "yok", None).is_err());
-    detach(&p, &id).unwrap();
-    let it = load(&p).unwrap().get(&id).unwrap().clone();
-    assert_eq!((it.lifecycle, it.args), (None, None));
-    assert_eq!(it.status, "idle", "waiting is not a manual state");
-    assert_eq!(common::subjects(&p)[0], "#1: detach");
-}
-
-#[test]
-fn a_lifecycle_conflict_is_resolved_to_one_side() {
-    use primum::conflicts::*;
-    let d = tempfile::tempdir().unwrap();
-    let p = common::project(d.path());
-    with_example(d.path());
-    let id = insert(&p, "TODO", "Gölge", ch()).unwrap();
-    let version = attach(&p, &id, "enrich-ticket", None).unwrap();
-    let side = |a: &str| Side {
-        author: a.into(),
-        date: String::new(),
-    };
-    let ours = format!("enrich-ticket@{version} {{\"bölge\":\"eu\"}}");
-    write(
-        &p,
-        &Conflict {
-            id: id.clone(),
-            sides: [side("Ada"), side("Can")],
-            fields: vec![FieldValues {
-                field: "lifecycle".into(),
-                values: [ours, "manual".into()],
-            }],
-            body: None,
-            documents: vec![],
-        },
-    )
-    .unwrap();
-    resolve(&p, &id, "lifecycle", Keep::First).unwrap();
-    let it = load(&p).unwrap().get(&id).unwrap().clone();
-    assert_eq!(
-        it.lifecycle.as_deref(),
-        Some(format!("enrich-ticket@{version}").as_str())
-    );
-    assert_eq!(it.args.unwrap()["bölge"], "eu");
-    write(
-        &p,
-        &Conflict {
-            id: id.clone(),
-            sides: [side("Ada"), side("Can")],
-            fields: vec![FieldValues {
-                field: "lifecycle".into(),
-                values: [format!("enrich-ticket@{version}"), "manual".into()],
-            }],
-            body: None,
-            documents: vec![],
-        },
-    )
-    .unwrap();
-    resolve(&p, &id, "lifecycle", Keep::Second).unwrap();
-    let it = load(&p).unwrap().get(&id).unwrap().clone();
-    assert_eq!((it.lifecycle, it.args), (None, None));
-}
-
-#[test]
-fn attach_keeps_the_tickets_arguments() {
-    let d = tempfile::tempdir().unwrap();
-    let p = common::project(d.path());
-    with_example(d.path());
-    let id = insert(&p, "TODO", "Gölge", ch()).unwrap();
-    let mut args = serde_json::Map::new();
-    args.insert("bölge".into(), "eu".into());
-    attach(&p, &id, "enrich-ticket", Some(args.clone())).unwrap();
-    assert_eq!(load(&p).unwrap().get(&id).unwrap().args, Some(args));
-}
-
-#[test]
-fn computed_context_counts_by_status() {
-    let d = tempfile::tempdir().unwrap();
-    let p = common::project(d.path());
-    for t in ["a", "b", "c"] {
-        insert(&p, "TODO", t, ch()).unwrap();
-    }
-    let s = |v: &str| Changes {
-        status: Some(v.into()),
-        ..ch()
-    };
-    update(&p, "2", s("doing")).unwrap();
-    update(&p, "3", s("done")).unwrap();
-    let c = computed_context(&load(&p).unwrap());
-    assert_eq!(c["items"], 3);
-    assert_eq!(c["open"], 2);
-    assert_eq!(c["closed"], 1);
-    assert_eq!(c["status.idle"], 1);
-    assert_eq!(c["status.doing"], 1);
-    assert_eq!(c["status.done"], 1);
 }

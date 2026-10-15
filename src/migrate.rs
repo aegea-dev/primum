@@ -80,8 +80,8 @@ fn created(h: Option<&History>, name: &str) -> String {
     .unwrap_or_default()
 }
 
-/// Turns `open` into `idle` on every ticket without a lifecycle (boards
-/// made before lifecycles), once, in one commit. Returns how many changed.
+/// Turns `open` into `idle` on every item (boards made before `idle`),
+/// once, in one commit. Returns how many changed.
 pub fn migrate_statuses(p: &Project) -> Result<usize> {
     let _l = store::lock(p)?;
     let history = History::open(p)?;
@@ -97,7 +97,7 @@ pub fn migrate_statuses(p: &Project) -> Result<usize> {
         let path = p.items_dir().join(&name);
         let text = fs::read_to_string(&path)?;
         let front = text.split("\n---\n").next().unwrap_or("");
-        if front.contains("\nlifecycle:") || !front.contains("\nstatus: open\n") {
+        if !front.contains("\nstatus: open\n") {
             continue;
         }
         let text = text.replacen("\nstatus: open\n", "\nstatus: idle\n", 1);
@@ -107,7 +107,7 @@ pub fn migrate_statuses(p: &Project) -> Result<usize> {
     if changed > 0 {
         store::settle_locked(p)?;
         if let Some(h) = &history {
-            h.commit("statuses for lifecycles")?;
+            h.commit("statuses: open is idle")?;
         }
     }
     Ok(changed)
@@ -190,7 +190,7 @@ pub fn migrate(p: &Project) -> Result<Vec<(String, String)>> {
             .collect();
         it.docs = it.docs.iter().map(|d| rewrite_refs(d, &map)).collect();
         it.body = rewrite_refs(&it.body, &map);
-        // statuses for lifecycles: `manual` calls open idle
+        // open is idle now
         if it.status == "open" {
             it.status = "idle".into();
         }

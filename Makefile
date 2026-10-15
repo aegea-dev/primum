@@ -21,15 +21,6 @@ build: ## Build the release binary (target/release/primum)
 build-dev: ## Build the debug binary (target/debug/primum)
 	$(CARGO) build
 
-# A fresh demo workspace in target/demo (examples/demo), its daemon in the
-# foreground: Ctrl-C stops it. Nothing outside this checkout is touched.
-DEMO_PORT ?= 8790
-.PHONY: demo
-demo: build-dev ## Run the demo board and its lifecycles on http://127.0.0.1:8790
-	examples/demo/setup.sh target/demo $(CURDIR)/target/debug/primum
-	@echo "board: http://127.0.0.1:$(DEMO_PORT)/  (examples/demo/README.md says what to try)"
-	cd target/demo && $(CURDIR)/target/debug/primum daemon --port $(DEMO_PORT)
-
 # --no-fail-fast to match CI: one failing test binary must not hide the rest.
 .PHONY: test
 test: ## Run the full test suite (as CI does)

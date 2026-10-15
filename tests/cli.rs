@@ -1,4 +1,3 @@
-mod common;
 use std::process::{Command, Output, Stdio};
 
 /// A temporary workspace (also HOME) with a project `café`, made by the
@@ -447,162 +446,6 @@ fn a_closed_pipe_ends_quietly() {
     assert!(!err.contains("panicked"), "{err}");
 }
 
-#[test]
-fn the_manager_reads_an_input_and_prints_its_answer() {
-    let t = T::new();
-    let lifecycle: serde_json::Value = serde_json::from_str(&common::example_json()).unwrap();
-    let input = serde_json::json!({
-        "now": "2026-10-14T20:00:00Z",
-        "lifecycle": lifecycle,
-        "ticket": {"id": "12", "title": "Gölge", "status": "create"},
-        "runtime": {"state": "create"},
-        "event": {"id": "e1", "type": "ticket.created", "data": {}}
-    });
-    // no project is needed: it is run from the workspace's root
-    let o = t.run_at(&["manager"], t.dir.path(), &input.to_string());
-    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
-    let a: serde_json::Value = serde_json::from_slice(&o.stdout).unwrap();
-    assert_eq!(a["runtime"]["state"], "idle");
-    assert_eq!(a["status"], "waiting");
-    assert_eq!(a["events"][0]["data"]["action"], "http.request@1");
-    let bad = t.run_at(&["manager"], t.dir.path(), "{}");
-    assert_eq!(bad.status.code(), Some(1));
-    assert!(String::from_utf8_lossy(&bad.stderr).contains("the manager's input"));
-}
-
-#[test]
-fn the_daemon_runs_a_lifecycle_and_the_journal_shows_it() {
-    let t = T::new();
-    let dir = t.dir.path().join("café/lifecycles");
-    std::fs::create_dir_all(&dir).unwrap();
-    std::fs::write(
-        dir.join("akış.json"),
-        r#"{ "name": "akış", "states": ["yeni", "hazir", "bitti"], "start": "yeni", "end": ["bitti"],
-             "transitions": [
-               { "from": "yeni", "on": "lifecycle.attached", "to": "hazir",
-                 "do": [ { "action": "ticket.update@1", "with": { "note": "Hazır." } } ] } ] }"#,
-    )
-    .unwrap();
-    t.out(&["add", "TODO", "Gölge"]);
-    t.out(&["lifecycle", "attach", "1", "akış"]);
-    let o = t.run(&["daemon", "--once", "--now", "2026-10-14T20:00:00Z"]);
-    assert!(o.status.success(), "{o:?}");
-    assert!(t.out(&["show", "1"]).contains("hazir"));
-    let events = t.out(&["events", "1"]);
-    assert!(events.contains("lifecycle.attached"), "{events}");
-    let json: serde_json::Value = serde_json::from_str(&t.out(&["events", "--json"])).unwrap();
-    assert_eq!(json[0]["event"]["type"], "lifecycle.attached");
-    assert!(t.out(&["lifecycle", "resume", "1"]).contains("queued"));
-    // the daemon delivers it; the ticket has not failed, so nothing moves
-    t.run(&["daemon", "--once", "--now", "2026-10-14T20:01:00Z"]);
-    let events = t.out(&["events", "1"]);
-    assert!(
-        events.contains("lifecycle.resume") && !events.contains("waiting"),
-        "{events}"
-    );
-    assert!(t.out(&["show", "1"]).contains("hazir"));
-}
-
-#[test]
-fn lifecycle_commands() {
-    let t = T::new();
-    common::with_example(&t.dir.path().join("café"));
-    let dir = t.dir.path().join("café/lifecycles");
-    let out = t.out(&["lifecycle", "check"]);
-    assert!(out.starts_with("enrich-ticket  "), "{out}");
-    assert_eq!(out.split_whitespace().nth(1).unwrap().len(), 12);
-    let list = t.out(&["lifecycle", "list"]);
-    assert!(
-        list.contains("manual") && list.contains("built in") && list.contains("enrich-ticket"),
-        "{list}"
-    );
-    let show = t.out(&["lifecycle", "show", "enrich-ticket"]);
-    assert!(
-        show.contains("idle -> processing")
-            && show.contains("http.request@1")
-            && show.contains("while waiting"),
-        "{show}"
-    );
-    let json: serde_json::Value =
-        serde_json::from_str(&t.out(&["lifecycle", "show", "manual", "--json"])).unwrap();
-    assert_eq!(json["file"]["start"], "idle");
-    std::fs::write(dir.join("kırık.json"), "{\"name\": \"kırık\"}\n").unwrap();
-    let o = t.run(&["lifecycle", "check"]);
-    assert_eq!(o.status.code(), Some(1));
-    assert!(String::from_utf8_lossy(&o.stderr).contains("kırık.json"));
-}
-
-#[test]
-fn attach_and_detach_on_the_command_line() {
-    let t = T::new();
-    common::with_example(&t.dir.path().join("café"));
-    t.out(&["add", "TODO", "Gölge"]);
-    let out = t.out(&[
-        "lifecycle",
-        "attach",
-        "1",
-        "enrich-ticket",
-        "--arg",
-        "bölge=eu",
-        "--arg",
-        "deneme=3",
-    ]);
-    assert!(out.starts_with("#1: enrich-ticket "), "{out}");
-    let show = t.out(&["show", "1"]);
-    assert!(show.contains("lifecycle enrich-ticket"), "{show}");
-    assert!(
-        show.contains("args {\"bölge\":\"eu\",\"deneme\":3}"),
-        "{show}"
-    );
-    assert!(
-        t.err(&[
-            "lifecycle",
-            "attach",
-            "1",
-            "enrich-ticket",
-            "--arg",
-            "eşitsiz"
-        ])
-        .contains("KEY=VALUE")
-    );
-    assert_eq!(t.out(&["lifecycle", "detach", "#1"]).trim(), "#1: manual");
-    assert!(!t.out(&["show", "1"]).contains("lifecycle "));
-}
-
-#[test]
-fn context_on_the_command_line() {
-    let t = T::new();
-    t.out(&["add", "TODO", "Çay"]);
-    t.out(&["context", "set", "start", "2026-11-01"]);
-    t.out(&["context", "set", "owner", "\"Ada\""]);
-    let out = t.out(&["context"]);
-    assert!(out.contains("start = \"2026-11-01\""), "{out}");
-    assert!(out.contains("owner = \"Ada\""), "{out}");
-    assert!(
-        out.contains("items = 1") && out.contains("status.idle = 1"),
-        "{out}"
-    );
-    t.out(&["context", "set", "owner", "--unset"]);
-    assert!(!t.out(&["context"]).contains("owner"));
-    let json: serde_json::Value = serde_json::from_str(&t.out(&["context", "--json"])).unwrap();
-    assert_eq!(json["stored"]["start"], "2026-11-01");
-    assert_eq!(json["computed"]["items"], 1);
-}
-
-#[test]
-fn start_on_a_lifecycle_without_doing_says_what_to_do() {
-    let t = T::new();
-    common::with_example(&t.dir.path().join("café"));
-    t.out(&["add", "TODO", "Gölge"]);
-    t.out(&["lifecycle", "attach", "1", "enrich-ticket"]);
-    let e = t.err(&["start", "1"]);
-    assert!(
-        e.contains("is not one of create, idle, waiting, processing, finished, timed-out, failed")
-            && e.contains("--status"),
-        "{e}"
-    );
-}
-
 /// The commands a help text lists, in its order.
 fn listed(help: &str) -> Vec<String> {
     help.lines()
@@ -618,13 +461,13 @@ fn help_lists_commands_by_name() {
     let t = T::new();
     for args in [
         &["--help"][..],
-        &["lifecycle", "--help"],
-        &["daemon", "--help"],
+        &["projects", "--help"],
+        &["remote", "--help"],
     ] {
         let mut names = listed(&t.out(args));
         // clap's own `help` comes last
         assert_eq!(names.pop().as_deref(), Some("help"), "{args:?}");
-        assert!(names.len() > 2, "{args:?}: {names:?}");
+        assert!(names.len() > 1, "{args:?}: {names:?}");
         let mut sorted = names.clone();
         sorted.sort();
         assert_eq!(names, sorted, "{args:?}");

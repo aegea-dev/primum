@@ -11,15 +11,9 @@ my-app/
     87.md             an item
     87.spec.md        its documents
   conflicts/87.json   what a sync could not decide
-  lifecycles/          the project's lifecycles, one JSON file each
-  actionables/checks/  a project actionable: actionable.json and its code
   .primum/history.git      the project's history, a bare git repository
   .primum.lock             held while a change runs
 ```
-
-The history tracks `project.json`, `BOARD.md`, the item files and their
-documents, `conflicts/`, `lifecycles/*.json`, and everything in
-`actionables/` apart from `.venv/`, `node_modules/` and `__pycache__/`.
 
 ## project.json
 
