@@ -140,6 +140,10 @@ no heartbeat for 30s`). An error is not a loss: an answer saying it failed,
 a failed `expect`, a missing secret or the time limit fails the action at
 once.
 
+A manager killed before it answers is asked again (it is pure: the same
+input gives the same answer). Killed three times in a row, its event waits
+for the next pass; it is never dropped.
+
 A long job can hold a lease: an actionable's `limits.heartbeat` (`"30s"`)
 is how long the job may go without touching the file named in its
 `PRIMUM_HEARTBEAT` (see [the worker](/reference/worker/#heartbeats)). One

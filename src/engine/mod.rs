@@ -16,6 +16,32 @@ use crate::lifecycle::File;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
+/// Kills this process at the named point when `PRIMUM_TEST_DIE_AT` names
+/// it: how the kill tests stop the daemon, a manager or a worker at one
+/// exact step. With `PRIMUM_TEST_DIE_ONCE` (a file's path), only the first
+/// process to get there dies, making that file first. Unset, it does
+/// nothing.
+pub fn die_at(point: &str) {
+    if std::env::var("PRIMUM_TEST_DIE_AT").ok().as_deref() != Some(point) {
+        return;
+    }
+    if let Some(once) = std::env::var_os("PRIMUM_TEST_DIE_ONCE")
+        && std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(once)
+            .is_err()
+    {
+        return;
+    }
+    #[cfg(unix)]
+    // SAFETY: signals only this process, as `kill -9` from outside would
+    unsafe {
+        libc::kill(libc::getpid(), libc::SIGKILL);
+    }
+    std::process::abort();
+}
+
 /// An event, as the manager sees it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Event {

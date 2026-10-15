@@ -75,6 +75,7 @@ make fmt          # format; use this, not bare `cargo fmt`
 make fmt-check    # what CI runs
 make lint-check   # clippy with -D warnings, as CI runs it
 make e2e          # Playwright against target/debug/primum
+make demo         # the demo board and its lifecycles on :8790, in target/demo
 cd docs && yarn build   # the documentation site, when docs/ changed
 ```
 
@@ -104,6 +105,9 @@ templates/         askama templates (nav.html shared)
 static/            CSS and JavaScript, embedded with include_str!
 tests/             integration tests; tests/common/ is shared
 e2e/               Playwright tests for the board
+examples/demo/     the demo project: for trying the engine by hand, and the
+                   example the kill tests (tests/demo.rs) run; a kill lands
+                   at a named point with PRIMUM_TEST_DIE_AT (engine::die_at)
 docs/              the documentation site (Astro + Starlight); see docs/README.md
 hooks/             the commit guard (below)
 .claude/worktrees/ one worktree per change (ignored)
