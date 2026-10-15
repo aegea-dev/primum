@@ -18,6 +18,7 @@ description: Every primum command, what it does, and the option they all share.
 | [`kind`](/commands/kind/) | Move an item to another lane |
 | [`context`](/commands/context/) | The project's context variables |
 | [`lifecycle`](/reference/lifecycles/) | Check, show and list lifecycles; attach or detach an item |
+| [`secret`](/commands/secret/) | Secrets for lifecycles, in the OS secret store |
 | [`delete`](/commands/delete/) | Delete an item and its documents |
 | [`serve`](/commands/serve/) | Open the board in the browser |
 | [`log`](/commands/log/) | Changes to the project or one item |

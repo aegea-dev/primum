@@ -4,9 +4,8 @@ description: Runs tickets' lifecycles - turns ledger changes into events, asks t
 ---
 
 :::caution[In progress]
-The daemon runs every actionable type. Secrets come from its own
-environment; the OS secret store (`primum secret`) comes next. Running as a
-service, the watchdog and an HTTP port for outside events come later.
+The daemon runs every actionable type. Running as a service, the watchdog
+and an HTTP port for outside events come later.
 :::
 
 ```bash
@@ -47,8 +46,9 @@ killed and the action fails (`timed out after 60s`). Built-ins have 60
 seconds; a project actionable's `limits.timeout` sets its own.
 
 `${env.NAME}` in an action's arguments, or in an actionable's
-`environment`, is filled in from the daemon's own environment only when the
-job starts, and reaches only the worker: never the journal, the events or a
+`environment`, is filled in only when the job starts: from the OS secret
+store ([`primum secret`](/commands/secret/)), else from the daemon's own
+environment. It reaches only the worker: never the journal, the events or a
 log. A missing one fails the action (`secret API_KEY is not set`).
 
 An action that ran comes back as `action.finished` with its output, and its
