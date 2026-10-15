@@ -5,6 +5,7 @@
 //! workers. The daemon decides nothing: every change comes from a
 //! manager's answer.
 use super::journal::{self, Envelope, Handled, Journal, Recorded};
+use super::worker::{Failure, LOST_EXIT};
 use super::{Answer, Event, Input, Interpreter, Job, Program, Runtime};
 use crate::lifecycle::{File, split_pin};
 use crate::store::{self, Changes, Project};
@@ -27,8 +28,10 @@ pub struct Pass {
     pub delivered: usize,
     /// Ticket changes written to the ledger.
     pub written: usize,
-    /// Jobs run in workers.
+    /// Jobs run in workers, their results saved.
     pub worked: usize,
+    /// Jobs lost (killed, or their lease ran out), to run again.
+    pub lost: usize,
     /// Events left for the next pass: their ticket kept changing while
     /// its manager ran.
     pub deferred: usize,
@@ -43,6 +46,10 @@ const MAX_TRIES: usize = 3;
 
 /// How many passes try to write a ticket change before it is given up.
 const MAX_WRITES: i64 = 3;
+
+/// How many times a job runs, the first run and those after it was lost,
+/// before its action fails.
+const MAX_RUNS: i64 = 3;
 
 /// What became of an event given to `deliver`.
 enum Delivered {
@@ -158,28 +165,68 @@ pub fn run_once(p: &Project, now: DateTime<Utc>, manager: &Path) -> Result<Pass>
         if batch.is_empty() {
             break;
         }
+        // each run is counted before it starts, so one the daemon stopped
+        // during counts too
+        let mut starting = vec![];
+        for r in batch {
+            let (runs, lost) = j.runs(r.seq)?;
+            if runs >= MAX_RUNS {
+                let why = lost.unwrap_or_default();
+                save_result(p, &mut j, &r, Err(lost_too_often(&why)), now)?;
+                pass.worked += 1;
+            } else {
+                j.start_job(r.seq)?;
+                starting.push((r, runs + 1));
+            }
+        }
+        let beats = p.root.join(".primum").join("beats");
         // the workers run side by side; each result is saved on its own
-        let outcomes: Vec<Result<Value, String>> = std::thread::scope(|s| {
-            let running: Vec<_> = batch
+        let outcomes: Vec<Result<Value, Failure>> = std::thread::scope(|s| {
+            let running: Vec<_> = starting
                 .iter()
-                .map(|r| {
-                    s.spawn(|| job(p, &r.event.data).and_then(|job| spawn_worker(manager, &job)))
+                .map(|(r, _)| {
+                    let beat = beats.join(&r.event.id);
+                    s.spawn(move || {
+                        let outcome = job(p, &r.event.data)
+                            .map_err(Failure::Error)
+                            .and_then(|job| spawn_worker(manager, &job, &beat));
+                        let _ = std::fs::remove_file(&beat);
+                        outcome
+                    })
                 })
                 .collect();
             running
                 .into_iter()
                 .map(|h| {
-                    h.join()
-                        .unwrap_or_else(|_| Err("the worker's runner panicked".into()))
+                    h.join().unwrap_or_else(|_| {
+                        Err(Failure::Error("the worker's runner panicked".into()))
+                    })
                 })
                 .collect()
         });
-        for (r, outcome) in batch.iter().zip(outcomes) {
-            save_result(p, &mut j, r, outcome, now)?;
-            pass.worked += 1;
+        for ((r, run), outcome) in starting.iter().zip(outcomes) {
+            match outcome {
+                Err(Failure::Lost(why)) if *run < MAX_RUNS => {
+                    j.lose_job(r.seq, &why)?;
+                    pass.lost += 1;
+                }
+                Err(Failure::Lost(why)) => {
+                    save_result(p, &mut j, r, Err(lost_too_often(&why)), now)?;
+                    pass.worked += 1;
+                }
+                other => {
+                    save_result(p, &mut j, r, other.map_err(|f| f.to_string()), now)?;
+                    pass.worked += 1;
+                }
+            }
         }
     }
     Ok(pass)
+}
+
+/// Why a job that kept being lost failed.
+fn lost_too_often(why: &str) -> String {
+    format!("lost {MAX_RUNS} times: {why}")
 }
 
 /// More workers than this at once wait for the next batch.
@@ -623,7 +670,7 @@ fn write_one(p: &Project, id: &str, changes: &Map<String, Value>) -> Result<()> 
 }
 
 /// Seconds a built-in may take.
-const BUILT_IN_TIMEOUT: u64 = 60;
+const BUILT_IN_TIMEOUT: u64 = crate::lifecycle::definitions::DEFAULT_TIMEOUT;
 
 /// `${env.NAME}` in every string, filled in from the OS secret store, else
 /// the daemon's environment.
@@ -679,6 +726,7 @@ fn job(p: &Project, data: &Value) -> Result<Job, String> {
         root: p.root.clone(),
         program: None,
         timeout: BUILT_IN_TIMEOUT,
+        heartbeat: None,
     };
     if action == "http.request@1" || action == "command@1" {
         return Ok(job);
@@ -704,8 +752,14 @@ fn job(p: &Project, data: &Value) -> Result<Job, String> {
         .targets
         .get(target)
         .ok_or_else(|| format!("actionable {name} has no target {target}"))?;
-    if let Some(limit) = d.limits.as_ref().and_then(|l| l.timeout.as_deref()) {
-        job.timeout = crate::lifecycle::expr::duration(limit)?.as_secs().max(1);
+    let secs = |d: &str| -> Result<u64, String> {
+        Ok(crate::lifecycle::expr::duration(d)?.as_secs().max(1))
+    };
+    if let Some(l) = &d.limits {
+        if let Some(t) = &l.timeout {
+            job.timeout = secs(t)?;
+        }
+        job.heartbeat = l.heartbeat.as_deref().map(secs).transpose()?;
     }
     let folder = crate::lifecycle::definitions::dir(p).join(&d.name);
     let folder = match &d.working_directory {
@@ -743,9 +797,35 @@ fn job(p: &Project, data: &Value) -> Result<Job, String> {
     Ok(job)
 }
 
-/// Runs `primum worker` on a job in its own process group, killing the
-/// group at the job's time limit.
-fn spawn_worker(manager: &Path, job: &Job) -> Result<Value, String> {
+/// Kills a worker's whole process group, then reaps the worker.
+fn stop(child: &mut std::process::Child) {
+    #[cfg(unix)]
+    // SAFETY: killpg only sends a signal to the worker's own process group,
+    // which it leads (process_group(0) in `spawn_worker`). A worker already
+    // reaped leaves its group's id taken while anything in it still runs.
+    unsafe {
+        libc::killpg(child.id() as i32, libc::SIGKILL);
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+/// How long since a job last touched its heartbeat file, or since it
+/// started (`born`) when it has not.
+fn quiet(beat: &Path, born: std::time::SystemTime) -> std::time::Duration {
+    let last = std::fs::metadata(beat)
+        .and_then(|m| m.modified())
+        .map_or(born, |m| m.max(born));
+    std::time::SystemTime::now()
+        .duration_since(last)
+        .unwrap_or_default()
+}
+
+/// Runs `primum worker` on a job in its own process group. The group is
+/// killed at the job's time limit (an error), or when its lease runs out
+/// without a heartbeat (lost: the job runs again). `beat` is the job's
+/// heartbeat file.
+fn spawn_worker(manager: &Path, job: &Job, beat: &Path) -> Result<Value, Failure> {
     let mut c = Command::new(manager);
     c.arg("worker")
         .stdin(Stdio::piped())
@@ -753,6 +833,15 @@ fn spawn_worker(manager: &Path, job: &Job) -> Result<Value, String> {
         .stderr(Stdio::piped());
     #[cfg(unix)]
     std::os::unix::process::CommandExt::process_group(&mut c, 0);
+    if job.heartbeat.is_some() {
+        if let Some(dir) = beat.parent() {
+            std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+        }
+        // a beat left by an earlier run must not renew this one
+        let _ = std::fs::remove_file(beat);
+        c.env("PRIMUM_HEARTBEAT", beat);
+    }
+    let born = std::time::SystemTime::now();
     let mut child = c
         .spawn()
         .map_err(|e| format!("cannot start a worker: {e}"))?;
@@ -784,36 +873,60 @@ fn spawn_worker(manager: &Path, job: &Job) -> Result<Value, String> {
             .take()
             .map(|s| Box::new(s) as Box<dyn std::io::Read + Send>),
     );
-    // waits for the worker's exit, or the time limit, whichever comes first
-    let limit = std::time::Duration::from_secs(job.timeout);
-    let Some(status) = child.wait_timeout(limit).map_err(|e| e.to_string())? else {
-        #[cfg(unix)]
-        // SAFETY: killpg only sends a signal to the worker's own process
-        // group, which it leads (process_group(0) above)
-        unsafe {
-            libc::killpg(child.id() as i32, libc::SIGKILL);
+    // waits for the worker's exit, the time limit or the end of its lease,
+    // whichever comes first. When the group is killed, the readers end as
+    // its pipes close; they are not waited for, in case something outside
+    // the group holds them.
+    let started = std::time::Instant::now();
+    let cap = std::time::Duration::from_secs(job.timeout);
+    let lease = job.heartbeat.map(std::time::Duration::from_secs);
+    let status = loop {
+        let left = cap.saturating_sub(started.elapsed());
+        if left.is_zero() {
+            stop(&mut child);
+            return Err(Failure::Error(format!(
+                "{}: timed out after {}s",
+                job.action, job.timeout
+            )));
         }
-        let _ = child.kill();
-        let _ = child.wait();
-        // the readers end when the killed group's pipes close; they are
-        // not waited for, in case something outside the group holds them
-        return Err(format!("{}: timed out after {}s", job.action, job.timeout));
+        let slice = match lease {
+            Some(_) => left.min(std::time::Duration::from_millis(200)),
+            None => left,
+        };
+        if let Some(status) = child.wait_timeout(slice).map_err(|e| e.to_string())? {
+            break status;
+        }
+        if let Some(lease) = lease
+            && quiet(beat, born) > lease
+        {
+            stop(&mut child);
+            return Err(Failure::Lost(format!(
+                "no heartbeat for {}s",
+                lease.as_secs()
+            )));
+        }
+    };
+    let Some(code) = status.code() else {
+        // killed from outside: whatever it started goes too
+        stop(&mut child);
+        return Err(Failure::Lost(format!("the worker was killed ({status})")));
     };
     let (out, err) = (
         out.join().unwrap_or_default(),
         err.join().unwrap_or_default(),
     );
-    if !status.success() {
-        let why = String::from_utf8_lossy(&err).trim().to_string();
-        let why = why.strip_prefix("error: ").unwrap_or(&why).to_string();
-        return Err(if why.is_empty() {
-            "the worker failed".into()
-        } else {
-            why
-        });
+    let why = String::from_utf8_lossy(&err).trim().to_string();
+    let why = why.strip_prefix("error: ").unwrap_or(&why).to_string();
+    match code {
+        0 => {
+            let v: Value =
+                serde_json::from_slice(&out).map_err(|e| format!("the worker's answer: {e}"))?;
+            Ok(v.get("output").cloned().unwrap_or(Value::Null))
+        }
+        LOST_EXIT => Err(Failure::Lost(why)),
+        _ if why.is_empty() => Err(Failure::Error("the worker failed".into())),
+        _ => Err(Failure::Error(why)),
     }
-    let v: Value = serde_json::from_slice(&out).map_err(|e| format!("the worker's answer: {e}"))?;
-    Ok(v.get("output").cloned().unwrap_or(Value::Null))
 }
 
 /// Sends a job's outcome to its ticket, in one transaction.

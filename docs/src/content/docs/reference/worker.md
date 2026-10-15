@@ -7,7 +7,9 @@ A worker runs one action for the [daemon](/reference/daemon/) and reports
 its output; it decides nothing. The daemon starts one `primum worker` per
 job, gives it the job as JSON on stdin, and reads `{"output": ...}` from
 its stdout. A worker that cannot run the action exits with the reason on
-stderr.
+stderr. One whose program was killed by a signal exits with code 75: the
+job was lost, and the daemon runs it again. A worker whose daemon has gone
+stops, with everything it started.
 
 ## The job
 
@@ -19,9 +21,12 @@ stderr.
   "ticket": { "id": "12", "title": "Gölge" },
   "project": {}, "args": {}, "input": {}, "prev": {},
   "root": "/home/ada/boards/videre",
-  "timeout": 60
+  "timeout": 60,
+  "heartbeat": 30
 }
 ```
+
+`heartbeat` is there only when the actionable sets `limits.heartbeat`.
 
 `with` arrives with its secrets filled in. `key` is the idempotency key:
 the same when the action runs again, so an outside system can tell a rerun
@@ -56,6 +61,30 @@ line of JSON on stdin:
 
 and prints its output as JSON on stdout. A non-zero exit is a failure, with
 the end of its stderr as the reason; so is output that is not JSON.
+
+## Heartbeats
+
+A long job sets `limits.heartbeat` on its actionable and renews its lease
+as it makes progress by touching the file named in `PRIMUM_HEARTBEAT`:
+
+```sh
+touch "$PRIMUM_HEARTBEAT"
+```
+
+```python
+import os, pathlib
+pathlib.Path(os.environ["PRIMUM_HEARTBEAT"]).touch()
+```
+
+```ts
+import { writeFileSync } from "node:fs";
+writeFileSync(process.env.PRIMUM_HEARTBEAT!, "");
+```
+
+A job that goes longer than its `heartbeat` without one is killed and runs
+again (see [the daemon](/reference/daemon/#lost-jobs-run-again)). Renew
+from where the work happens, not from a timer of its own, so a stuck job
+does not keep itself alive.
 
 ## A project's `python@` actionable
 

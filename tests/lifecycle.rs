@@ -423,6 +423,16 @@ fn every_broken_definition_says_what_is_wrong() {
         ),
         (
             "checks",
+            |v| v["limits"]["heartbeat"] = json!("soon"),
+            "a duration is like",
+        ),
+        (
+            "checks",
+            |v| v["limits"]["heartbeat"] = json!("40s"),
+            "heartbeat is longer than timeout",
+        ),
+        (
+            "checks",
             |v| v["environment"]["API_KEY"] = json!("${env.API_KEY"),
             "unclosed",
         ),

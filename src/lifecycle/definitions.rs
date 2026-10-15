@@ -37,9 +37,17 @@ pub struct Definition {
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Limits {
+    /// The most a job may take: nothing extends it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timeout: Option<String>,
+    /// The job's lease: it renews it by touching `PRIMUM_HEARTBEAT`, or is
+    /// killed and run again.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub heartbeat: Option<String>,
 }
+
+/// Seconds a job may take when its actionable sets no `limits.timeout`.
+pub const DEFAULT_TIMEOUT: u64 = 60;
 
 /// An entry point: a Python module and callable, a Bun file and export, or
 /// a program and its arguments.
@@ -190,8 +198,16 @@ pub fn validate(path: &Path, d: &Definition) -> Result<(), LifecycleError> {
         }
         check_target(kind, t).map_err(at)?;
     }
-    if let Some(t) = d.limits.as_ref().and_then(|l| l.timeout.as_deref()) {
-        expr::duration(t).map_err(&whole)?;
+    if let Some(l) = &d.limits {
+        let timeout = match l.timeout.as_deref() {
+            Some(t) => expr::duration(t).map_err(&whole)?,
+            None => std::time::Duration::from_secs(DEFAULT_TIMEOUT),
+        };
+        if let Some(h) = l.heartbeat.as_deref()
+            && expr::duration(h).map_err(&whole)? > timeout
+        {
+            return Err(whole("heartbeat is longer than timeout".into()));
+        }
     }
     for v in d.environment.values() {
         check_templates(v).map_err(&whole)?;

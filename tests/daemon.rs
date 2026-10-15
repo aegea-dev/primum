@@ -275,6 +275,13 @@ fn a_missing_secret_fails_the_action() {
 
 #[cfg(unix)]
 fn executable(d: &Path, script: &str, timeout: &str) {
+    executable_with(d, script, &format!(r#"{{ "timeout": "{timeout}" }}"#));
+}
+
+/// The `araç` actionable running `script`, with its `limits`, and the
+/// `denetim` lifecycle calling it.
+#[cfg(unix)]
+fn executable_with(d: &Path, script: &str, limits: &str) {
     use std::os::unix::fs::PermissionsExt;
     let a = d.join("actionables/araç");
     std::fs::create_dir_all(&a).unwrap();
@@ -282,8 +289,10 @@ fn executable(d: &Path, script: &str, timeout: &str) {
     std::fs::set_permissions(a.join("run.sh"), std::fs::Permissions::from_mode(0o755)).unwrap();
     std::fs::write(
         a.join("actionable.json"),
-        format!(r#"{{ "name": "araç", "version": 1, "type": "executable", "limits": {{ "timeout": "{timeout}" }},
-                     "targets": {{ "run": {{ "executable": "./run.sh" }} }} }}"#),
+        format!(
+            r#"{{ "name": "araç", "version": 1, "type": "executable", "limits": {limits},
+                     "targets": {{ "run": {{ "executable": "./run.sh" }} }} }}"#
+        ),
     )
     .unwrap();
     lifecycle(
@@ -330,6 +339,169 @@ fn a_job_past_its_time_limit_is_killed_and_fails() {
     let it = load(&p).unwrap().get(&id).unwrap().clone();
     assert_eq!(it.status, "failed");
     assert!(it.body.contains("timed out"), "{}", it.body);
+}
+
+/// How many times the `araç` actionable has run: its script adds a line to
+/// `runs.txt` each time.
+fn runs(d: &Path) -> usize {
+    std::fs::read_to_string(d.join("actionables/araç/runs.txt"))
+        .unwrap_or_default()
+        .lines()
+        .count()
+}
+
+/// A ticket on the `denetim` lifecycle.
+fn on_denetim(p: &primum::store::Project) -> String {
+    let id = insert(p, "TODO", "Işık", Changes::default()).unwrap();
+    attach(p, &id, "denetim", None).unwrap();
+    id
+}
+
+#[cfg(unix)]
+#[test]
+fn a_job_that_renews_its_lease_runs_past_it() {
+    let d = tempfile::tempdir().unwrap();
+    let (p, _) = attached(d.path());
+    executable_with(
+        d.path(),
+        "#!/bin/sh\ncat > /dev/null\nfor i in 1 2 3 4; do touch \"$PRIMUM_HEARTBEAT\"; sleep 1; done\necho '{\"ok\": true}'\n",
+        r#"{ "timeout": "30s", "heartbeat": "2s" }"#,
+    );
+    let id = on_denetim(&p);
+    let pass = run_once(&p, now(), manager()).unwrap();
+    assert_eq!((pass.worked, pass.lost), (1, 0));
+    assert_eq!(load(&p).unwrap().get(&id).unwrap().status, "bitti");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_job_whose_lease_runs_out_is_lost_and_runs_again() {
+    let d = tempfile::tempdir().unwrap();
+    let (p, _) = attached(d.path());
+    // the first run hangs without a heartbeat; the second answers
+    executable_with(
+        d.path(),
+        "#!/bin/sh\ncat > /dev/null\necho run >> runs.txt\n[ \"$(wc -l < runs.txt)\" -gt 1 ] || sleep 30\necho '{\"ok\": true}'\n",
+        r#"{ "timeout": "30s", "heartbeat": "1s" }"#,
+    );
+    let id = on_denetim(&p);
+    let started = std::time::Instant::now();
+    let pass = run_once(&p, now(), manager()).unwrap();
+    assert!(started.elapsed().as_secs() < 15, "{:?}", started.elapsed());
+    assert_eq!((pass.worked, pass.lost), (1, 1));
+    assert_eq!(runs(d.path()), 2);
+    assert_eq!(load(&p).unwrap().get(&id).unwrap().status, "bitti");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_worker_killed_from_outside_runs_again() {
+    let d = tempfile::tempdir().unwrap();
+    let (p, _) = attached(d.path());
+    // the first run kills its worker (the script's parent)
+    executable(
+        d.path(),
+        "#!/bin/sh\ncat > /dev/null\necho run >> runs.txt\n[ \"$(wc -l < runs.txt)\" -gt 1 ] || kill -9 $PPID\necho '{\"ok\": true}'\n",
+        "30s",
+    );
+    let id = on_denetim(&p);
+    let pass = run_once(&p, now(), manager()).unwrap();
+    assert_eq!((pass.worked, pass.lost), (1, 1));
+    assert_eq!(runs(d.path()), 2);
+    let it = load(&p).unwrap().get(&id).unwrap().clone();
+    assert_eq!(it.status, "bitti");
+    // the idempotency key is the same on the second run
+    let keys: Vec<String> = Journal::open(&p)
+        .unwrap()
+        .events(None)
+        .unwrap()
+        .into_iter()
+        .filter(|r| r.event.kind == "action.requested")
+        .map(|r| r.event.data["key"].as_str().unwrap_or("").to_string())
+        .collect();
+    assert_eq!(keys.len(), 1, "one job, run twice");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_job_lost_three_times_fails() {
+    let d = tempfile::tempdir().unwrap();
+    let (p, _) = attached(d.path());
+    executable(
+        d.path(),
+        "#!/bin/sh\ncat > /dev/null\necho run >> runs.txt\nkill -9 $PPID\n",
+        "30s",
+    );
+    let id = on_denetim(&p);
+    let pass = run_once(&p, now(), manager()).unwrap();
+    assert_eq!((pass.worked, pass.lost), (1, 2));
+    assert_eq!(runs(d.path()), 3);
+    let it = load(&p).unwrap().get(&id).unwrap().clone();
+    assert_eq!(it.status, "failed");
+    assert!(it.body.contains("lost 3 times"), "{}", it.body);
+}
+
+/// Whether a process is still running (a zombie waiting to be reaped is
+/// not).
+#[cfg(unix)]
+fn running(pid: i32) -> bool {
+    let o = std::process::Command::new("ps")
+        .args(["-o", "stat=", "-p", &pid.to_string()])
+        .output()
+        .unwrap();
+    let stat = String::from_utf8_lossy(&o.stdout);
+    !stat.trim().is_empty() && !stat.trim().starts_with('Z')
+}
+
+#[cfg(unix)]
+#[test]
+fn a_job_runs_again_after_its_daemon_is_killed_and_its_worker_stops() {
+    let d = tempfile::tempdir().unwrap();
+    let (p, _) = attached(d.path());
+    std::fs::write(d.path().join("project.json"), "{\"name\": \"deneme\"}\n").unwrap();
+    // the first run says where it is, then hangs
+    executable(
+        d.path(),
+        "#!/bin/sh\ncat > /dev/null\necho run >> runs.txt\n[ \"$(wc -l < runs.txt)\" -gt 1 ] || { echo $$ > pid.txt; sleep 30; }\necho '{\"ok\": true}'\n",
+        "60s",
+    );
+    let id = on_denetim(&p);
+    let mut daemon = std::process::Command::new(manager())
+        .args(["daemon", "--once", "--now", "2026-10-14T20:00:00Z"])
+        .current_dir(d.path())
+        .env("PRIMUM_NO_SECRET_STORE", "1")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    let pid_file = d.path().join("actionables/araç/pid.txt");
+    let until = std::time::Instant::now() + std::time::Duration::from_secs(20);
+    let pid: i32 = loop {
+        if let Some(pid) = std::fs::read_to_string(&pid_file)
+            .ok()
+            .and_then(|s| s.trim().parse().ok())
+        {
+            break pid;
+        }
+        assert!(std::time::Instant::now() < until, "the job never started");
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    };
+    daemon.kill().unwrap();
+    daemon.wait().unwrap();
+    // the worker sees its daemon gone and stops its job
+    let until = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while running(pid) {
+        assert!(
+            std::time::Instant::now() < until,
+            "the job outlived its daemon"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    // a new daemon runs the job again, once
+    let o = daemon_with(d.path(), &[]);
+    assert!(o.status.success(), "{o:?}");
+    assert_eq!(runs(d.path()), 2);
+    assert_eq!(load(&p).unwrap().get(&id).unwrap().status, "bitti");
 }
 
 /// A stand-in for `primum manager` that changes the ticket's file every

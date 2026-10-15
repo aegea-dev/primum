@@ -148,6 +148,10 @@ pub struct Job {
     pub program: Option<Program>,
     /// Seconds it may take (the daemon kills it after that).
     pub timeout: u64,
+    /// Seconds its lease lasts: it renews it by touching `PRIMUM_HEARTBEAT`,
+    /// or the daemon kills it and runs it again.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub heartbeat: Option<u64>,
 }
 
 /// A project actionable as a program: given the job on stdin, it prints

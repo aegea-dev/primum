@@ -141,14 +141,75 @@ fn bun_packages(folder: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// Runs a job: its output, or why it could not run.
-pub fn run(job: &Job) -> Result<Value, String> {
-    match job.action.as_str() {
-        "http.request@1" => http(job).map_err(|e| format!("http.request@1: {e}")),
-        "command@1" => command(job).map_err(|e| format!("command@1: {e}")),
-        a if job.program.is_some() => program(job).map_err(|e| format!("{a}: {e}")),
-        a => Err(format!("{a} does not run in a worker")),
+/// Why a job gave no output.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Failure {
+    /// It ran and failed, or could not run: the action fails.
+    Error(String),
+    /// It ended without an answer (killed by a signal): it runs again.
+    Lost(String),
+}
+
+impl std::fmt::Display for Failure {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Failure::Error(why) | Failure::Lost(why) => f.write_str(why),
+        }
     }
+}
+
+impl From<String> for Failure {
+    fn from(why: String) -> Failure {
+        Failure::Error(why)
+    }
+}
+
+impl Failure {
+    fn context(self, what: &str) -> Failure {
+        match self {
+            Failure::Error(why) => Failure::Error(format!("{what}: {why}")),
+            Failure::Lost(why) => Failure::Lost(format!("{what}: {why}")),
+        }
+    }
+}
+
+/// The exit code of a worker whose job was lost, so the daemon runs it
+/// again (EX_TEMPFAIL).
+pub const LOST_EXIT: i32 = 75;
+
+/// Runs a job: its output, or why it gave none.
+pub fn run(job: &Job) -> Result<Value, Failure> {
+    let a = job.action.as_str();
+    match a {
+        "http.request@1" => http(job).map_err(|e| Failure::Error(format!("{a}: {e}"))),
+        "command@1" => command(job).map_err(|e| Failure::Error(format!("{a}: {e}"))),
+        _ if job.program.is_some() => program(job).map_err(|e| e.context(a)),
+        _ => Err(Failure::Error(format!("{a} does not run in a worker"))),
+    }
+}
+
+/// Stops this worker's process group, its job with it, once the process
+/// that started it has gone: a daemon that stopped leaves no job running
+/// that its next start would run again.
+#[cfg(unix)]
+pub fn stop_with_parent() {
+    // SAFETY: getppid, getpid and getpgrp only read this process's ids
+    let parent = unsafe { libc::getppid() };
+    std::thread::spawn(move || {
+        loop {
+            std::thread::sleep(Duration::from_millis(500));
+            if unsafe { libc::getppid() } != parent {
+                // SAFETY: signals only this worker's own group when it leads
+                // one (the daemon starts it so), else only itself
+                unsafe {
+                    if libc::getpgrp() == libc::getpid() {
+                        libc::killpg(libc::getpgrp(), libc::SIGKILL);
+                    }
+                    libc::kill(libc::getpid(), libc::SIGKILL);
+                }
+            }
+        }
+    });
 }
 
 fn text(job: &Job, k: &str) -> Option<String> {
@@ -250,7 +311,7 @@ fn command(job: &Job) -> Result<Value, String> {
     }))
 }
 
-fn program(job: &Job) -> Result<Value, String> {
+fn program(job: &Job) -> Result<Value, Failure> {
     let p = job.program.as_ref().expect("checked");
     let mut env = p.environment.clone();
     let (exe, args): (PathBuf, Vec<String>) = match &p.interpreter {
@@ -309,7 +370,10 @@ fn program(job: &Job) -> Result<Value, String> {
     let _ = writeln!(stdin, "{given}");
     drop(stdin);
     let out = c.wait_with_output().map_err(|e| e.to_string())?;
-    if !out.status.success() {
+    let Some(exit) = out.status.code() else {
+        return Err(Failure::Lost(format!("killed ({})", out.status)));
+    };
+    if exit != 0 {
         // the end of stderr: where a traceback says what went wrong
         let all = String::from_utf8_lossy(&out.stderr).trim().to_string();
         let why: String = all
@@ -320,20 +384,16 @@ fn program(job: &Job) -> Result<Value, String> {
             .into_iter()
             .rev()
             .collect();
-        let code = out
-            .status
-            .code()
-            .map_or("a signal".into(), |c| format!("exit {c}"));
-        return Err(if why.is_empty() {
-            code
+        return Err(Failure::Error(if why.is_empty() {
+            format!("exit {exit}")
         } else {
-            format!("{code}: {why}")
-        });
+            format!("exit {exit}: {why}")
+        }));
     }
     serde_json::from_slice(&out.stdout).map_err(|_| {
-        format!(
+        Failure::Error(format!(
             "printed no JSON: {}",
             String::from_utf8_lossy(&out.stdout).trim()
-        )
+        ))
     })
 }

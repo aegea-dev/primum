@@ -18,12 +18,19 @@ pub const SCHEMA_VERSION: i64 = 1 + MIGRATIONS.len() as i64;
 
 /// The steps from each version to the next: `MIGRATIONS[0]` takes version 1
 /// to 2, and so on. A step is only ever added, never changed.
-const MIGRATIONS: [&str; 1] = [
+const MIGRATIONS: [&str; 2] = [
     // 2: a ticket change that cannot be written is tried again, and why it
     // failed is kept
     "ALTER TABLE ledger ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0;
      ALTER TABLE ledger ADD COLUMN error TEXT;",
+    // 3: a lost job runs again: how many times it has started, and why the
+    // last run was lost
+    "CREATE TABLE jobs (seq INTEGER PRIMARY KEY, runs INTEGER NOT NULL, lost TEXT);",
 ];
+
+/// Why a job's run was lost when nothing else says: the daemon stopped
+/// while it ran.
+const STOPPED: &str = "the daemon stopped while it ran";
 
 /// Version 1's tables.
 const SCHEMA: &str = "
@@ -220,6 +227,39 @@ impl Journal {
         let mut s = self.db.prepare(&sql)?;
         let out = s.query_map([], row)?.collect::<rusqlite::Result<_>>()?;
         Ok(out)
+    }
+
+    /// A job's runs so far, and why the last was lost. A run the daemon
+    /// stopped during counts as lost.
+    pub fn runs(&self, seq: i64) -> Result<(i64, Option<String>)> {
+        Ok(self
+            .db
+            .query_row(
+                "SELECT runs, lost FROM jobs WHERE seq = ?1",
+                params![seq],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?
+            .unwrap_or((0, None)))
+    }
+
+    /// Counts a job's run as it starts: lost, until its result is saved.
+    pub fn start_job(&self, seq: i64) -> Result<()> {
+        self.db.execute(
+            "INSERT INTO jobs (seq, runs, lost) VALUES (?1, 1, ?2)
+             ON CONFLICT (seq) DO UPDATE SET runs = runs + 1, lost = ?2",
+            params![seq, STOPPED],
+        )?;
+        Ok(())
+    }
+
+    /// Why a job's run was lost; the job stays waiting, to run again.
+    pub fn lose_job(&self, seq: i64, why: &str) -> Result<()> {
+        self.db.execute(
+            "UPDATE jobs SET lost = ?2 WHERE seq = ?1",
+            params![seq, why],
+        )?;
+        Ok(())
     }
 
     /// Every event, or those about one subject, in order.

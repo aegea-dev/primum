@@ -126,7 +126,29 @@ runner. Take over only once the other machine's daemon has stopped.
 Each job runs as its own process, `primum worker`, in its own process
 group: whatever it starts goes with it. At its time limit the group is
 killed and the action fails (`timed out after 60s`). Built-ins have 60
-seconds; a project actionable's `limits.timeout` sets its own.
+seconds; a project actionable's `limits.timeout` sets its own. Nothing
+extends it.
+
+## Lost jobs run again
+
+A job is lost when its worker ends without an answer: it was killed from
+outside, its program died from a signal, its lease ran out, or the daemon
+stopped while it ran (a worker stops when its daemon does). A lost job runs
+again with the same idempotency key, up to 3 runs in all, counted in the
+journal across restarts; the third loss fails the action (`lost 3 times:
+no heartbeat for 30s`). An error is not a loss: an answer saying it failed,
+a failed `expect`, a missing secret or the time limit fails the action at
+once.
+
+A long job can hold a lease: an actionable's `limits.heartbeat` (`"30s"`)
+is how long the job may go without touching the file named in its
+`PRIMUM_HEARTBEAT` (see [the worker](/reference/worker/#heartbeats)). One
+that does not is killed and counted lost. `limits.timeout` still caps it,
+so set both for a long job:
+
+```json
+"limits": { "timeout": "2h", "heartbeat": "30s" }
+```
 
 `${env.NAME}` in an action's arguments, or in an actionable's
 `environment`, is filled in only when the job starts: from the OS secret
@@ -157,6 +179,7 @@ the machine, never in the project's history or synced.
 | `timers` | timers waiting to fire |
 | `ledger` | ticket changes waiting to be written, with failed attempts and why |
 | `seen` | what the daemon last saw of each item |
+| `jobs` | how many times each job has started, and why its last run was lost |
 | `meta` | the journal's schema version |
 
 An older journal is brought up to date when a newer primum opens it; a
