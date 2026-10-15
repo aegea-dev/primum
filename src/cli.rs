@@ -398,10 +398,14 @@ fn dispatch(cli: Cli) -> Result<()> {
                 };
                 for p in &projects {
                     match crate::engine::daemon::run_once(p, at, &manager) {
-                        Ok(pass) if pass.delivered + pass.written + pass.worked > 0 => eprintln!(
-                            "{}: {} events, {} jobs, {} changes written",
-                            p.name, pass.delivered, pass.worked, pass.written
-                        ),
+                        Ok(pass)
+                            if pass.delivered + pass.written + pass.worked + pass.deferred > 0 =>
+                        {
+                            eprintln!(
+                                "{}: {} events, {} jobs, {} changes written, {} waiting",
+                                p.name, pass.delivered, pass.worked, pass.written, pass.deferred
+                            )
+                        }
                         Ok(_) => {}
                         Err(e) => eprintln!("{}: {e:#}", p.name),
                     }

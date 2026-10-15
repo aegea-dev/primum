@@ -25,10 +25,25 @@ pub struct Pass {
     pub written: usize,
     /// Jobs run in workers.
     pub worked: usize,
+    /// Events left for the next pass: their ticket kept changing while
+    /// its manager ran.
+    pub deferred: usize,
 }
 
 /// More events than this in one pass wait for the next.
 const MAX_EVENTS: usize = 10_000;
+
+/// How many times a manager is asked again when its ticket or project
+/// changed while it ran, before the event waits for the next pass.
+const MAX_TRIES: usize = 3;
+
+/// What became of an event given to `deliver`.
+enum Delivered {
+    /// Answered (or given up on with an error) and saved.
+    Handled,
+    /// Left unhandled: the ticket kept changing under its manager.
+    Deferred,
+}
 
 fn stamp(t: DateTime<Utc>) -> String {
     t.to_rfc3339_opts(SecondsFormat::Secs, true)
@@ -57,7 +72,11 @@ pub fn run_once(p: &Project, now: DateTime<Utc>, manager: &Path) -> Result<Pass>
     // tickets' events first; then one job, whose result is the next event
     loop {
         while let Some(r) = j.next()? {
-            deliver(p, &mut j, &r, now, manager)?;
+            if let Delivered::Deferred = deliver(p, &mut j, &r, now, manager)? {
+                // events are delivered in order: the rest waits with it
+                pass.deferred += 1;
+                return Ok(pass);
+            }
             pass.delivered += 1;
             pass.written += write_ledger(p, &j)?;
             if pass.delivered >= MAX_EVENTS {
@@ -222,7 +241,8 @@ fn ask(manager: &Path, input: &Input) -> Result<Answer, String> {
     serde_json::from_slice(&out.stdout).map_err(|e| format!("the manager's answer: {e}"))
 }
 
-fn give_up(j: &mut Journal, seq: i64, why: String) -> Result<()> {
+/// Marks an event handled with the reason it could not be delivered.
+fn give_up(j: &mut Journal, seq: i64, why: String) -> Result<Delivered> {
     j.handle(Handled {
         seq,
         error: Some(why),
@@ -230,17 +250,21 @@ fn give_up(j: &mut Journal, seq: i64, why: String) -> Result<()> {
         timers: None,
         events: vec![],
         ledger: None,
-    })
+    })?;
+    Ok(Delivered::Handled)
 }
 
-/// Delivers one event to its ticket's manager and saves the answer.
+/// Delivers one event to its ticket's manager and saves the answer. An
+/// answer the ticket or project changed under is asked for again; if they
+/// keep changing, the event is left for the next pass rather than saving an
+/// answer made from what is no longer there.
 fn deliver(
     p: &Project,
     j: &mut Journal,
     r: &Recorded,
     now: DateTime<Utc>,
     manager: &Path,
-) -> Result<()> {
+) -> Result<Delivered> {
     let Some(id) = journal::ticket_of(&r.event.subject).map(str::to_string) else {
         return give_up(j, r.seq, "project lifecycles are not run yet".into());
     };
@@ -277,8 +301,15 @@ fn deliver(
             Ok(a) => a,
             Err(why) => return give_up(j, r.seq, why),
         };
-        if revisions(p, &id) == before || tries == 3 {
+        if revisions(p, &id) == before {
             break (answer, it);
+        }
+        if tries == MAX_TRIES {
+            eprintln!(
+                "{}: #{id}: the ticket kept changing while its manager ran; {} waits for the next pass",
+                p.name, r.event.kind
+            );
+            return Ok(Delivered::Deferred);
         }
     };
     let mut changes = answer.changes.clone();
@@ -309,7 +340,8 @@ fn deliver(
         timers: answer.timers.as_deref(),
         events,
         ledger: (!changes.is_empty()).then_some((&id, changes)),
-    })
+    })?;
+    Ok(Delivered::Handled)
 }
 
 /// Writes queued ticket changes to the ledger, each once, and refreshes the

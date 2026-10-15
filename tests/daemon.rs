@@ -329,3 +329,46 @@ fn a_job_past_its_time_limit_is_killed_and_fails() {
     assert_eq!(it.status, "failed");
     assert!(it.body.contains("timed out"), "{}", it.body);
 }
+
+/// A stand-in for `primum manager` that changes the ticket's file every
+/// time it is asked, then answers as the real one does.
+#[cfg(unix)]
+fn restless_manager(d: &Path, id: &str) -> std::path::PathBuf {
+    use std::os::unix::fs::PermissionsExt;
+    let item = d.join("items").join(format!("{id}.md"));
+    let script = d.join("huzursuz.sh");
+    std::fs::write(
+        &script,
+        format!(
+            "#!/bin/sh\nprintf 'bir satır daha\\n' >> '{}'\nexec '{}' \"$@\"\n",
+            item.display(),
+            manager().display()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    script
+}
+
+#[cfg(unix)]
+#[test]
+fn an_answer_the_ticket_keeps_outdating_waits_instead_of_being_saved() {
+    let d = tempfile::tempdir().unwrap();
+    let (p, id) = attached(d.path());
+    let pass = run_once(&p, now(), &restless_manager(d.path(), &id)).unwrap();
+    assert_eq!((pass.delivered, pass.deferred), (0, 1));
+    let j = Journal::open(&p).unwrap();
+    let events = j.events(Some(&journal::subject("deneme", &id))).unwrap();
+    assert_eq!(events[0].event.kind, "lifecycle.attached");
+    assert!(events[0].handled.is_none(), "left for the next pass");
+    assert_eq!(
+        j.ticket(&id).unwrap().unwrap().1.state,
+        "yeni",
+        "no stale answer saved"
+    );
+    assert_eq!(load(&p).unwrap().get(&id).unwrap().status, "yeni");
+    // once the ticket settles, the next pass delivers it
+    let pass = run_once(&p, now(), manager()).unwrap();
+    assert_eq!(pass.deferred, 0);
+    assert_eq!(load(&p).unwrap().get(&id).unwrap().status, "hazir");
+}
