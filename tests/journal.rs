@@ -112,3 +112,51 @@ fn pinned_lifecycles_and_snapshots_are_kept() {
     j.forget_seen("1").unwrap();
     assert!(j.seen_all().unwrap().is_empty());
 }
+
+#[test]
+fn a_new_journal_carries_its_schema_version() {
+    let d = tempfile::tempdir().unwrap();
+    let p = common::project(d.path());
+    let j = Journal::open(&p).unwrap();
+    assert_eq!(j.schema().unwrap(), journal::SCHEMA_VERSION);
+    drop(j);
+    // opening again changes nothing
+    assert_eq!(
+        Journal::open(&p).unwrap().schema().unwrap(),
+        journal::SCHEMA_VERSION
+    );
+}
+
+#[test]
+fn a_journal_from_a_newer_primum_is_refused() {
+    let d = tempfile::tempdir().unwrap();
+    let p = common::project(d.path());
+    drop(Journal::open(&p).unwrap());
+    let db = rusqlite::Connection::open(Journal::path(&p)).unwrap();
+    db.execute("UPDATE meta SET value = '99' WHERE key = 'schema'", [])
+        .unwrap();
+    drop(db);
+    let e = Journal::open(&p).err().unwrap().to_string();
+    assert!(e.contains("newer primum") && e.contains("99"), "{e}");
+}
+
+#[test]
+fn a_journal_from_before_versions_is_brought_up_to_date() {
+    let d = tempfile::tempdir().unwrap();
+    let p = common::project(d.path());
+    std::fs::create_dir_all(d.path().join(".primum")).unwrap();
+    // the tables as the first journals made them, with a change waiting
+    let db = rusqlite::Connection::open(Journal::path(&p)).unwrap();
+    db.execute_batch(
+        "CREATE TABLE events (seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL UNIQUE, time TEXT NOT NULL, type TEXT NOT NULL, source TEXT NOT NULL, subject TEXT NOT NULL, cause TEXT, data TEXT NOT NULL, handled TEXT, error TEXT);
+         CREATE TABLE ledger (id INTEGER PRIMARY KEY AUTOINCREMENT, ticket TEXT NOT NULL, changes TEXT NOT NULL, written TEXT);
+         INSERT INTO ledger (ticket, changes) VALUES ('1', '{\"note\": \"Bekleyen değişiklik.\"}');",
+    )
+    .unwrap();
+    drop(db);
+    let j = Journal::open(&p).unwrap();
+    assert_eq!(j.schema().unwrap(), journal::SCHEMA_VERSION);
+    let pending = j.pending_ledger().unwrap();
+    assert_eq!(pending.len(), 1);
+    assert_eq!(pending[0].2["note"], "Bekleyen değişiklik.");
+}

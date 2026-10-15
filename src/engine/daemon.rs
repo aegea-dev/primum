@@ -12,9 +12,11 @@ use anyhow::{Result, anyhow};
 use chrono::{DateTime, SecondsFormat, Utc};
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
+use std::collections::BTreeSet;
 use std::io::Write;
 use std::path::Path;
 use std::process::{Command, Stdio};
+use wait_timeout::ChildExt;
 
 /// What one pass did.
 #[derive(Debug, Default, Clone, PartialEq)]
@@ -25,10 +27,28 @@ pub struct Pass {
     pub written: usize,
     /// Jobs run in workers.
     pub worked: usize,
+    /// Events left for the next pass: their ticket kept changing while
+    /// its manager ran.
+    pub deferred: usize,
 }
 
 /// More events than this in one pass wait for the next.
 const MAX_EVENTS: usize = 10_000;
+
+/// How many times a manager is asked again when its ticket or project
+/// changed while it ran, before the event waits for the next pass.
+const MAX_TRIES: usize = 3;
+
+/// How many passes try to write a ticket change before it is given up.
+const MAX_WRITES: i64 = 3;
+
+/// What became of an event given to `deliver`.
+enum Delivered {
+    /// Answered (or given up on with an error) and saved.
+    Handled,
+    /// Left unhandled: the ticket kept changing under its manager.
+    Deferred,
+}
 
 fn stamp(t: DateTime<Utc>) -> String {
     t.to_rfc3339_opts(SecondsFormat::Secs, true)
@@ -39,10 +59,12 @@ fn stamp(t: DateTime<Utc>) -> String {
 pub fn run_once(p: &Project, now: DateTime<Utc>, manager: &Path) -> Result<Pass> {
     let mut j = Journal::open(p)?;
     let mut pass = Pass::default();
+    // ticket changes that failed to be written in this pass
+    let mut tried = BTreeSet::new();
     // changes left from a pass that stopped early, then the feed's own
-    pass.written += write_ledger(p, &j)?;
+    pass.written += write_ledger(p, &j, &mut tried)?;
     feed(p, &j, now)?;
-    pass.written += write_ledger(p, &j)?;
+    pass.written += write_ledger(p, &j, &mut tried)?;
     for (id, ticket, data) in j.due_timers(&stamp(now))? {
         let e = Envelope::new(
             "daemon",
@@ -57,9 +79,13 @@ pub fn run_once(p: &Project, now: DateTime<Utc>, manager: &Path) -> Result<Pass>
     // tickets' events first; then one job, whose result is the next event
     loop {
         while let Some(r) = j.next()? {
-            deliver(p, &mut j, &r, now, manager)?;
+            if let Delivered::Deferred = deliver(p, &mut j, &r, now, manager)? {
+                // events are delivered in order: the rest waits with it
+                pass.deferred += 1;
+                return Ok(pass);
+            }
             pass.delivered += 1;
-            pass.written += write_ledger(p, &j)?;
+            pass.written += write_ledger(p, &j, &mut tried)?;
             if pass.delivered >= MAX_EVENTS {
                 return Ok(pass);
             }
@@ -222,7 +248,8 @@ fn ask(manager: &Path, input: &Input) -> Result<Answer, String> {
     serde_json::from_slice(&out.stdout).map_err(|e| format!("the manager's answer: {e}"))
 }
 
-fn give_up(j: &mut Journal, seq: i64, why: String) -> Result<()> {
+/// Marks an event handled with the reason it could not be delivered.
+fn give_up(j: &mut Journal, seq: i64, why: String) -> Result<Delivered> {
     j.handle(Handled {
         seq,
         error: Some(why),
@@ -230,17 +257,21 @@ fn give_up(j: &mut Journal, seq: i64, why: String) -> Result<()> {
         timers: None,
         events: vec![],
         ledger: None,
-    })
+    })?;
+    Ok(Delivered::Handled)
 }
 
-/// Delivers one event to its ticket's manager and saves the answer.
+/// Delivers one event to its ticket's manager and saves the answer. An
+/// answer the ticket or project changed under is asked for again; if they
+/// keep changing, the event is left for the next pass rather than saving an
+/// answer made from what is no longer there.
 fn deliver(
     p: &Project,
     j: &mut Journal,
     r: &Recorded,
     now: DateTime<Utc>,
     manager: &Path,
-) -> Result<()> {
+) -> Result<Delivered> {
     let Some(id) = journal::ticket_of(&r.event.subject).map(str::to_string) else {
         return give_up(j, r.seq, "project lifecycles are not run yet".into());
     };
@@ -277,8 +308,15 @@ fn deliver(
             Ok(a) => a,
             Err(why) => return give_up(j, r.seq, why),
         };
-        if revisions(p, &id) == before || tries == 3 {
+        if revisions(p, &id) == before {
             break (answer, it);
+        }
+        if tries == MAX_TRIES {
+            eprintln!(
+                "{}: #{id}: the ticket kept changing while its manager ran; {} waits for the next pass",
+                p.name, r.event.kind
+            );
+            return Ok(Delivered::Deferred);
         }
     };
     let mut changes = answer.changes.clone();
@@ -309,27 +347,59 @@ fn deliver(
         timers: answer.timers.as_deref(),
         events,
         ledger: (!changes.is_empty()).then_some((&id, changes)),
-    })
+    })?;
+    Ok(Delivered::Handled)
 }
 
-/// Writes queued ticket changes to the ledger, each once, and refreshes the
-/// ticket's snapshot so the feed does not see the daemon's own change.
-fn write_ledger(p: &Project, j: &Journal) -> Result<usize> {
-    let pending = j.pending_ledger()?;
-    for (row, id, changes) in &pending {
-        if let Err(e) = write_one(p, id, changes) {
-            eprintln!(
-                "{}: #{id}: cannot write {}: {e:#}",
-                p.name,
-                Value::Object(changes.clone())
-            );
+/// Writes queued ticket changes to the ledger, in order, and refreshes each
+/// ticket's snapshot so the feed does not see the daemon's own change. A
+/// change that cannot be written is tried again on later passes, once a
+/// pass (`tried` holds this pass's failures), and the ticket's later
+/// changes wait behind it; after `MAX_WRITES` tries it is given up, with a
+/// note on the ticket saying what was dropped and why. Returns how many
+/// changes were written.
+fn write_ledger(p: &Project, j: &Journal, tried: &mut BTreeSet<i64>) -> Result<usize> {
+    let mut written = 0;
+    let mut waiting: BTreeSet<String> = BTreeSet::new();
+    for (row, id, changes) in j.pending_ledger()? {
+        if waiting.contains(&id) || tried.contains(&row) {
+            waiting.insert(id);
+            continue;
         }
-        j.ledger_written(*row)?;
-        if let Some(it) = store::load(p)?.get(id) {
-            j.set_seen(id, &snapshot(it))?;
+        match write_one(p, &id, &changes) {
+            Ok(()) => {
+                j.ledger_written(row)?;
+                written += 1;
+            }
+            Err(e) => {
+                let why = format!("{e:#}");
+                let attempts = j.ledger_failed(row, &why)?;
+                tried.insert(row);
+                waiting.insert(id.clone());
+                eprintln!(
+                    "{}: #{id}: cannot write {} (try {attempts} of {MAX_WRITES}): {why}",
+                    p.name,
+                    Value::Object(changes.clone())
+                );
+                if attempts < MAX_WRITES {
+                    continue;
+                }
+                j.ledger_written(row)?;
+                let note = format!(
+                    "A change from this ticket's lifecycle could not be written after {attempts} tries, and was dropped: {}. The change: {}",
+                    why,
+                    Value::Object(changes)
+                );
+                if let Err(e) = store::append_note(p, &id, &note) {
+                    eprintln!("{}: #{id}: cannot add the note either: {e:#}", p.name);
+                }
+            }
+        }
+        if let Some(it) = store::load(p)?.get(&id) {
+            j.set_seen(&id, &snapshot(it))?;
         }
     }
-    Ok(pending.len())
+    Ok(written)
 }
 
 fn write_one(p: &Project, id: &str, changes: &Map<String, Value>) -> Result<()> {
@@ -521,22 +591,20 @@ fn spawn_worker(manager: &Path, job: &Job) -> Result<Value, String> {
             .take()
             .map(|s| Box::new(s) as Box<dyn std::io::Read + Send>),
     );
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(job.timeout);
-    let status = loop {
-        if let Some(s) = child.try_wait().map_err(|e| e.to_string())? {
-            break s;
+    // waits for the worker's exit, or the time limit, whichever comes first
+    let limit = std::time::Duration::from_secs(job.timeout);
+    let Some(status) = child.wait_timeout(limit).map_err(|e| e.to_string())? else {
+        #[cfg(unix)]
+        // SAFETY: killpg only sends a signal to the worker's own process
+        // group, which it leads (process_group(0) above)
+        unsafe {
+            libc::killpg(child.id() as i32, libc::SIGKILL);
         }
-        if std::time::Instant::now() >= deadline {
-            #[cfg(unix)]
-            // SAFETY: killpg only sends a signal to the worker's own group
-            unsafe {
-                libc::killpg(child.id() as i32, libc::SIGKILL);
-            }
-            let _ = child.kill();
-            let _ = child.wait();
-            return Err(format!("{}: timed out after {}s", job.action, job.timeout));
-        }
-        std::thread::sleep(std::time::Duration::from_millis(20));
+        let _ = child.kill();
+        let _ = child.wait();
+        // the readers end when the killed group's pipes close; they are
+        // not waited for, in case something outside the group holds them
+        return Err(format!("{}: timed out after {}s", job.action, job.timeout));
     };
     let (out, err) = (
         out.join().unwrap_or_default(),

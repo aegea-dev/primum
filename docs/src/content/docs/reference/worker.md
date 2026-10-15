@@ -39,6 +39,10 @@ action's `expect` (by default a 2xx status, or exit 0) decides whether it
 worked. A request that cannot connect, or a program that cannot start, is a
 failure.
 
+An HTTP response is read up to 10 MB, or `with.max_bytes`: a larger one
+fails the action (`the response is larger than ... bytes`). The body is read
+as UTF-8.
+
 ## A project's `executable` actionable
 
 The worker runs the target's `executable` (relative to the actionable's
