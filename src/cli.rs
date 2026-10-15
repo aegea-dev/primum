@@ -230,7 +230,10 @@ pub enum Cmd {
     #[command(hide = true)]
     Worker,
     /// Run tickets' lifecycles, for every project here, pass after pass
+    #[command(args_conflicts_with_subcommands = true)]
     Daemon {
+        #[command(subcommand)]
+        cmd: Option<DaemonCmd>,
         /// One pass, then stop
         #[arg(long)]
         once: bool,
@@ -257,6 +260,25 @@ pub enum Cmd {
     Secret {
         #[command(subcommand)]
         cmd: SecretCmd,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum DaemonCmd {
+    /// Run the daemon as a service (per user, at login), kept up by a watchdog
+    Install {
+        #[arg(long, default_value_t = 8777)]
+        port: u16,
+        /// Seconds between passes
+        #[arg(long, default_value_t = 1)]
+        interval: u64,
+    },
+    /// Stop and remove the service
+    Uninstall,
+    /// The service's state and the daemon's health
+    Status {
+        #[arg(long, default_value_t = 8777)]
+        port: u16,
     },
 }
 
@@ -416,7 +438,63 @@ fn dispatch(cli: Cli) -> Result<()> {
         }
         Cmd::Lifecycle { cmd } => lifecycle_cmd(&project()?, cmd)?,
         Cmd::Context { cmd, json } => context_cmd(&project()?, cmd, json)?,
+        Cmd::Daemon { cmd: Some(cmd), .. } => {
+            use crate::engine::service;
+            // the service runs in the workspace, or in the project when
+            // there is no workspace
+            let root = match projects::workspace(&cwd) {
+                Some(ws) => ws.root,
+                None => project()?.root,
+            };
+            match cmd {
+                DaemonCmd::Install { port, interval } => {
+                    let exe = std::env::current_exe()?;
+                    let path = std::env::var("PATH").ok();
+                    service::install(service::install_ctx(&root, &exe, port, interval, path))?;
+                    println!(
+                        "installed and started: {} runs the daemon in {}",
+                        service::label(&root).to_qualified_name(),
+                        root.display()
+                    );
+                    println!("board: http://127.0.0.1:{port}/");
+                    println!("log: {}", service::log_file(&root).display());
+                    println!(
+                        "it keeps this shell's PATH (for git, uv, bun); install again after changing it"
+                    );
+                }
+                DaemonCmd::Uninstall => {
+                    if service::uninstall(&root)? {
+                        println!("stopped and removed");
+                    } else {
+                        println!("no service for {}", root.display());
+                    }
+                }
+                DaemonCmd::Status { port } => {
+                    println!("service: {}", service::status(&root)?);
+                    let health = reqwest::blocking::Client::builder()
+                        .timeout(std::time::Duration::from_secs(3))
+                        .build()?
+                        .get(format!("http://127.0.0.1:{port}/health"))
+                        .send()
+                        .and_then(|r| r.json::<serde_json::Value>());
+                    match health {
+                        Ok(h) => println!(
+                            "daemon: pid {}, {} passes, last {}{}",
+                            h["pid"],
+                            h["passes"],
+                            h["last_pass"].as_str().unwrap_or("none yet"),
+                            h["last_error"]
+                                .as_str()
+                                .map(|e| format!(", last error: {e}"))
+                                .unwrap_or_default()
+                        ),
+                        Err(_) => println!("daemon: no answer on port {port}"),
+                    }
+                }
+            }
+        }
         Cmd::Daemon {
+            cmd: None,
             once,
             interval,
             port,

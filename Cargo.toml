@@ -31,6 +31,7 @@ uuid = { version = "~1.28.0", features = ["v5", "v7"] }
 reqwest = { version = "~0.13.5", default-features = false, features = ["blocking", "json", "native-tls", "http2"] }
 wait-timeout = "~0.2.1"
 keyring = "~4.2.0"
+service-manager = "~0.11.0"
 
 # Only to restore the default SIGPIPE: `primum list | head` ends quietly.
 [target.'cfg(unix)'.dependencies]
