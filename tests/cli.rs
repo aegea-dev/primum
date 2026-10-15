@@ -602,3 +602,31 @@ fn start_on_a_lifecycle_without_doing_says_what_to_do() {
         "{e}"
     );
 }
+
+/// The commands a help text lists, in its order.
+fn listed(help: &str) -> Vec<String> {
+    help.lines()
+        .skip_while(|l| !l.starts_with("Commands:"))
+        .skip(1)
+        .take_while(|l| l.starts_with("  "))
+        .filter_map(|l| l.split_whitespace().next().map(str::to_string))
+        .collect()
+}
+
+#[test]
+fn help_lists_commands_by_name() {
+    let t = T::new();
+    for args in [
+        &["--help"][..],
+        &["lifecycle", "--help"],
+        &["daemon", "--help"],
+    ] {
+        let mut names = listed(&t.out(args));
+        // clap's own `help` comes last
+        assert_eq!(names.pop().as_deref(), Some("help"), "{args:?}");
+        assert!(names.len() > 2, "{args:?}: {names:?}");
+        let mut sorted = names.clone();
+        sorted.sort();
+        assert_eq!(names, sorted, "{args:?}");
+    }
+}
