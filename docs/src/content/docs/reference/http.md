@@ -18,6 +18,14 @@ The board's pages use a small JSON interface, served on 127.0.0.1 by
 | `GET /p/{project}/api/history?id=#87` | History entries, as `log --json` |
 | `GET /p/{project}/api/history/diff?commit=C&path=P` | One change's diff |
 
+When [`primum daemon`](/reference/daemon/) serves the board, it adds two
+routes of its own:
+
+| Route | Does |
+|---|---|
+| `GET /health` | The daemon's state: projects, passes, the last pass and its error |
+| `POST /p/{project}/api/events` | An event from outside: `{"type", "ticket"?, "data"?}`; returns `{"id"}` (202) |
+
 Fields for changes and new items: `title`, `status`, `impact`, `urgency`,
 `risk`, `effort` (numbers or numeric text), `needs` (`"#1, #2"` or a
 list) and `body`. Errors are a 4xx status with a message.
