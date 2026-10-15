@@ -204,11 +204,36 @@ pub enum Cmd {
     /// The lifecycle manager: one decision, JSON in on stdin, JSON out on stdout
     #[command(hide = true)]
     Manager,
+    /// Keeps `primum daemon` running: restarts it when it exits, stops
+    /// answering or stops making passes (what the service runs)
+    #[command(hide = true)]
+    Watchdog {
+        #[arg(long, default_value_t = 8777)]
+        port: u16,
+        /// Seconds between the daemon's passes
+        #[arg(long, default_value_t = 1)]
+        interval: u64,
+        /// Seconds between checks of the daemon's /health
+        #[arg(long, default_value_t = 10)]
+        check_every: u64,
+        /// Checks in a row without an answer before a restart
+        #[arg(long, default_value_t = 3)]
+        misses: u32,
+        /// Seconds without a pass before the daemon counts as hung
+        #[arg(long, default_value_t = 600)]
+        stale_after: u64,
+        /// Where its lines and the daemon's stderr go
+        #[arg(long)]
+        log: Option<PathBuf>,
+    },
     /// A worker: one job, JSON in on stdin, its output as JSON on stdout
     #[command(hide = true)]
     Worker,
     /// Run tickets' lifecycles, for every project here, pass after pass
+    #[command(args_conflicts_with_subcommands = true)]
     Daemon {
+        #[command(subcommand)]
+        cmd: Option<DaemonCmd>,
         /// One pass, then stop
         #[arg(long)]
         once: bool,
@@ -235,6 +260,25 @@ pub enum Cmd {
     Secret {
         #[command(subcommand)]
         cmd: SecretCmd,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum DaemonCmd {
+    /// Run the daemon as a service (per user, at login), kept up by a watchdog
+    Install {
+        #[arg(long, default_value_t = 8777)]
+        port: u16,
+        /// Seconds between passes
+        #[arg(long, default_value_t = 1)]
+        interval: u64,
+    },
+    /// Stop and remove the service
+    Uninstall,
+    /// The service's state and the daemon's health
+    Status {
+        #[arg(long, default_value_t = 8777)]
+        port: u16,
     },
 }
 
@@ -394,7 +438,63 @@ fn dispatch(cli: Cli) -> Result<()> {
         }
         Cmd::Lifecycle { cmd } => lifecycle_cmd(&project()?, cmd)?,
         Cmd::Context { cmd, json } => context_cmd(&project()?, cmd, json)?,
+        Cmd::Daemon { cmd: Some(cmd), .. } => {
+            use crate::engine::service;
+            // the service runs in the workspace, or in the project when
+            // there is no workspace
+            let root = match projects::workspace(&cwd) {
+                Some(ws) => ws.root,
+                None => project()?.root,
+            };
+            match cmd {
+                DaemonCmd::Install { port, interval } => {
+                    let exe = std::env::current_exe()?;
+                    let path = std::env::var("PATH").ok();
+                    service::install(service::install_ctx(&root, &exe, port, interval, path))?;
+                    println!(
+                        "installed and started: {} runs the daemon in {}",
+                        service::label(&root).to_qualified_name(),
+                        root.display()
+                    );
+                    println!("board: http://127.0.0.1:{port}/");
+                    println!("log: {}", service::log_file(&root).display());
+                    println!(
+                        "it keeps this shell's PATH (for git, uv, bun); install again after changing it"
+                    );
+                }
+                DaemonCmd::Uninstall => {
+                    if service::uninstall(&root)? {
+                        println!("stopped and removed");
+                    } else {
+                        println!("no service for {}", root.display());
+                    }
+                }
+                DaemonCmd::Status { port } => {
+                    println!("service: {}", service::status(&root)?);
+                    let health = reqwest::blocking::Client::builder()
+                        .timeout(std::time::Duration::from_secs(3))
+                        .build()?
+                        .get(format!("http://127.0.0.1:{port}/health"))
+                        .send()
+                        .and_then(|r| r.json::<serde_json::Value>());
+                    match health {
+                        Ok(h) => println!(
+                            "daemon: pid {}, {} passes, last {}{}",
+                            h["pid"],
+                            h["passes"],
+                            h["last_pass"].as_str().unwrap_or("none yet"),
+                            h["last_error"]
+                                .as_str()
+                                .map(|e| format!(", last error: {e}"))
+                                .unwrap_or_default()
+                        ),
+                        Err(_) => println!("daemon: no answer on port {port}"),
+                    }
+                }
+            }
+        }
         Cmd::Daemon {
+            cmd: None,
             once,
             interval,
             port,
@@ -520,6 +620,37 @@ fn dispatch(cli: Cli) -> Result<()> {
                 serde_json::from_str(&text).map_err(|e| anyhow!("the worker's job: {e}"))?;
             let output = crate::engine::worker::run(&job).map_err(|e| anyhow!(e))?;
             println!("{}", serde_json::json!({ "output": output }));
+        }
+        Cmd::Watchdog {
+            port,
+            interval,
+            check_every,
+            misses,
+            stale_after,
+            log,
+        } => {
+            use crate::engine::watchdog::{Options, Rules, run};
+            let mut daemon_args = vec![
+                "--port".to_string(),
+                port.to_string(),
+                "--interval".to_string(),
+                interval.to_string(),
+            ];
+            if let Some(name) = &cli.project {
+                daemon_args.extend(["-p".to_string(), name.clone()]);
+            }
+            run(&Options {
+                exe: std::env::current_exe()?,
+                daemon_args,
+                port,
+                rules: Rules {
+                    check_every: std::time::Duration::from_secs(check_every),
+                    misses,
+                    stale_after: std::time::Duration::from_secs(stale_after),
+                    ..Rules::default()
+                },
+                log,
+            })?;
         }
         Cmd::Manager => {
             let mut text = String::new();

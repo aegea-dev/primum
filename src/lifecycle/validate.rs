@@ -143,7 +143,15 @@ pub fn warnings(f: &File) -> Vec<String> {
     f.states
         .iter()
         .filter(|s| **s != f.start && !f.end.contains(s))
-        .filter(|s| !f.transitions.iter().any(|t| &t.from == *s || &t.to == *s))
+        .filter(|s| {
+            !f.transitions.iter().any(|t| {
+                &t.from == *s
+                    || &t.to == *s
+                    || t.showing.as_ref() == Some(*s)
+                    || t.on_timeout.as_ref() == Some(*s)
+                    || t.on_fail.as_ref() == Some(*s)
+            })
+        })
         .map(|s| format!("state \"{s}\": no transition enters or leaves it; only a person can move a ticket there"))
         .collect()
 }
