@@ -189,11 +189,13 @@ fn lifecycle(d: &Path, name: &str, text: &str) {
     std::fs::write(d.join(format!("lifecycles/{name}.json")), text).unwrap();
 }
 
-/// Runs `primum daemon --once` in a project folder with `env` set.
+/// Runs `primum daemon --once` in a project folder with `env` set, and the
+/// OS secret store left alone.
 fn daemon_with(d: &Path, env: &[(&str, &str)]) -> std::process::Output {
     let mut c = std::process::Command::new(manager());
     c.args(["daemon", "--once", "--now", "2026-10-14T20:00:00Z"])
         .current_dir(d)
+        .env("PRIMUM_NO_SECRET_STORE", "1")
         .env_remove("API_KEY");
     for (k, v) in env {
         c.env(k, v);
