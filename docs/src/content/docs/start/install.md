@@ -6,7 +6,7 @@ description: Install primum with Homebrew, the install script, or cargo.
 ## Homebrew
 
 ```bash
-brew install erhangundogan/tap/primum
+brew install aegea-dev/tap/primum
 ```
 
 ## Install script
@@ -14,7 +14,7 @@ brew install erhangundogan/tap/primum
 Downloads the release for your platform and verifies its checksum:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/erhangundogan/primum/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/aegea-dev/primum/main/install.sh | sh
 ```
 
 ## Cargo

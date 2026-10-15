@@ -1,13 +1,13 @@
 ## Install
 
 ```bash
-brew install erhangundogan/tap/primum
+brew install aegea-dev/tap/primum
 ```
 
 or
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/erhangundogan/primum/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/aegea-dev/primum/main/install.sh | sh
 ```
 
 Or download an archive below and put `primum` on your `PATH`.

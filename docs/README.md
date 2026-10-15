@@ -34,7 +34,7 @@ Adding a page means creating the file and adding it to `sidebar` in
 
 ## Deploying
 
-The site is served by GitHub Pages at <https://erhangundogan.github.io/primum/>.
+The site is served by GitHub Pages at <https://aegea-dev.github.io/primum/>.
 `.github/workflows/docs.yml` builds it on every pull request that touches
 `docs/`, and publishes it from `main`. The repository's Pages setting must be
 "GitHub Actions".

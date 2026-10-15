@@ -161,7 +161,7 @@ jobs:
 
   # Writes Formula/primum.rb in the tap, so the tap can never lag the release.
   # Needs TAP_TOKEN, a fine-grained PAT with contents:write on
-  # erhangundogan/homebrew-tap. Fails loudly without it: a silently stale tap
+  # aegea-dev/homebrew-tap. Fails loudly without it: a silently stale tap
   # is the failure being prevented.
   tap:
     name: bump the homebrew formula
@@ -186,9 +186,9 @@ jobs:
           gh release download "$tag" --repo "$GITHUB_REPOSITORY" \
             --pattern '*.sha256' --dir /tmp/sums
           sha() { awk '{print $1}' "/tmp/sums/primum-$tag-$1.sha256"; }
-          git clone "https://x-access-token:${TAP_TOKEN}@github.com/erhangundogan/homebrew-tap.git" /tmp/tap
+          git clone "https://x-access-token:${TAP_TOKEN}@github.com/aegea-dev/homebrew-tap.git" /tmp/tap
           mkdir -p /tmp/tap/Formula
-          url="https://github.com/erhangundogan/primum/releases/download/v#{version}/primum-v#{version}"
+          url="https://github.com/aegea-dev/primum/releases/download/v#{version}/primum-v#{version}"
           {
             echo '# Homebrew formula for primum, written by primum'"'"'s release workflow.'
             echo '#'
@@ -196,7 +196,7 @@ jobs:
             echo '# clean machine before the release was published.'
             echo 'class Primum < Formula'
             echo '  desc "Prioritized work items as plain markdown files, with a CLI and a local web board"'
-            echo '  homepage "https://github.com/erhangundogan/primum"'
+            echo '  homepage "https://github.com/aegea-dev/primum"'
             echo "  version \"$version\""
             echo '  license "Apache-2.0"'
             echo ''
