@@ -16,6 +16,7 @@ use std::collections::BTreeSet;
 use std::io::Write;
 use std::path::Path;
 use std::process::{Command, Stdio};
+use wait_timeout::ChildExt;
 
 /// What one pass did.
 #[derive(Debug, Default, Clone, PartialEq)]
@@ -590,22 +591,20 @@ fn spawn_worker(manager: &Path, job: &Job) -> Result<Value, String> {
             .take()
             .map(|s| Box::new(s) as Box<dyn std::io::Read + Send>),
     );
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(job.timeout);
-    let status = loop {
-        if let Some(s) = child.try_wait().map_err(|e| e.to_string())? {
-            break s;
+    // waits for the worker's exit, or the time limit, whichever comes first
+    let limit = std::time::Duration::from_secs(job.timeout);
+    let Some(status) = child.wait_timeout(limit).map_err(|e| e.to_string())? else {
+        #[cfg(unix)]
+        // SAFETY: killpg only sends a signal to the worker's own process
+        // group, which it leads (process_group(0) above)
+        unsafe {
+            libc::killpg(child.id() as i32, libc::SIGKILL);
         }
-        if std::time::Instant::now() >= deadline {
-            #[cfg(unix)]
-            // SAFETY: killpg only sends a signal to the worker's own group
-            unsafe {
-                libc::killpg(child.id() as i32, libc::SIGKILL);
-            }
-            let _ = child.kill();
-            let _ = child.wait();
-            return Err(format!("{}: timed out after {}s", job.action, job.timeout));
-        }
-        std::thread::sleep(std::time::Duration::from_millis(20));
+        let _ = child.kill();
+        let _ = child.wait();
+        // the readers end when the killed group's pipes close; they are
+        // not waited for, in case something outside the group holds them
+        return Err(format!("{}: timed out after {}s", job.action, job.timeout));
     };
     let (out, err) = (
         out.join().unwrap_or_default(),
