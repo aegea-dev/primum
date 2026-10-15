@@ -4,6 +4,7 @@ use serde::Serialize;
 use std::cmp::Ordering;
 
 pub const KINDS: [&str; 5] = ["URGENT", "BUG", "DEBT", "KILLER", "TODO"];
+pub const STATUSES: [&str; 4] = ["idle", "doing", "done", "wontfix"];
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Item {
@@ -19,10 +20,6 @@ pub struct Item {
     pub needs: Vec<String>,
     /// Documents of other items this item also shows, as project-relative paths.
     pub docs: Vec<String>,
-    /// The lifecycle it follows, `<name>@<version>`; None follows `manual`.
-    pub lifecycle: Option<String>,
-    /// The arguments its lifecycle's actions read as `args`, when attached.
-    pub args: Option<serde_json::Map<String, serde_json::Value>>,
     pub finished: Option<String>,
     pub source: String,
     pub body: String,
@@ -62,8 +59,6 @@ impl Item {
             effort: 5,
             needs: vec![],
             docs: vec![],
-            lifecycle: None,
-            args: None,
             finished: None,
             source: String::new(),
             body: String::new(),
@@ -88,9 +83,8 @@ impl Item {
         }
     }
 
-    /// Closed in a lifecycle whose closed states are `closed`.
-    pub fn is_closed_in(&self, closed: &[String]) -> bool {
-        closed.contains(&self.status)
+    pub fn is_closed(&self) -> bool {
+        self.status == "done" || self.status == "wontfix"
     }
 }
 
@@ -117,10 +111,10 @@ pub fn priority_cmp(a: &Item, b: &Item) -> Ordering {
 
 /// The ids in `needs` that still block: everything but closed items. An id
 /// naming no item still blocks, as on the old board.
-pub fn blockers(item: &Item, all: &[Item], closed: impl Fn(&Item) -> bool) -> Vec<String> {
+pub fn blockers(item: &Item, all: &[Item]) -> Vec<String> {
     item.needs
         .iter()
-        .filter(|n| !all.iter().any(|i| &i.id == *n && closed(i)))
+        .filter(|n| !all.iter().any(|i| &i.id == *n && i.is_closed()))
         .cloned()
         .collect()
 }

@@ -39,14 +39,8 @@ pub struct ItemView {
     pub kind_rank: usize,
     pub blockers: Vec<String>,
     pub blocked: bool,
-    /// Closed in its lifecycle.
+    /// Done or wontfix.
     pub closed: bool,
-    /// Its lifecycle's states, in order: what a person can set.
-    pub states: Vec<String>,
-    /// The lifecycle it follows (`<name>@<version>`) and the arguments its
-    /// actions read; none for `manual`.
-    pub lifecycle: Option<String>,
-    pub args: Option<serde_json::Map<String, serde_json::Value>>,
     /// The item's own documents and the ones it lists.
     pub docs: Vec<Doc>,
     /// The item's file, relative to the project root.
@@ -59,7 +53,7 @@ pub struct ItemView {
 
 impl ItemView {
     pub fn new(it: &Item, board: &Board) -> ItemView {
-        let blockers = blockers(it, &board.items, |i| board.is_closed(i));
+        let blockers = blockers(it, &board.items);
         ItemView {
             id: it.id.clone(),
             kind: it.kind.clone(),
@@ -77,10 +71,7 @@ impl ItemView {
             score: it.score(),
             kind_rank: kind_rank(&it.kind),
             blocked: !blockers.is_empty(),
-            closed: board.is_closed(it),
-            states: board.rules_of(it).states.clone(),
-            lifecycle: it.lifecycle.clone(),
-            args: it.args.clone(),
+            closed: it.is_closed(),
             blockers,
             docs: board.docs.get(&it.id).cloned().unwrap_or_default(),
             file: format!("items/{}", file_name(&it.id)),
@@ -154,7 +145,6 @@ pub fn router(entries: Vec<Entry>) -> Router {
         .route("/p/{project}/api/delete", post(api_delete))
         .route("/p/{project}/api/resolve", post(api_resolve))
         .route("/p/{project}/api/doc", get(api_doc))
-        .route("/p/{project}/api/context", get(api_context))
         .route("/p/{project}/api/history", get(api_history))
         .route("/p/{project}/api/history/diff", get(api_history_diff))
         .route("/static/{file}", get(asset))
@@ -168,22 +158,6 @@ pub fn serve(entries: Vec<Entry>, port: u16, open_browser: bool) -> anyhow::Resu
             "no primum project here: run primum serve in a workspace or a board, or `primum init`"
         );
     }
-    let projects = entries
-        .iter()
-        .filter_map(|e| e.project.clone().ok())
-        .collect();
-    serve_app(router(entries), projects, port, open_browser)
-}
-
-/// Serves `app` (the board's router, or one built on it) on 127.0.0.1
-/// until interrupted, syncing those of `projects` that sync by themselves
-/// every minute.
-pub fn serve_app(
-    app: Router,
-    projects: Vec<Project>,
-    port: u16,
-    open_browser: bool,
-) -> anyhow::Result<()> {
     let rt = tokio::runtime::Runtime::new()?;
     rt.block_on(async move {
         let listener = tokio::net::TcpListener::bind(("127.0.0.1", port))
@@ -199,6 +173,10 @@ pub fn serve_app(
             };
             let _ = std::process::Command::new(opener).arg(&url).spawn();
         }
+        let projects: Vec<Project> = entries
+            .iter()
+            .filter_map(|e| e.project.clone().ok())
+            .collect();
         tokio::spawn(async move {
             let mut tick = tokio::time::interval(std::time::Duration::from_secs(60));
             loop {
@@ -208,7 +186,7 @@ pub fn serve_app(
                 }
             }
         });
-        axum::serve(listener, app).await?;
+        axum::serve(listener, router(entries)).await?;
         Ok(())
     })
 }
@@ -319,7 +297,7 @@ fn common(s: &AppState, p: &Project, board: &Board) -> PageCommon {
     PageCommon {
         project: p.name.clone(),
         path: projects::contract(&p.root),
-        open: board.items.iter().filter(|i| !board.is_closed(i)).count(),
+        open: board.items.iter().filter(|i| !i.is_closed()).count(),
         doing: board.items.iter().filter(|i| i.status == "doing").count(),
         nav,
         globals: script_json(&json!({
@@ -390,20 +368,6 @@ async fn api_items(
 ) -> Result<axum::Json<Vec<ItemView>>, ApiError> {
     let board = store::load(s.project(&project)?)?;
     Ok(axum::Json(views(&board)))
-}
-
-/// The project's context: stored variables, computed ones, its lifecycle.
-async fn api_context(
-    State(s): State<Shared>,
-    Path(project): Path<String>,
-) -> Result<axum::Json<Value>, ApiError> {
-    let p = s.project(&project)?;
-    let board = store::load(p)?;
-    Ok(axum::Json(json!({
-        "stored": projects::context(p)?,
-        "computed": store::computed_context(&board),
-        "lifecycle": projects::project_lifecycle(p)?,
-    })))
 }
 
 async fn api_doc(

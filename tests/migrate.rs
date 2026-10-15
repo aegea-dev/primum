@@ -173,7 +173,7 @@ fn open_becomes_idle_once() {
             .unwrap()
             .contains("status: doing")
     );
-    assert_eq!(common::subjects(&p)[0], "statuses for lifecycles");
+    assert_eq!(common::subjects(&p)[0], "statuses: open is idle");
     assert_eq!(primum::migrate::migrate_statuses(&p).unwrap(), 0);
     assert!(primum::store::load(&p).is_ok());
 }

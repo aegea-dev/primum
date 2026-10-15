@@ -28,12 +28,10 @@ The item's text, as markdown.
 |---|---|---|
 | `title` | JSON-style quoted text, so any characters are safe | always |
 | `kind` | `URGENT`, `BUG`, `DEBT`, `KILLER` or `TODO` | always |
-| `status` | a state of its lifecycle: `idle`, `doing`, `done` or `wontfix` unless attached; `failed` too on a lifecycle with transitions | always |
+| `status` | `idle`, `doing`, `done` or `wontfix` | always |
 | `impact`, `urgency`, `risk`, `effort` | 1 to 10 | always |
 | `needs` | ids it waits for | always, `[]` when empty |
 | `docs` | other items' documents it shows | only when not empty |
-| `lifecycle` | `<name>@<version>`, when attached to a lifecycle | only when attached |
-| `args` | the arguments its lifecycle's actions read, a JSON object on one line | only when attached with arguments |
 | `finished` | the date it was done | only when set |
 | `source` | where it came from: `primum`, or an imported board's value | only when not empty |
 

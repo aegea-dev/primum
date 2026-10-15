@@ -18,7 +18,7 @@ Only the fields given change. Prints the id and the fields changed.
 |---|---|
 | `--title TEXT` | The title |
 | `--impact`, `--urgency`, `--risk`, `--effort N` | Scores, 1-10 |
-| `--status S` | one of the item's lifecycle's states: `idle`, `doing`, `done` or `wontfix` for most |
+| `--status S` | `idle`, `doing`, `done` or `wontfix` |
 | `--needs IDS` | Replace the ids it waits for; `""` for none |
 | `--body-file FILE` | Replace its text with a markdown file; `-` reads standard input |
 

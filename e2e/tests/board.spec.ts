@@ -98,11 +98,9 @@ test("#3 in an item's text links to item 3", async ({ page, board }) => {
   await expect(page).toHaveURL(/\/item\/3$/);
 });
 
-test("a manual ticket offers idle, doing, done and wontfix", async ({ page, board }) => {
+test("a ticket offers idle, doing, done and wontfix", async ({ page, board }) => {
   await page.goto(board.baseURL);
   await expect(page.locator("tr.item[data-id='4'] select[data-f=status]")).toBeVisible();
   const options = await page.locator("tr.item[data-id='4'] select[data-f=status] option").allTextContents();
   expect(options).toEqual(["idle", "doing", "done", "wontfix"]);
-  await page.goto(`${board.baseURL}/p/i%C5%9Fler/item/4`);
-  await expect(page.locator("#item-meta .lifecycle")).toHaveText("manual");
 });

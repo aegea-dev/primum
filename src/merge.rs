@@ -74,23 +74,6 @@ pub fn merge_item(
         Pick::Clean(v) => item.kind = v,
         Pick::Conflict(o, t) => conflict("kind", o, t),
     }
-    // a ticket's lifecycle and its arguments move together
-    let pin = |i: &Item| (i.lifecycle.clone(), i.args.clone());
-    match pick(base.map(pin).as_ref(), &pin(ours), &pin(theirs)) {
-        Pick::Clean((l, a)) => (item.lifecycle, item.args) = (l, a),
-        Pick::Conflict(o, t) => {
-            type Args = Option<serde_json::Map<String, serde_json::Value>>;
-            let show = |(l, a): (Option<String>, Args)| match (l, a) {
-                (Some(l), Some(a)) => format!(
-                    "{l} {}",
-                    serde_json::to_string(&a).expect("arguments serialize")
-                ),
-                (Some(l), None) => l,
-                _ => "manual".to_string(),
-            };
-            conflict("lifecycle", show(o), show(t))
-        }
-    }
     match pick(base.map(|b| &b.source), &ours.source, &theirs.source) {
         Pick::Clean(v) => item.source = v,
         Pick::Conflict(o, t) => conflict("source", o, t),
