@@ -29,6 +29,7 @@ rusqlite = { version = "~0.40.2", features = ["bundled"] }
 uuid = { version = "~1.28.0", features = ["v7"] }
 # native-tls, not the default rustls: its aws-lc-rs is not MIT or Apache-2.0
 reqwest = { version = "~0.13.5", default-features = false, features = ["blocking", "json", "native-tls", "charset", "http2"] }
+keyring = "~4.2.0"
 
 # Only to restore the default SIGPIPE: `primum list | head` ends quietly.
 [target.'cfg(unix)'.dependencies]

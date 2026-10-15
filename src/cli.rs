@@ -225,6 +225,21 @@ pub enum Cmd {
         #[arg(long)]
         json: bool,
     },
+    /// Secrets in the OS secret store, for `${env.NAME}` in lifecycles
+    Secret {
+        #[command(subcommand)]
+        cmd: SecretCmd,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum SecretCmd {
+    /// Keep a secret; its value is read from stdin, or asked for on a terminal
+    Set { name: String },
+    /// Remove a secret
+    Unset { name: String },
+    /// The secrets' names (never their values)
+    List,
 }
 
 #[derive(Subcommand)]
@@ -410,6 +425,32 @@ fn dispatch(cli: Cli) -> Result<()> {
                     break;
                 }
                 std::thread::sleep(std::time::Duration::from_secs(interval));
+            }
+        }
+        Cmd::Secret { cmd } => {
+            use crate::engine::secrets;
+            match cmd {
+                SecretCmd::Set { name } => {
+                    secrets::ready(&name)?;
+                    let value = read_secret(&format!("value for {name}: "))?;
+                    if value.is_empty() {
+                        bail!("{name}: an empty value; nothing kept");
+                    }
+                    secrets::set(&name, &value)?;
+                    println!("{name}: kept in the OS secret store");
+                }
+                SecretCmd::Unset { name } => {
+                    if secrets::unset(&name)? {
+                        println!("{name}: removed");
+                    } else {
+                        println!("{name}: not in the OS secret store");
+                    }
+                }
+                SecretCmd::List => {
+                    for n in secrets::names()? {
+                        println!("{n}");
+                    }
+                }
             }
         }
         Cmd::Events { id, json } => {
@@ -1013,6 +1054,45 @@ fn lifecycle_args(pairs: &[String]) -> Result<Option<serde_json::Map<String, ser
         m.insert(k.to_string(), v);
     }
     Ok(Some(m))
+}
+
+/// Runs `f` with the terminal's echo off, so a typed secret is not shown.
+#[cfg(unix)]
+fn without_echo<T>(f: impl FnOnce() -> T) -> T {
+    // SAFETY: tcgetattr fills a zeroed termios for stdin; tcsetattr sets it
+    // back to what it was once `f` is done
+    unsafe {
+        let mut t: libc::termios = std::mem::zeroed();
+        if libc::tcgetattr(0, &mut t) != 0 {
+            return f();
+        }
+        let old = t;
+        t.c_lflag &= !libc::ECHO;
+        libc::tcsetattr(0, libc::TCSANOW, &t);
+        let out = f();
+        libc::tcsetattr(0, libc::TCSANOW, &old);
+        out
+    }
+}
+
+#[cfg(not(unix))]
+fn without_echo<T>(f: impl FnOnce() -> T) -> T {
+    f()
+}
+
+/// A secret's value: one line from stdin, asked for (without echo) on a
+/// terminal. Never an argument: command lines are visible to others.
+fn read_secret(prompt: &str) -> Result<String> {
+    use std::io::{BufRead, IsTerminal};
+    let mut line = String::new();
+    if std::io::stdin().is_terminal() {
+        eprint!("{prompt}");
+        without_echo(|| std::io::stdin().lock().read_line(&mut line))?;
+        eprintln!();
+    } else {
+        std::io::stdin().lock().read_line(&mut line)?;
+    }
+    Ok(line.trim_end_matches(['\n', '\r']).to_string())
 }
 
 /// `12` and `#12` are `12`; anything that is not an id is an error.

@@ -366,7 +366,8 @@ fn write_one(p: &Project, id: &str, changes: &Map<String, Value>) -> Result<()> 
 /// Seconds a built-in may take.
 const BUILT_IN_TIMEOUT: u64 = 60;
 
-/// `${env.NAME}` in every string, filled in from the daemon's environment.
+/// `${env.NAME}` in every string, filled in from the OS secret store, else
+/// the daemon's environment.
 fn fill_secrets(v: &Value) -> Result<Value, String> {
     Ok(match v {
         Value::String(s) => {
@@ -379,7 +380,8 @@ fn fill_secrets(v: &Value) -> Result<Value, String> {
                     .find('}')
                     .ok_or_else(|| format!("unclosed `${{env.` in `{s}`"))?;
                 let name = after[..j].trim();
-                out += &std::env::var(name).map_err(|_| format!("secret {name} is not set"))?;
+                out += &super::secrets::get(name)
+                    .ok_or_else(|| format!("secret {name} is not set"))?;
                 rest = &after[j + 1..];
             }
             Value::String(out + rest)
