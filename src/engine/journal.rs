@@ -18,7 +18,12 @@ pub const SCHEMA_VERSION: i64 = 1 + MIGRATIONS.len() as i64;
 
 /// The steps from each version to the next: `MIGRATIONS[0]` takes version 1
 /// to 2, and so on. A step is only ever added, never changed.
-const MIGRATIONS: [&str; 0] = [];
+const MIGRATIONS: [&str; 1] = [
+    // 2: a ticket change that cannot be written is tried again, and why it
+    // failed is kept
+    "ALTER TABLE ledger ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0;
+     ALTER TABLE ledger ADD COLUMN error TEXT;",
+];
 
 /// Version 1's tables.
 const SCHEMA: &str = "
@@ -364,6 +369,7 @@ impl Journal {
         Ok(out)
     }
 
+    /// Marks a ticket change done: written, or given up on (its error kept).
     pub fn ledger_written(&self, id: i64) -> Result<()> {
         self.db.execute(
             "UPDATE ledger SET written = ?2 WHERE id = ?1",
@@ -373,6 +379,16 @@ impl Journal {
             ],
         )?;
         Ok(())
+    }
+
+    /// Records a failed attempt to write a ticket change; returns how many
+    /// attempts it has had.
+    pub fn ledger_failed(&self, id: i64, error: &str) -> Result<i64> {
+        Ok(self.db.query_row(
+            "UPDATE ledger SET attempts = attempts + 1, error = ?2 WHERE id = ?1 RETURNING attempts",
+            params![id, error],
+            |r| r.get(0),
+        )?)
     }
 
     /// Saves an answer: all of it, or (on any error) none of it.

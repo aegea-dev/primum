@@ -12,6 +12,7 @@ use anyhow::{Result, anyhow};
 use chrono::{DateTime, SecondsFormat, Utc};
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
+use std::collections::BTreeSet;
 use std::io::Write;
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -37,6 +38,9 @@ const MAX_EVENTS: usize = 10_000;
 /// changed while it ran, before the event waits for the next pass.
 const MAX_TRIES: usize = 3;
 
+/// How many passes try to write a ticket change before it is given up.
+const MAX_WRITES: i64 = 3;
+
 /// What became of an event given to `deliver`.
 enum Delivered {
     /// Answered (or given up on with an error) and saved.
@@ -54,10 +58,12 @@ fn stamp(t: DateTime<Utc>) -> String {
 pub fn run_once(p: &Project, now: DateTime<Utc>, manager: &Path) -> Result<Pass> {
     let mut j = Journal::open(p)?;
     let mut pass = Pass::default();
+    // ticket changes that failed to be written in this pass
+    let mut tried = BTreeSet::new();
     // changes left from a pass that stopped early, then the feed's own
-    pass.written += write_ledger(p, &j)?;
+    pass.written += write_ledger(p, &j, &mut tried)?;
     feed(p, &j, now)?;
-    pass.written += write_ledger(p, &j)?;
+    pass.written += write_ledger(p, &j, &mut tried)?;
     for (id, ticket, data) in j.due_timers(&stamp(now))? {
         let e = Envelope::new(
             "daemon",
@@ -78,7 +84,7 @@ pub fn run_once(p: &Project, now: DateTime<Utc>, manager: &Path) -> Result<Pass>
                 return Ok(pass);
             }
             pass.delivered += 1;
-            pass.written += write_ledger(p, &j)?;
+            pass.written += write_ledger(p, &j, &mut tried)?;
             if pass.delivered >= MAX_EVENTS {
                 return Ok(pass);
             }
@@ -344,24 +350,55 @@ fn deliver(
     Ok(Delivered::Handled)
 }
 
-/// Writes queued ticket changes to the ledger, each once, and refreshes the
-/// ticket's snapshot so the feed does not see the daemon's own change.
-fn write_ledger(p: &Project, j: &Journal) -> Result<usize> {
-    let pending = j.pending_ledger()?;
-    for (row, id, changes) in &pending {
-        if let Err(e) = write_one(p, id, changes) {
-            eprintln!(
-                "{}: #{id}: cannot write {}: {e:#}",
-                p.name,
-                Value::Object(changes.clone())
-            );
+/// Writes queued ticket changes to the ledger, in order, and refreshes each
+/// ticket's snapshot so the feed does not see the daemon's own change. A
+/// change that cannot be written is tried again on later passes, once a
+/// pass (`tried` holds this pass's failures), and the ticket's later
+/// changes wait behind it; after `MAX_WRITES` tries it is given up, with a
+/// note on the ticket saying what was dropped and why. Returns how many
+/// changes were written.
+fn write_ledger(p: &Project, j: &Journal, tried: &mut BTreeSet<i64>) -> Result<usize> {
+    let mut written = 0;
+    let mut waiting: BTreeSet<String> = BTreeSet::new();
+    for (row, id, changes) in j.pending_ledger()? {
+        if waiting.contains(&id) || tried.contains(&row) {
+            waiting.insert(id);
+            continue;
         }
-        j.ledger_written(*row)?;
-        if let Some(it) = store::load(p)?.get(id) {
-            j.set_seen(id, &snapshot(it))?;
+        match write_one(p, &id, &changes) {
+            Ok(()) => {
+                j.ledger_written(row)?;
+                written += 1;
+            }
+            Err(e) => {
+                let why = format!("{e:#}");
+                let attempts = j.ledger_failed(row, &why)?;
+                tried.insert(row);
+                waiting.insert(id.clone());
+                eprintln!(
+                    "{}: #{id}: cannot write {} (try {attempts} of {MAX_WRITES}): {why}",
+                    p.name,
+                    Value::Object(changes.clone())
+                );
+                if attempts < MAX_WRITES {
+                    continue;
+                }
+                j.ledger_written(row)?;
+                let note = format!(
+                    "A change from this ticket's lifecycle could not be written after {attempts} tries, and was dropped: {}. The change: {}",
+                    why,
+                    Value::Object(changes)
+                );
+                if let Err(e) = store::append_note(p, &id, &note) {
+                    eprintln!("{}: #{id}: cannot add the note either: {e:#}", p.name);
+                }
+            }
+        }
+        if let Some(it) = store::load(p)?.get(&id) {
+            j.set_seen(&id, &snapshot(it))?;
         }
     }
-    Ok(pending.len())
+    Ok(written)
 }
 
 fn write_one(p: &Project, id: &str, changes: &Map<String, Value>) -> Result<()> {

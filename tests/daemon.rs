@@ -372,3 +372,61 @@ fn an_answer_the_ticket_keeps_outdating_waits_instead_of_being_saved() {
     assert_eq!(pass.deferred, 0);
     assert_eq!(load(&p).unwrap().get(&id).unwrap().status, "hazir");
 }
+
+#[test]
+fn a_change_that_cannot_be_written_is_retried_then_given_up_with_a_note() {
+    let d = tempfile::tempdir().unwrap();
+    let (p, id) = attached(d.path());
+    run_once(&p, now(), manager()).unwrap();
+    let j = Journal::open(&p).unwrap();
+    let change = |k: &str, v: &str| {
+        let mut m = serde_json::Map::new();
+        m.insert(k.into(), json!(v));
+        m
+    };
+    // a status the ticket's lifecycle does not have, then a good change
+    j.queue_ledger(&id, &change("status", "yok-boyle")).unwrap();
+    j.queue_ledger(&id, &change("note", "Sonraki değişiklik."))
+        .unwrap();
+    let attempts = || -> Vec<(i64, Option<String>)> {
+        let db = rusqlite::Connection::open(Journal::path(&p)).unwrap();
+        let mut s = db
+            .prepare("SELECT attempts, error FROM ledger WHERE changes LIKE '%yok-boyle%'")
+            .unwrap();
+        s.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect()
+    };
+    let pass = run_once(&p, now(), manager()).unwrap();
+    assert_eq!(
+        pass.written, 0,
+        "the bad change fails; the next one waits behind it"
+    );
+    assert_eq!(attempts()[0].0, 1, "tried once this pass");
+    assert!(attempts()[0].1.as_deref().unwrap().contains("yok-boyle"));
+    assert!(
+        !load(&p)
+            .unwrap()
+            .get(&id)
+            .unwrap()
+            .body
+            .contains("Sonraki değişiklik.")
+    );
+    run_once(&p, now(), manager()).unwrap();
+    assert_eq!(attempts()[0].0, 2);
+    run_once(&p, now(), manager()).unwrap();
+    let it = load(&p).unwrap().get(&id).unwrap().clone();
+    assert!(it.body.contains("could not be written"), "{}", it.body);
+    assert_eq!(it.status, "hazir", "the bad status never landed");
+    run_once(&p, now(), manager()).unwrap();
+    let it = load(&p).unwrap().get(&id).unwrap().clone();
+    assert!(it.body.contains("Sonraki değişiklik."), "{}", it.body);
+    assert!(
+        Journal::open(&p)
+            .unwrap()
+            .pending_ledger()
+            .unwrap()
+            .is_empty()
+    );
+}
