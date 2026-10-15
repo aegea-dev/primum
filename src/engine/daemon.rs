@@ -133,6 +133,7 @@ pub fn run_once(p: &Project, now: DateTime<Utc>, manager: &Path) -> Result<Pass>
     // changes left from a pass that stopped early, then the feed's own
     pass.written += write_ledger(p, &j, &mut tried)?;
     feed(p, &j, now)?;
+    super::die_at("feed");
     inbox(p, &j, now)?;
     pass.written += write_ledger(p, &j, &mut tried)?;
     for (id, ticket, data) in j.due_timers(&stamp(now))? {
@@ -179,6 +180,7 @@ pub fn run_once(p: &Project, now: DateTime<Utc>, manager: &Path) -> Result<Pass>
                 starting.push((r, runs + 1));
             }
         }
+        super::die_at("job-started");
         let beats = p.root.join(".primum").join("beats");
         // the workers run side by side; each result is saved on its own
         let outcomes: Vec<Result<Value, Failure>> = std::thread::scope(|s| {
@@ -204,6 +206,7 @@ pub fn run_once(p: &Project, now: DateTime<Utc>, manager: &Path) -> Result<Pass>
                 })
                 .collect()
         });
+        super::die_at("job-done");
         for ((r, run), outcome) in starting.iter().zip(outcomes) {
             match outcome {
                 Err(Failure::Lost(why)) if *run < MAX_RUNS => {
@@ -219,6 +222,7 @@ pub fn run_once(p: &Project, now: DateTime<Utc>, manager: &Path) -> Result<Pass>
                     pass.worked += 1;
                 }
             }
+            super::die_at("result");
         }
     }
     Ok(pass)
@@ -463,7 +467,23 @@ fn definition(p: &Project, j: &Journal, pin: &str) -> Result<Option<File>> {
 }
 
 /// Runs `primum manager` on one input.
-fn ask(manager: &Path, input: &Input) -> Result<Answer, String> {
+/// Asks the manager, and again when it was killed before it answered: it
+/// is pure, so asking again gives the answer it would have given. Killed
+/// `MAX_TRIES` times in a row, it is lost; the event is not.
+fn ask_again(manager: &Path, input: &Input) -> Result<Answer, Failure> {
+    let mut why = String::new();
+    for _ in 0..MAX_TRIES {
+        match ask(manager, input) {
+            Err(Failure::Lost(w)) => why = w,
+            other => return other,
+        }
+    }
+    Err(Failure::Lost(format!(
+        "the manager was killed {MAX_TRIES} times ({why})"
+    )))
+}
+
+fn ask(manager: &Path, input: &Input) -> Result<Answer, Failure> {
     let mut c = Command::new(manager)
         .arg("manager")
         .stdin(Stdio::piped())
@@ -472,16 +492,23 @@ fn ask(manager: &Path, input: &Input) -> Result<Answer, String> {
         .spawn()
         .map_err(|e| format!("cannot start the manager: {e}"))?;
     let text = serde_json::to_string(input).map_err(|e| e.to_string())?;
-    c.stdin
-        .take()
-        .expect("piped")
-        .write_all(text.as_bytes())
-        .map_err(|e| e.to_string())?;
+    // a manager killed before it read its input closes the pipe: its exit
+    // below says so, not this write
+    let written = c.stdin.take().expect("piped").write_all(text.as_bytes());
     let out = c.wait_with_output().map_err(|e| e.to_string())?;
-    if !out.status.success() {
-        return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
+    if out.status.code().is_none() {
+        return Err(Failure::Lost(format!(
+            "the manager was killed ({})",
+            out.status
+        )));
     }
-    serde_json::from_slice(&out.stdout).map_err(|e| format!("the manager's answer: {e}"))
+    written.map_err(|e| format!("cannot give the manager its input: {e}"))?;
+    if !out.status.success() {
+        return Err(Failure::Error(
+            String::from_utf8_lossy(&out.stderr).trim().to_string(),
+        ));
+    }
+    Ok(serde_json::from_slice(&out.stdout).map_err(|e| format!("the manager's answer: {e}"))?)
 }
 
 /// Marks an event handled with the reason it could not be delivered.
@@ -540,9 +567,16 @@ fn deliver(
                 data: r.event.data.clone(),
             },
         };
-        let answer = match ask(manager, &input) {
+        let answer = match ask_again(manager, &input) {
             Ok(a) => a,
-            Err(why) => return give_up(j, r.seq, why),
+            Err(Failure::Error(why)) => return give_up(j, r.seq, why),
+            Err(Failure::Lost(why)) => {
+                eprintln!(
+                    "{}: #{id}: {why}; {} waits for the next pass",
+                    p.name, r.event.kind
+                );
+                return Ok(Delivered::Deferred);
+            }
         };
         if revisions(p, &id) == before {
             break (answer, it);
@@ -584,6 +618,7 @@ fn deliver(
         events,
         ledger: (!changes.is_empty()).then_some((&id, changes)),
     })?;
+    super::die_at("answer");
     Ok(Delivered::Handled)
 }
 
@@ -604,7 +639,9 @@ fn write_ledger(p: &Project, j: &Journal, tried: &mut BTreeSet<i64>) -> Result<u
         }
         match write_one(p, &id, &changes) {
             Ok(()) => {
+                super::die_at("ledger");
                 j.ledger_written(row)?;
+                super::die_at("written");
                 written += 1;
             }
             Err(e) => {

@@ -1,0 +1,11 @@
+{
+  "name": "steps",
+  "version": 1,
+  "type": "executable",
+  "description": "The demo's steps, as shell scripts: no Python or Bun needed.",
+  "limits": { "timeout": "60s", "heartbeat": "5s" },
+  "targets": {
+    "check": { "executable": "./check.sh" },
+    "publish": { "executable": "./publish.sh" }
+  }
+}

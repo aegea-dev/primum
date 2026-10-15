@@ -641,8 +641,14 @@ fn dispatch(cli: Cli) -> Result<()> {
             use crate::engine::worker::{Failure, LOST_EXIT, run};
             #[cfg(unix)]
             crate::engine::worker::stop_with_parent();
+            crate::engine::die_at("worker");
             match run(&job) {
-                Ok(output) => println!("{}", serde_json::json!({ "output": output })),
+                Ok(output) => {
+                    // the job's effect is done; its answer is not yet given
+                    crate::engine::die_at("worker-done");
+                    crate::engine::die_at(&format!("worker-done:{}", job.action));
+                    println!("{}", serde_json::json!({ "output": output }))
+                }
                 Err(Failure::Error(why)) => bail!(why),
                 Err(Failure::Lost(why)) => {
                     eprintln!("error: {why}");
@@ -682,6 +688,7 @@ fn dispatch(cli: Cli) -> Result<()> {
             })?;
         }
         Cmd::Manager => {
+            crate::engine::die_at("manager");
             let mut text = String::new();
             std::io::Read::read_to_string(&mut std::io::stdin(), &mut text)?;
             let input: crate::engine::Input =
