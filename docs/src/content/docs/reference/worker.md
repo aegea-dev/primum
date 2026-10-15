@@ -51,7 +51,43 @@ line of JSON on stdin:
 ```
 
 and prints its output as JSON on stdout. A non-zero exit is a failure, with
-its stderr as the reason; so is output that is not JSON.
+the end of its stderr as the reason; so is output that is not JSON.
 
-`python@` and `bun@` actionables come next: they will run the same way,
-through `uv` and `bun`.
+## A project's `python@` actionable
+
+The function gets the same object as its one argument and returns its
+output; it may be `async`:
+
+```python
+# actionables/checks/rules.py
+def is_valid(job):
+    title = job["ticket"]["title"]
+    return {"ok": len(title) > 3, "length": len(title)}
+```
+
+The worker needs [`uv`](https://docs.astral.sh/uv/). The first time, it
+makes the actionable's virtual environment at its `home` (`.venv` by
+default) with `uv venv --python <version>`; when the actionable has
+`requirements`, it installs them with `uv pip install -r`, and again
+whenever the file changes (`.venv/.primum-requirements` holds what was
+installed). Then it imports `module` from the actionable's folder and calls
+`callable`. An exception fails the action, with its last lines as the
+reason (`ValueError: ...`).
+
+## A project's `bun@` actionable
+
+```ts
+// actionables/formatters/text.ts
+export async function slug(job: { ticket: { title: string } }) {
+  return { slug: job.ticket.title.toLowerCase().replace(/\s+/g, "-") };
+}
+```
+
+The worker needs [`bun`](https://bun.sh), which runs TypeScript directly.
+When the actionable has a `package.json`, it runs `bun install` the first
+time and whenever `package.json` or `bun.lock` change. Then it imports
+`file` and calls `export`, awaiting it. A thrown error fails the action;
+so does a file with no such export.
+
+A missing `uv` or `bun` fails the action with a message naming it and where
+to get it. Neither `.venv` nor `node_modules` is in the project's history.

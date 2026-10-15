@@ -4,9 +4,9 @@ description: Runs tickets' lifecycles - turns ledger changes into events, asks t
 ---
 
 :::caution[In progress]
-The daemon runs every built-in and a project's `executable` actionables.
-`python@` and `bun@` actionables come next. Running as a service, the
-watchdog and an HTTP port for outside events come later.
+The daemon runs every actionable type. Secrets come from its own
+environment; the OS secret store (`primum secret`) comes next. Running as a
+service, the watchdog and an HTTP port for outside events come later.
 :::
 
 ```bash
