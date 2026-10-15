@@ -6,12 +6,21 @@
 use super::{Runtime, Timer};
 use crate::lifecycle::File;
 use crate::store::Project;
-use anyhow::{Context, Result};
-use rusqlite::{Connection, OptionalExtension, params};
+use anyhow::{Context, Result, bail};
+use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::path::PathBuf;
 
+/// The journal's schema version, kept in its `meta` table. A journal made
+/// before versions is version 1.
+pub const SCHEMA_VERSION: i64 = 1 + MIGRATIONS.len() as i64;
+
+/// The steps from each version to the next: `MIGRATIONS[0]` takes version 1
+/// to 2, and so on. A step is only ever added, never changed.
+const MIGRATIONS: [&str; 0] = [];
+
+/// Version 1's tables.
 const SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS events (
   seq INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -140,17 +149,49 @@ impl Journal {
         p.root.join(".primum").join("journal.sqlite")
     }
 
-    /// Opens (and creates) a project's journal.
+    /// Opens (and creates) a project's journal, bringing an older one up to
+    /// this primum's schema; one from a newer primum is refused.
     pub fn open(p: &Project) -> Result<Journal> {
         let path = Journal::path(p);
         std::fs::create_dir_all(path.parent().expect("a folder"))?;
-        let db =
+        let mut db =
             Connection::open(&path).with_context(|| format!("cannot open {}", path.display()))?;
         db.busy_timeout(std::time::Duration::from_secs(5))?;
         db.pragma_update(None, "journal_mode", "WAL")?;
         db.pragma_update(None, "synchronous", "FULL")?;
-        db.execute_batch(SCHEMA)?;
+        // immediate: two processes opening at once migrate one after the other
+        let tx = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        tx.execute_batch(SCHEMA)?;
+        tx.execute_batch(
+            "CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
+        )?;
+        let version = schema(&tx)?;
+        if version < 1 {
+            bail!(
+                "{}: journal schema {version} is not a version",
+                path.display()
+            );
+        }
+        if version > SCHEMA_VERSION {
+            bail!(
+                "{} was made by a newer primum (journal schema {version}; this primum knows up to {SCHEMA_VERSION}): update primum",
+                path.display()
+            );
+        }
+        for step in &MIGRATIONS[(version - 1) as usize..] {
+            tx.execute_batch(step)?;
+        }
+        tx.execute(
+            "INSERT OR REPLACE INTO meta (key, value) VALUES ('schema', ?1)",
+            params![SCHEMA_VERSION.to_string()],
+        )?;
+        tx.commit()?;
         Ok(Journal { db })
+    }
+
+    /// The journal's schema version.
+    pub fn schema(&self) -> Result<i64> {
+        schema(&self.db)
     }
 
     /// Saves an event; an id already saved is kept as it was.
@@ -377,4 +418,20 @@ fn publish(db: &Connection, e: &Envelope) -> Result<()> {
         params![e.id, e.time, e.kind, e.source, e.subject, e.cause, json(&e.data)?],
     )?;
     Ok(())
+}
+
+/// The schema version `meta` records; 1 when it records none (a journal
+/// from before versions, or one being made).
+fn schema(db: &Connection) -> Result<i64> {
+    let v: Option<String> = db
+        .query_row("SELECT value FROM meta WHERE key = 'schema'", [], |r| {
+            r.get(0)
+        })
+        .optional()?;
+    match v {
+        None => Ok(1),
+        Some(v) => v
+            .parse()
+            .with_context(|| format!("the journal's schema version is not a number: {v}")),
+    }
 }
