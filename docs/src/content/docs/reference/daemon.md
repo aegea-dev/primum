@@ -102,9 +102,24 @@ alone, so write a file under a dot-name and rename it when it is complete
    tried again on the next passes, and the ticket's later changes wait
    behind it; after three tries it is dropped, and a note on the ticket
    says what was dropped and why.
-6. **Runs the jobs** the answers asked for, one at a time, each in a
-   [worker](/reference/worker/), and delivers each result to its ticket
+6. **Runs the jobs** the answers asked for, each in a
+   [worker](/reference/worker/): up to 8 side by side, one per ticket (a
+   ticket's jobs run in order), and delivers each result to its ticket
    (back to step 4) until nothing is left.
+
+## One machine per project
+
+A project synced to several machines runs its lifecycles on one of them,
+so no action runs twice. The first daemon to run a project writes
+`"runner": "<this machine's name>"` to its `project.json` (a commit that
+syncs like any other). A daemon on another machine skips that project:
+
+```
+videre: runs on studio-mac; skipped (--take-over runs it here)
+```
+
+`primum daemon --take-over` runs it anyway and makes this machine its
+runner. Take over only once the other machine's daemon has stopped.
 
 ## Workers, secrets and time limits
 

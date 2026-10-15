@@ -139,7 +139,8 @@ pub fn run_once(p: &Project, now: DateTime<Utc>, manager: &Path) -> Result<Pass>
         );
         j.fire_timer(id, &e)?;
     }
-    // tickets' events first; then one job, whose result is the next event
+    // tickets' events first; then the waiting jobs, whose results are the
+    // next events
     loop {
         while let Some(r) = j.next()? {
             if let Delivered::Deferred = deliver(p, &mut j, &r, now, manager)? {
@@ -153,11 +154,53 @@ pub fn run_once(p: &Project, now: DateTime<Utc>, manager: &Path) -> Result<Pass>
                 return Ok(pass);
             }
         }
-        let Some(r) = j.next_job()? else { break };
-        work(p, &mut j, &r, now, manager)?;
-        pass.worked += 1;
+        let batch = batch(j.jobs()?);
+        if batch.is_empty() {
+            break;
+        }
+        // the workers run side by side; each result is saved on its own
+        let outcomes: Vec<Result<Value, String>> = std::thread::scope(|s| {
+            let running: Vec<_> = batch
+                .iter()
+                .map(|r| {
+                    s.spawn(|| job(p, &r.event.data).and_then(|job| spawn_worker(manager, &job)))
+                })
+                .collect();
+            running
+                .into_iter()
+                .map(|h| {
+                    h.join()
+                        .unwrap_or_else(|_| Err("the worker's runner panicked".into()))
+                })
+                .collect()
+        });
+        for (r, outcome) in batch.iter().zip(outcomes) {
+            save_result(p, &mut j, r, outcome, now)?;
+            pass.worked += 1;
+        }
     }
     Ok(pass)
+}
+
+/// More workers than this at once wait for the next batch.
+const MAX_WORKERS: usize = 8;
+
+/// The jobs to run side by side: the oldest for each ticket (a ticket's
+/// jobs run in order), at most `MAX_WORKERS`.
+fn batch(jobs: Vec<Recorded>) -> Vec<Recorded> {
+    let mut tickets = BTreeSet::new();
+    jobs.into_iter()
+        .filter(|r| tickets.insert(job_ticket(&r.event.data)))
+        .take(MAX_WORKERS)
+        .collect()
+}
+
+/// The ticket a job is for.
+fn job_ticket(data: &Value) -> String {
+    data.pointer("/ticket/id")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string()
 }
 
 /// An item's fields as the feed compares them.
@@ -773,21 +816,16 @@ fn spawn_worker(manager: &Path, job: &Job) -> Result<Value, String> {
     Ok(v.get("output").cloned().unwrap_or(Value::Null))
 }
 
-/// Runs one job and sends its result to the ticket, in one transaction.
-fn work(
+/// Sends a job's outcome to its ticket, in one transaction.
+fn save_result(
     p: &Project,
     j: &mut Journal,
     r: &Recorded,
+    outcome: Result<Value, String>,
     now: DateTime<Utc>,
-    manager: &Path,
 ) -> Result<()> {
     let data = &r.event.data;
-    let ticket = data
-        .pointer("/ticket/id")
-        .and_then(Value::as_str)
-        .unwrap_or("")
-        .to_string();
-    let outcome = job(p, data).and_then(|job| spawn_worker(manager, &job));
+    let ticket = job_ticket(data);
     let (kind, result) = match outcome {
         Ok(output) => ("action.finished", json!({"output": output})),
         Err(why) => ("action.failed", json!({"error": why})),

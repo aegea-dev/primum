@@ -246,6 +246,9 @@ pub enum Cmd {
         /// Run the passes only: no board, no events from outside
         #[arg(long)]
         no_serve: bool,
+        /// Run projects another machine runs, and become their runner
+        #[arg(long)]
+        take_over: bool,
         /// The time to run at, with --once (tests)
         #[arg(long, hide = true, requires = "once")]
         now: Option<String>,
@@ -499,6 +502,7 @@ fn dispatch(cli: Cli) -> Result<()> {
             interval,
             port,
             no_serve,
+            take_over,
             now,
         } => {
             use crate::engine::daemon::{self, Health};
@@ -521,6 +525,22 @@ fn dispatch(cli: Cli) -> Result<()> {
             };
             if projects.is_empty() {
                 bail!("no primum project here: cd into a board or a workspace");
+            }
+            // one machine runs a project's lifecycles at a time
+            let host = projects::host();
+            let mut mine = vec![];
+            for p in projects {
+                match projects::claim(&p, &host, take_over)? {
+                    None => mine.push(p),
+                    Some(other) => eprintln!(
+                        "{}: runs on {other}; skipped (--take-over runs it here)",
+                        p.name
+                    ),
+                }
+            }
+            let projects = mine;
+            if projects.is_empty() {
+                bail!("every project here runs on another machine");
             }
             if once {
                 let at = match &now {

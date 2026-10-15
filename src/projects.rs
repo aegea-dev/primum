@@ -100,6 +100,48 @@ impl Settings {
             .and_then(|v| v.as_str())
             .map(str::to_string)
     }
+
+    /// The machine whose daemon runs the project's lifecycles.
+    pub fn runner(&self) -> Option<&str> {
+        self.0.get("runner").and_then(|v| v.as_str())
+    }
+}
+
+/// This machine's name, as `runner` holds it.
+pub fn host() -> String {
+    gethostname::gethostname().to_string_lossy().into_owned()
+}
+
+/// Claims the project for this machine's daemon: one machine runs a
+/// project's lifecycles at a time, so no action runs twice on two synced
+/// machines. The first daemon writes `runner: <host>` (one commit);
+/// `take_over` replaces another machine's. Returns the other machine when
+/// it runs the project and `take_over` is false.
+pub fn claim(p: &Project, host: &str, take_over: bool) -> Result<Option<String>> {
+    let read = || -> Result<Settings> {
+        Ok(Settings::read(&p.root)?.unwrap_or_else(|| Settings::new(&p.name)))
+    };
+    match read()?.runner() {
+        Some(h) if h == host => return Ok(None),
+        Some(h) if !take_over => return Ok(Some(h.to_string())),
+        _ => {}
+    }
+    let mut other = None;
+    crate::store::change_settings(p, &format!("runner: {host}"), || {
+        // read again under the project's lock: another daemon may have
+        // claimed it since
+        let mut s = read()?;
+        match s.runner() {
+            Some(h) if h == host => {}
+            Some(h) if !take_over => other = Some(h.to_string()),
+            _ => {
+                s.0.insert("runner".into(), host.into());
+                s.write(&p.root)?;
+            }
+        }
+        Ok(())
+    })?;
+    Ok(other)
 }
 
 /// A project's stored context variables (`project.json`'s `context`).

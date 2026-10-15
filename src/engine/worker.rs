@@ -69,6 +69,17 @@ fn setup(program: &str, args: &[&str], folder: &Path, hint: &str) -> Result<(), 
     Ok(())
 }
 
+/// Holds the actionable's setup lock until dropped: workers running side by
+/// side prepare its environment one at a time.
+fn setup_lock(folder: &Path) -> Result<std::fs::File, String> {
+    use fs2::FileExt;
+    let f = std::fs::File::create(folder.join(".primum-setup.lock"))
+        .map_err(|e| format!("cannot create the setup lock: {e}"))?;
+    f.lock_exclusive()
+        .map_err(|e| format!("cannot take the setup lock: {e}"))?;
+    Ok(f)
+}
+
 /// The Python in the actionable's virtual environment, made with `uv` the
 /// first time and given its requirements whenever they change.
 fn python(
@@ -77,6 +88,7 @@ fn python(
     home: &str,
     requirements: Option<&str>,
 ) -> Result<PathBuf, String> {
+    let _setup = setup_lock(folder)?;
     let home = folder.join(home);
     let python = if cfg!(windows) {
         home.join("Scripts").join("python.exe")
@@ -116,6 +128,7 @@ fn bun_packages(folder: &Path) -> Result<(), String> {
     if !folder.join("package.json").is_file() {
         return Ok(());
     }
+    let _setup = setup_lock(folder)?;
     let mut both = std::fs::read(folder.join("package.json")).unwrap_or_default();
     both.extend(std::fs::read(folder.join("bun.lock")).unwrap_or_default());
     let mark = folder.join("node_modules").join(".primum-packages");

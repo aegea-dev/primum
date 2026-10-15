@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use std::process::{Command, Output, Stdio};
 
 /// What the history tracks: primum's files and nothing else.
-const EXCLUDE: &str = "/*\n!/project.json\n!/primum.toml\n!/BOARD.md\n!/items/\n/items/*\n!/items/*.md\n!/conflicts/\n!/lifecycles/\n/lifecycles/*\n!/lifecycles/*.json\n!/actionables/\n/actionables/*/.venv/\n/actionables/*/node_modules/\n/actionables/**/__pycache__/\n";
+const EXCLUDE: &str = "/*\n!/project.json\n!/primum.toml\n!/BOARD.md\n!/items/\n/items/*\n!/items/*.md\n!/conflicts/\n!/lifecycles/\n/lifecycles/*\n!/lifecycles/*.json\n!/actionables/\n/actionables/*/.venv/\n/actionables/*/node_modules/\n/actionables/*/.primum-setup.lock\n/actionables/**/__pycache__/\n";
 
 pub fn git_binary() -> String {
     std::env::var("PRIMUM_GIT").unwrap_or_else(|_| "git".into())
