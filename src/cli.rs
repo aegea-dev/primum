@@ -386,9 +386,19 @@ fn workspace(cwd: &std::path::Path) -> Result<projects::Workspace> {
         .ok_or_else(|| anyhow::anyhow!("not in a workspace: run `primum workspace init`"))
 }
 
+/// Lists a command's subcommands, and theirs, by name in help: one display
+/// order for all, which clap breaks by name.
+fn by_name(c: clap::Command) -> clap::Command {
+    c.mut_subcommands(|s| by_name(s.display_order(0)))
+}
+
 /// Runs the command line; returns the exit code.
 pub fn run(args: Vec<String>) -> i32 {
-    let cli = match Cli::try_parse_from(args) {
+    use clap::{CommandFactory, FromArgMatches};
+    let parsed = by_name(Cli::command())
+        .try_get_matches_from(args)
+        .and_then(|m| Cli::from_arg_matches(&m));
+    let cli = match parsed {
         Ok(c) => c,
         Err(e) => {
             let _ = e.print();
