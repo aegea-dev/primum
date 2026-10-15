@@ -37,14 +37,33 @@ pub fn ready(name: &str) -> Result<()> {
     Ok(())
 }
 
+/// A secret's value from the store: none when the store has no such entry,
+/// an error when the store cannot be read (locked, denied, not running).
+fn lookup(name: &str) -> keyring::Result<Option<String>> {
+    match keyring::Entry::new(SERVICE, name)?.get_password() {
+        Ok(v) => Ok(Some(v)),
+        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(e) => Err(e),
+    }
+}
+
 /// A secret's value: from the store, else from the environment. A store
-/// that cannot be reached counts as having nothing.
+/// that cannot be read is reported once (to stderr, the daemon's log) and
+/// then left aside, so a machine without one still runs on its environment.
 pub fn get(name: &str) -> Option<String> {
-    if !store_off()
-        && let Ok(e) = keyring::Entry::new(SERVICE, name)
-        && let Ok(v) = e.get_password()
-    {
-        return Some(v);
+    if !store_off() {
+        match lookup(name) {
+            Ok(Some(v)) => return Some(v),
+            Ok(None) => {}
+            Err(e) => {
+                static REPORTED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+                if REPORTED.set(()).is_ok() {
+                    eprintln!(
+                        "primum: the OS secret store cannot be read ({e}); secrets come from the environment"
+                    );
+                }
+            }
+        }
     }
     std::env::var(name).ok()
 }
@@ -55,7 +74,9 @@ pub fn names() -> Result<Vec<String>> {
         bail!("the OS secret store is off (PRIMUM_NO_SECRET_STORE is set)");
     }
     match entry(INDEX)?.get_password() {
-        Ok(text) => Ok(serde_json::from_str(&text).unwrap_or_default()),
+        Ok(text) => serde_json::from_str(&text).map_err(|e| {
+            anyhow!("the list of secret names ({SERVICE}/{INDEX}) is unreadable: {e}")
+        }),
         Err(keyring::Error::NoEntry) => Ok(vec![]),
         Err(e) => Err(anyhow!("the OS secret store: {e}")),
     }
@@ -69,15 +90,21 @@ fn save_names(mut names: Vec<String>) -> Result<()> {
         .map_err(|e| anyhow!("the OS secret store: {e}"))
 }
 
-/// Keeps a secret in the store.
+/// Keeps a secret in the store, then adds its name to the list. If the list
+/// cannot be written, the secret is kept but not listed, and the error says
+/// so; setting it again lists it. Two `set`s at the very same moment could
+/// each miss the other's name in the list: secrets are set by a person, one
+/// at a time, so the list takes no lock.
 pub fn set(name: &str, value: &str) -> Result<()> {
     ready(name)?;
     entry(name)?
         .set_password(value)
         .map_err(|e| anyhow!("the OS secret store: {e}"))?;
-    let mut all = names()?;
-    all.push(name.to_string());
-    save_names(all)
+    let listed = names().and_then(|mut all| {
+        all.push(name.to_string());
+        save_names(all)
+    });
+    listed.map_err(|e| anyhow!("{name} is kept, but not listed: {e:#}"))
 }
 
 /// Removes a secret from the store; false when it was not there.

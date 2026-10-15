@@ -1056,39 +1056,71 @@ fn lifecycle_args(pairs: &[String]) -> Result<Option<serde_json::Map<String, ser
     Ok(Some(m))
 }
 
-/// Runs `f` with the terminal's echo off, so a typed secret is not shown.
+/// The terminal's echo, off while this lives: it is restored when dropped,
+/// on every path out (an error, a panic).
 #[cfg(unix)]
-fn without_echo<T>(f: impl FnOnce() -> T) -> T {
-    // SAFETY: tcgetattr fills a zeroed termios for stdin; tcsetattr sets it
-    // back to what it was once `f` is done
-    unsafe {
-        let mut t: libc::termios = std::mem::zeroed();
-        if libc::tcgetattr(0, &mut t) != 0 {
-            return f();
+struct EchoOff(libc::termios);
+
+#[cfg(unix)]
+impl EchoOff {
+    /// Turns stdin's echo off, or says why it cannot.
+    fn new() -> Result<EchoOff> {
+        // SAFETY: tcgetattr writes stdin's settings into `t`, which is only
+        // used when it succeeds; tcsetattr reads a valid termios
+        unsafe {
+            let mut t: libc::termios = std::mem::zeroed();
+            if libc::tcgetattr(libc::STDIN_FILENO, &mut t) != 0 {
+                bail!(
+                    "cannot hide what is typed: {}",
+                    std::io::Error::last_os_error()
+                );
+            }
+            let old = t;
+            t.c_lflag &= !libc::ECHO;
+            if libc::tcsetattr(libc::STDIN_FILENO, libc::TCSANOW, &t) != 0 {
+                bail!(
+                    "cannot hide what is typed: {}",
+                    std::io::Error::last_os_error()
+                );
+            }
+            Ok(EchoOff(old))
         }
-        let old = t;
-        t.c_lflag &= !libc::ECHO;
-        libc::tcsetattr(0, libc::TCSANOW, &t);
-        let out = f();
-        libc::tcsetattr(0, libc::TCSANOW, &old);
-        out
+    }
+}
+
+#[cfg(unix)]
+impl Drop for EchoOff {
+    fn drop(&mut self) {
+        // SAFETY: restores the settings tcgetattr returned
+        unsafe {
+            libc::tcsetattr(libc::STDIN_FILENO, libc::TCSANOW, &self.0);
+        }
     }
 }
 
 #[cfg(not(unix))]
-fn without_echo<T>(f: impl FnOnce() -> T) -> T {
-    f()
+struct EchoOff;
+
+#[cfg(not(unix))]
+impl EchoOff {
+    fn new() -> Result<EchoOff> {
+        bail!("cannot hide what is typed here")
+    }
 }
 
 /// A secret's value: one line from stdin, asked for (without echo) on a
-/// terminal. Never an argument: command lines are visible to others.
+/// terminal. Never an argument: command lines are visible to others. A
+/// value that cannot be hidden while typed is not asked for at all.
 fn read_secret(prompt: &str) -> Result<String> {
     use std::io::{BufRead, IsTerminal};
     let mut line = String::new();
     if std::io::stdin().is_terminal() {
+        let echo = EchoOff::new().map_err(|e| anyhow!("{e:#}; pipe the value on stdin instead"))?;
         eprint!("{prompt}");
-        without_echo(|| std::io::stdin().lock().read_line(&mut line))?;
+        let read = std::io::stdin().lock().read_line(&mut line);
+        drop(echo);
         eprintln!();
+        read?;
     } else {
         std::io::stdin().lock().read_line(&mut line)?;
     }

@@ -67,13 +67,14 @@ pub fn truth(src: &str, v: &Vars) -> Result<bool, String> {
     }
 }
 
-/// A piece of a string: text, or a `${...}` expression.
-enum Piece<'a> {
+/// A piece of a string: text, or a `${...}` template (with its `${` and `}`).
+pub enum Piece<'a> {
     Text(&'a str),
     Expr(&'a str),
 }
 
-fn pieces(s: &str) -> Result<Vec<Piece<'_>>, String> {
+/// A string cut into its text and its `${...}` templates, in order.
+pub fn pieces(s: &str) -> Result<Vec<Piece<'_>>, String> {
     let mut out = vec![];
     let mut rest = s;
     while let Some(i) = rest.find("${") {
@@ -97,8 +98,13 @@ fn inner(expr: &str) -> &str {
     expr[2..expr.len() - 1].trim()
 }
 
+/// The secret a `${env.NAME}` template names; none for any other template.
+pub fn secret_name(expr: &str) -> Option<&str> {
+    inner(expr).strip_prefix("env.").map(str::trim)
+}
+
 fn is_secret(expr: &str) -> bool {
-    inner(expr).starts_with("env.")
+    secret_name(expr).is_some()
 }
 
 fn render_text(s: &str, v: &Vars) -> Result<Value, String> {

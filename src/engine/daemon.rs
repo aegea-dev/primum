@@ -371,20 +371,22 @@ const BUILT_IN_TIMEOUT: u64 = 60;
 fn fill_secrets(v: &Value) -> Result<Value, String> {
     Ok(match v {
         Value::String(s) => {
+            use super::eval::{Piece, pieces, secret_name};
             let mut out = String::new();
-            let mut rest = s.as_str();
-            while let Some(i) = rest.find("${env.") {
-                out += &rest[..i];
-                let after = &rest[i + 6..];
-                let j = after
-                    .find('}')
-                    .ok_or_else(|| format!("unclosed `${{env.` in `{s}`"))?;
-                let name = after[..j].trim();
-                out += &super::secrets::get(name)
-                    .ok_or_else(|| format!("secret {name} is not set"))?;
-                rest = &after[j + 1..];
+            for piece in pieces(s)? {
+                match piece {
+                    Piece::Text(t) => out += t,
+                    Piece::Expr(e) => match secret_name(e) {
+                        Some(name) => {
+                            out += &super::secrets::get(name)
+                                .ok_or_else(|| format!("secret {name} is not set"))?
+                        }
+                        // any other template was filled in by the manager
+                        None => out += e,
+                    },
+                }
             }
-            Value::String(out + rest)
+            Value::String(out)
         }
         Value::Array(a) => Value::Array(a.iter().map(fill_secrets).collect::<Result<_, _>>()?),
         Value::Object(o) => Value::Object(

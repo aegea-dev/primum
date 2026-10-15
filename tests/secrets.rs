@@ -39,6 +39,21 @@ fn err(o: &Output) -> String {
 }
 
 #[test]
+fn the_name_rule_and_the_template_that_names_a_secret() {
+    use primum::engine::eval::secret_name;
+    use primum::engine::secrets::valid_name;
+    for good in ["API_KEY", "_x", "smtp_password2"] {
+        assert!(valid_name(good), "{good}");
+    }
+    for bad in ["", "2FA", "kötü", "a-b", "a.b", "a b"] {
+        assert!(!valid_name(bad), "{bad}");
+    }
+    assert_eq!(secret_name("${env.API_KEY}"), Some("API_KEY"));
+    assert_eq!(secret_name("${ env. API_KEY }"), Some("API_KEY"));
+    assert_eq!(secret_name("${ticket.id}"), None);
+}
+
+#[test]
 fn names_are_like_environment_variables() {
     let d = tempfile::tempdir().unwrap();
     let o = run(d.path(), &["secret", "set", "kötü-ad"], "x\n", false, &[]);
