@@ -132,7 +132,7 @@ chain.
 | `ticket.update@1` | any of `title`, `impact`, `urgency`, `risk`, `effort`, `needs`, `body`, `note` (appended) | the changes |
 | `json.pick@1` | `path`, dotted, into `prev` | the value |
 | `event.emit@1` | `type`, `target` (a ticket id or `project`), `data` | the event |
-| `http.request@1` | `url`; `method` (GET), `headers`, `json` or `body` | `status`, `headers`, `json`, `text` |
+| `http.request@1` | `url`; `method` (GET), `headers`, `json` or `body`, `max_bytes` (10 MB) | `status`, `headers`, `json`, `text` |
 | `command@1` | `run`: a program and its arguments | `exit`, `stdout`, `stderr` |
 
 ## A project's own actionables

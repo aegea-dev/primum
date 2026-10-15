@@ -215,6 +215,10 @@ fn every_broken_lifecycle_says_what_is_wrong() {
             "transition \"b -> c\": http.request@1 takes no with.renk",
         ),
         (
+            |v| v["transitions"][1]["do"][0]["with"]["max_bytes"] = json!("çok"),
+            "transition \"b -> c\": http.request@1 needs with.max_bytes as a whole number of bytes",
+        ),
+        (
             |v| v["transitions"][1]["do"][0]["with"]["url"] = json!("https://e.com/${ticket.id"),
             "transition \"b -> c\": unclosed",
         ),

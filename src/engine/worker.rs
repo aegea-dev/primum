@@ -37,6 +37,9 @@ process.stdout.write(JSON.stringify(out ?? null));
 const UV: &str = "python@ actionables need it (https://docs.astral.sh/uv/)";
 const BUN: &str = "bun@ actionables need it (https://bun.sh)";
 
+/// The most an HTTP response may be, unless `with.max_bytes` says otherwise.
+const MAX_BYTES: u64 = 10 * 1024 * 1024;
+
 fn sha(bytes: &[u8]) -> String {
     use sha2::{Digest, Sha256};
     Sha256::digest(bytes)
@@ -177,14 +180,31 @@ fn http(job: &Job) -> Result<Value, String> {
                 .unwrap_or_else(|| b.to_string()),
         );
     }
+    let max = job
+        .with
+        .get("max_bytes")
+        .and_then(Value::as_u64)
+        .unwrap_or(MAX_BYTES);
+    let too_big = || format!("the response is larger than {max} bytes (with.max_bytes)");
     let res = req.send().map_err(|e| e.to_string())?;
+    if res.content_length().is_some_and(|n| n > max) {
+        return Err(too_big());
+    }
     let status = res.status().as_u16();
     let headers: Map<String, Value> = res
         .headers()
         .iter()
         .map(|(k, v)| (k.as_str().to_string(), json!(v.to_str().unwrap_or(""))))
         .collect();
-    let body = res.text().map_err(|e| e.to_string())?;
+    // read one byte past the cap: more than that is too big, whatever the
+    // response said its length was
+    let mut bytes = Vec::new();
+    std::io::Read::read_to_end(&mut std::io::Read::take(res, max + 1), &mut bytes)
+        .map_err(|e| e.to_string())?;
+    if bytes.len() as u64 > max {
+        return Err(too_big());
+    }
+    let body = String::from_utf8_lossy(&bytes).into_owned();
     let mut out = json!({"status": status, "headers": headers, "text": body});
     if let Ok(j) = serde_json::from_str::<Value>(&body) {
         out["json"] = j;
