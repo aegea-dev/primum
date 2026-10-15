@@ -16,6 +16,8 @@ use std::collections::BTreeSet;
 use std::io::Write;
 use std::path::Path;
 use std::process::{Command, Stdio};
+use std::sync::mpsc::{Receiver, RecvTimeoutError};
+use std::sync::{Mutex, PoisonError};
 use wait_timeout::ChildExt;
 
 /// What one pass did.
@@ -50,8 +52,68 @@ enum Delivered {
     Deferred,
 }
 
-fn stamp(t: DateTime<Utc>) -> String {
+pub(crate) fn stamp(t: DateTime<Utc>) -> String {
     t.to_rfc3339_opts(SecondsFormat::Secs, true)
+}
+
+/// How the daemon's loop is doing, for `/health` (and C2b's watchdog).
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct Health {
+    pub started: String,
+    /// Passes over every project so far.
+    pub passes: u64,
+    /// When the last pass ran.
+    pub last_pass: Option<String>,
+    /// What went wrong in the last pass, if anything.
+    pub last_error: Option<String>,
+}
+
+impl Health {
+    pub fn starting(at: &str) -> Health {
+        Health {
+            started: at.to_string(),
+            passes: 0,
+            last_pass: None,
+            last_error: None,
+        }
+    }
+}
+
+/// Runs passes over `projects` until `wake`'s sender is gone: one every
+/// `interval`, or at once when something arrives on `wake` (an event from
+/// outside). Each pass is recorded in `health`; `report` hears of every
+/// project's pass. One project's error never stops the others.
+pub fn run_loop(
+    projects: &[Project],
+    interval: std::time::Duration,
+    manager: &Path,
+    wake: &Receiver<()>,
+    health: &Mutex<Health>,
+    report: impl Fn(&Project, &Result<Pass>),
+) {
+    loop {
+        let now = Utc::now();
+        let mut error = None;
+        for p in projects {
+            let r = run_once(p, now, manager);
+            if let Err(e) = &r {
+                error = Some(format!("{}: {e:#}", p.name));
+            }
+            report(p, &r);
+        }
+        {
+            let mut h = health.lock().unwrap_or_else(PoisonError::into_inner);
+            h.passes += 1;
+            h.last_pass = Some(stamp(now));
+            h.last_error = error;
+        }
+        match wake.recv_timeout(interval) {
+            Ok(()) | Err(RecvTimeoutError::Timeout) => {}
+            Err(RecvTimeoutError::Disconnected) => return,
+        }
+        // several wake-ups while a pass ran need only one more pass
+        while wake.try_recv().is_ok() {}
+    }
 }
 
 /// One pass over a project; `manager` is the primum binary to run as

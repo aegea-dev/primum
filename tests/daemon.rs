@@ -513,3 +513,29 @@ fn an_inbox_file_for_no_ticket_goes_to_the_project_and_names_never_clash() {
     assert_ne!(moved, "inbox/done/rapor.csv");
     assert_eq!(common::read(d.path(), &moved), "yeni\n");
 }
+
+#[test]
+fn the_loop_records_its_passes_and_stops_when_nothing_can_wake_it() {
+    use primum::engine::daemon::{Health, run_loop};
+    let d = tempfile::tempdir().unwrap();
+    let (p, id) = attached(d.path());
+    let health = std::sync::Mutex::new(Health::starting("2026-10-15T09:00:00Z"));
+    let (wake, woken) = std::sync::mpsc::channel::<()>();
+    drop(wake);
+    let reported = std::cell::Cell::new(0);
+    run_loop(
+        std::slice::from_ref(&p),
+        std::time::Duration::from_secs(60),
+        manager(),
+        &woken,
+        &health,
+        |_, r| {
+            assert!(r.is_ok());
+            reported.set(reported.get() + 1);
+        },
+    );
+    let h = health.into_inner().unwrap();
+    assert_eq!((h.passes, reported.get()), (1, 1));
+    assert!(h.last_pass.is_some() && h.last_error.is_none());
+    assert_eq!(load(&p).unwrap().get(&id).unwrap().status, "hazir");
+}
