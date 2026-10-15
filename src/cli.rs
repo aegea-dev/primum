@@ -638,8 +638,17 @@ fn dispatch(cli: Cli) -> Result<()> {
             std::io::Read::read_to_string(&mut std::io::stdin(), &mut text)?;
             let job: crate::engine::Job =
                 serde_json::from_str(&text).map_err(|e| anyhow!("the worker's job: {e}"))?;
-            let output = crate::engine::worker::run(&job).map_err(|e| anyhow!(e))?;
-            println!("{}", serde_json::json!({ "output": output }));
+            use crate::engine::worker::{Failure, LOST_EXIT, run};
+            #[cfg(unix)]
+            crate::engine::worker::stop_with_parent();
+            match run(&job) {
+                Ok(output) => println!("{}", serde_json::json!({ "output": output })),
+                Err(Failure::Error(why)) => bail!(why),
+                Err(Failure::Lost(why)) => {
+                    eprintln!("error: {why}");
+                    std::process::exit(LOST_EXIT);
+                }
+            }
         }
         Cmd::Watchdog {
             port,
@@ -1228,10 +1237,12 @@ fn lifecycle_cmd(p: &Project, cmd: LifecycleCmd) -> Result<()> {
 /// What a daemon pass did, on stderr: only when it did something, or failed.
 fn report_pass(p: &Project, pass: &Result<crate::engine::daemon::Pass>) {
     match pass {
-        Ok(pass) if pass.delivered + pass.written + pass.worked + pass.deferred > 0 => eprintln!(
-            "{}: {} events, {} jobs, {} changes written, {} waiting",
-            p.name, pass.delivered, pass.worked, pass.written, pass.deferred
-        ),
+        Ok(pass) if pass.delivered + pass.written + pass.worked + pass.lost + pass.deferred > 0 => {
+            eprintln!(
+                "{}: {} events, {} jobs, {} lost (run again), {} changes written, {} waiting",
+                p.name, pass.delivered, pass.worked, pass.lost, pass.written, pass.deferred
+            )
+        }
         Ok(_) => {}
         Err(e) => eprintln!("{}: {e:#}", p.name),
     }

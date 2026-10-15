@@ -20,6 +20,7 @@ fn job(action: &str, with: Value, root: PathBuf) -> Job {
         root,
         program: None,
         timeout: 10,
+        heartbeat: None,
     }
 }
 
@@ -83,7 +84,9 @@ fn http_request_sends_and_reads_json() {
 fn http_request_reads_no_more_than_its_cap() {
     let (url, h) = server();
     let with = json!({"url": format!("{url}/büyük"), "max_bytes": 10});
-    let e = worker::run(&job("http.request@1", with, std::env::temp_dir())).unwrap_err();
+    let e = worker::run(&job("http.request@1", with, std::env::temp_dir()))
+        .unwrap_err()
+        .to_string();
     h.join().unwrap();
     assert!(
         e.contains("larger than 10 bytes") && e.contains("max_bytes"),
@@ -107,7 +110,8 @@ fn http_request_that_cannot_connect_fails() {
         json!({"url": url}),
         std::env::temp_dir(),
     ))
-    .unwrap_err();
+    .unwrap_err()
+    .to_string();
     assert!(e.contains("http.request@1"), "{e}");
 }
 
@@ -126,7 +130,8 @@ fn command_runs_in_the_project_and_reports_its_exit() {
         json!({"run": ["yok-böyle-bir-program"]}),
         d.path().to_path_buf(),
     ))
-    .unwrap_err();
+    .unwrap_err()
+    .to_string();
     assert!(e.contains("yok-böyle-bir-program"), "{e}");
 }
 
@@ -156,7 +161,12 @@ fn a_program_gets_the_job_on_stdin_and_prints_its_output() {
     assert_eq!(out["got"]["ticket"]["title"], "Gölge");
     assert_eq!(out["got"]["key"], "12:e1.2:0");
     std::fs::write(&script, "#!/bin/sh\necho kırık 1>&2\nexit 2\n").unwrap();
-    assert!(worker::run(&j).unwrap_err().contains("kırık"));
+    assert!(worker::run(&j).unwrap_err().to_string().contains("kırık"));
     std::fs::write(&script, "#!/bin/sh\necho 'not json'\n").unwrap();
-    assert!(worker::run(&j).unwrap_err().contains("JSON"));
+    assert!(worker::run(&j).unwrap_err().to_string().contains("JSON"));
+    // an error is not a loss; a program killed by a signal is
+    assert!(matches!(worker::run(&j), Err(worker::Failure::Error(_))));
+    std::fs::write(&script, "#!/bin/sh\nkill -9 $$\n").unwrap();
+    let e = worker::run(&j).unwrap_err();
+    assert!(matches!(e, worker::Failure::Lost(_)), "{e:?}");
 }

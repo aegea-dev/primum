@@ -161,7 +161,8 @@ A lifecycle calls it as `<name>.<target>@<version>`: `checks.is-valid@1`.
 
 - Every type: `name` (the folder's name), `version`, `description`,
   `type`, `working_directory` (by default the actionable's folder),
-  `environment`, `limits.timeout`, `targets`.
+  `environment`, `limits.timeout`, `limits.heartbeat` (see
+  [lost jobs](/reference/daemon/#lost-jobs-run-again)), `targets`.
 - `python@<version>`: `home` (the virtual environment) and
   `requirements`; a target is a `module` and a `callable`.
 - `bun@<version>`: dependencies from `package.json`; a target is a `file`
