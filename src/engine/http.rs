@@ -60,6 +60,7 @@ async fn health(State(s): State<Shared>) -> Json<Value> {
     let names: Vec<&str> = s.projects.iter().map(|p| p.name.as_str()).collect();
     Json(json!({
         "ok": true,
+        "pid": std::process::id(),
         "projects": names,
         "started": h.started,
         "passes": h.passes,

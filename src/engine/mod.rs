@@ -8,6 +8,7 @@ pub mod http;
 pub mod journal;
 pub mod manager;
 pub mod secrets;
+pub mod watchdog;
 pub mod worker;
 
 use crate::lifecycle::File;

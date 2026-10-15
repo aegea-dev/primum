@@ -204,6 +204,28 @@ pub enum Cmd {
     /// The lifecycle manager: one decision, JSON in on stdin, JSON out on stdout
     #[command(hide = true)]
     Manager,
+    /// Keeps `primum daemon` running: restarts it when it exits, stops
+    /// answering or stops making passes (what the service runs)
+    #[command(hide = true)]
+    Watchdog {
+        #[arg(long, default_value_t = 8777)]
+        port: u16,
+        /// Seconds between the daemon's passes
+        #[arg(long, default_value_t = 1)]
+        interval: u64,
+        /// Seconds between checks of the daemon's /health
+        #[arg(long, default_value_t = 10)]
+        check_every: u64,
+        /// Checks in a row without an answer before a restart
+        #[arg(long, default_value_t = 3)]
+        misses: u32,
+        /// Seconds without a pass before the daemon counts as hung
+        #[arg(long, default_value_t = 600)]
+        stale_after: u64,
+        /// Where its lines and the daemon's stderr go
+        #[arg(long)]
+        log: Option<PathBuf>,
+    },
     /// A worker: one job, JSON in on stdin, its output as JSON on stdout
     #[command(hide = true)]
     Worker,
@@ -520,6 +542,37 @@ fn dispatch(cli: Cli) -> Result<()> {
                 serde_json::from_str(&text).map_err(|e| anyhow!("the worker's job: {e}"))?;
             let output = crate::engine::worker::run(&job).map_err(|e| anyhow!(e))?;
             println!("{}", serde_json::json!({ "output": output }));
+        }
+        Cmd::Watchdog {
+            port,
+            interval,
+            check_every,
+            misses,
+            stale_after,
+            log,
+        } => {
+            use crate::engine::watchdog::{Options, Rules, run};
+            let mut daemon_args = vec![
+                "--port".to_string(),
+                port.to_string(),
+                "--interval".to_string(),
+                interval.to_string(),
+            ];
+            if let Some(name) = &cli.project {
+                daemon_args.extend(["-p".to_string(), name.clone()]);
+            }
+            run(&Options {
+                exe: std::env::current_exe()?,
+                daemon_args,
+                port,
+                rules: Rules {
+                    check_every: std::time::Duration::from_secs(check_every),
+                    misses,
+                    stale_after: std::time::Duration::from_secs(stale_after),
+                    ..Rules::default()
+                },
+                log,
+            })?;
         }
         Cmd::Manager => {
             let mut text = String::new();
