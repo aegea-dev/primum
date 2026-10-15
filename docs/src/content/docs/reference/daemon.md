@@ -1,12 +1,7 @@
 ---
 title: The daemon
-description: Runs tickets' lifecycles - turns ledger changes into events, asks the manager, and writes the results back. Being built.
+description: Runs tickets' lifecycles - turns ledger changes into events, asks the manager, and writes the results back.
 ---
-
-:::caution[In progress]
-Running the daemon as a service, with a watchdog that restarts it, comes
-next; until then it runs in a terminal.
-:::
 
 ```bash
 primum daemon               # every project here; serves the board on 8777
@@ -21,13 +16,39 @@ one. It decides nothing itself: every change to a ticket comes from the
 [lifecycle manager](/reference/manager/)'s answer, which the daemon saves
 and carries out.
 
+## As a service
+
+```bash
+primum daemon install       # start it now and at every login (--port, --interval)
+primum daemon status        # the service's state and the daemon's health
+primum daemon uninstall
+```
+
+`install` registers a per-user service in the workspace (a launchd agent
+on macOS, a systemd user unit on Linux), one per workspace. It runs
+`primum watchdog`, which starts the daemon and checks its `/health` every
+10 seconds, and restarts it when:
+
+- it has exited;
+- three checks in a row get no answer (after 30 seconds to start);
+- its last pass is more than 10 minutes old (a pass that hangs).
+
+It waits 1 second before a restart, doubling up to a minute while the
+daemon keeps failing, and back to 1 second once one has run 5 minutes. If
+the watchdog itself ends, the OS starts it again. Its lines, and the
+daemon's stderr, go to `.primum-daemon.log` in the workspace.
+
+A service starts with a bare `PATH`, without the folders where `git`, `uv`
+or `bun` live: `install` keeps the `PATH` of the shell that ran it. Install
+again after changing it.
+
 ## What it serves
 
 On 127.0.0.1 only (outside webhooks need a relay or a tunnel to reach it):
 
 - **the board**, as [`primum serve`](/commands/serve/) serves it;
-- **`GET /health`**: `{"ok": true, "projects": [...], "started", "passes",
-  "last_pass", "last_error"}`;
+- **`GET /health`**: `{"ok": true, "pid", "projects": [...], "started",
+  "passes", "last_pass", "last_error"}`;
 - **`POST /p/<project>/api/events`**: an event from outside, saved in the
   journal; the daemon runs a pass at once.
 
