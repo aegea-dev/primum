@@ -32,9 +32,15 @@ and carries out.
 3. **Fires due timers** as `timer.fired` events.
 4. **Delivers every waiting event** to its ticket's manager, with the
    pinned lifecycle, the ticket, its arguments and the project's context,
-   and saves the answer in one transaction.
+   and saves the answer in one transaction. If the ticket or the project
+   changed while the manager ran, it is asked again; if they keep
+   changing, the event waits for the next pass (the pass reports it as
+   waiting) rather than saving an answer made from what is no longer there.
 5. **Writes the ticket changes** the answer asks for to the ledger, each
-   as a commit in the project's history.
+   as a commit in the project's history. A change the ledger refuses is
+   tried again on the next passes, and the ticket's later changes wait
+   behind it; after three tries it is dropped, and a note on the ticket
+   says what was dropped and why.
 6. **Runs the jobs** the answers asked for, one at a time, each in a
    [worker](/reference/worker/), and delivers each result to its ticket
    (back to step 4) until nothing is left.
@@ -72,8 +78,12 @@ the machine, never in the project's history or synced.
 | `tickets` | each running ticket's place: state, the running transition, where it failed |
 | `lifecycles` | every pinned lifecycle version |
 | `timers` | timers waiting to fire |
-| `ledger` | ticket changes waiting to be written |
+| `ledger` | ticket changes waiting to be written, with failed attempts and why |
 | `seen` | what the daemon last saw of each item |
+| `meta` | the journal's schema version |
+
+An older journal is brought up to date when a newer primum opens it; a
+journal from a newer primum is refused rather than misread.
 
 Events are saved before they are handled, and an answer is saved all at
 once or not at all. After a crash, the daemon carries on: waiting events are
