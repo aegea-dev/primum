@@ -539,3 +539,105 @@ fn the_loop_records_its_passes_and_stops_when_nothing_can_wake_it() {
     assert!(h.last_pass.is_some() && h.last_error.is_none());
     assert_eq!(load(&p).unwrap().get(&id).unwrap().status, "hazir");
 }
+
+#[cfg(unix)]
+#[test]
+fn jobs_for_different_tickets_run_at_the_same_time() {
+    let d = tempfile::tempdir().unwrap();
+    let (p, _) = attached(d.path());
+    executable(
+        d.path(),
+        "#!/bin/sh\ncat > /dev/null\nsleep 2\necho '{\"ok\": true}'\n",
+        "20s",
+    );
+    let ids: Vec<String> = ["Işık", "Gölge", "Ağaç"]
+        .iter()
+        .map(|t| {
+            let id = insert(&p, "TODO", t, Changes::default()).unwrap();
+            attach(&p, &id, "denetim", None).unwrap();
+            id
+        })
+        .collect();
+    let started = std::time::Instant::now();
+    let pass = run_once(&p, now(), manager()).unwrap();
+    assert_eq!(pass.worked, 3);
+    assert!(
+        started.elapsed().as_secs() < 5,
+        "three 2s jobs side by side, not one after another: {:?}",
+        started.elapsed()
+    );
+    let board = load(&p).unwrap();
+    for id in &ids {
+        assert_eq!(board.get(id).unwrap().status, "bitti");
+    }
+}
+
+/// Sets `runner` in the project's `project.json`, as a synced machine would.
+fn set_runner(d: &Path, host: &str) {
+    let v = json!({"name": "deneme", "runner": host});
+    std::fs::write(d.join("project.json"), v.to_string()).unwrap();
+}
+
+fn runner_of(d: &Path) -> Option<String> {
+    let text = std::fs::read_to_string(d.join("project.json")).ok()?;
+    let v: serde_json::Value = serde_json::from_str(&text).unwrap();
+    v["runner"].as_str().map(str::to_string)
+}
+
+#[test]
+fn the_first_daemon_to_run_a_project_becomes_its_runner() {
+    let d = tempfile::tempdir().unwrap();
+    let (p, id) = attached(d.path());
+    std::fs::write(d.path().join("project.json"), r#"{"name": "deneme"}"#).unwrap();
+    assert_eq!(runner_of(d.path()), None);
+    let out = daemon_with(d.path(), &[]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let host = runner_of(d.path()).expect("a runner");
+    assert!(!host.is_empty());
+    assert_eq!(load(&p).unwrap().get(&id).unwrap().status, "hazir");
+    // the claim is primum's own commit, not an edit made outside it
+    let log = primum::history::History::open(&p)
+        .unwrap()
+        .unwrap()
+        .git(&["log", "--format=%s"])
+        .unwrap();
+    assert!(log.lines().any(|m| m == format!("runner: {host}")), "{log}");
+}
+
+#[test]
+fn a_project_another_machine_runs_is_skipped_unless_taken_over() {
+    let d = tempfile::tempdir().unwrap();
+    let (p, id) = attached(d.path());
+    set_runner(d.path(), "başka-makine");
+    let out = daemon_with(d.path(), &[]);
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(!out.status.success(), "nothing left to run");
+    assert!(err.contains("runs on başka-makine"), "{err}");
+    assert!(err.contains("--take-over"), "{err}");
+    assert_eq!(load(&p).unwrap().get(&id).unwrap().status, "yeni");
+
+    let out = std::process::Command::new(manager())
+        .args([
+            "daemon",
+            "--once",
+            "--take-over",
+            "--now",
+            "2026-10-14T20:00:00Z",
+        ])
+        .current_dir(d.path())
+        .env("PRIMUM_NO_SECRET_STORE", "1")
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let host = runner_of(d.path()).expect("a runner");
+    assert_ne!(host, "başka-makine");
+    assert_eq!(load(&p).unwrap().get(&id).unwrap().status, "hazir");
+}

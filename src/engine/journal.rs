@@ -212,12 +212,14 @@ impl Journal {
         Ok(self.db.query_row(&sql, [], row).optional()?)
     }
 
-    /// The oldest job (an event for a worker) not yet run.
-    pub fn next_job(&self) -> Result<Option<Recorded>> {
+    /// Jobs (events for a worker) not yet run, oldest first.
+    pub fn jobs(&self) -> Result<Vec<Recorded>> {
         let sql = format!(
-            "SELECT {COLUMNS} FROM events WHERE handled IS NULL AND subject LIKE '%.worker' ORDER BY seq LIMIT 1"
+            "SELECT {COLUMNS} FROM events WHERE handled IS NULL AND subject LIKE '%.worker' ORDER BY seq"
         );
-        Ok(self.db.query_row(&sql, [], row).optional()?)
+        let mut s = self.db.prepare(&sql)?;
+        let out = s.query_map([], row)?.collect::<rusqlite::Result<_>>()?;
+        Ok(out)
     }
 
     /// Every event, or those about one subject, in order.
