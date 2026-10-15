@@ -432,3 +432,84 @@ fn a_change_that_cannot_be_written_is_retried_then_given_up_with_a_note() {
             .is_empty()
     );
 }
+
+#[test]
+fn a_file_dropped_in_the_inbox_is_an_input_for_its_ticket() {
+    let d = tempfile::tempdir().unwrap();
+    let (p, id) = attached(d.path());
+    run_once(&p, now(), manager()).unwrap();
+    let inbox = d.path().join("inbox");
+    std::fs::create_dir_all(&inbox).unwrap();
+    let name = format!("{id}.yanıt.txt");
+    std::fs::write(inbox.join(&name), "Evet, onaylıyorum.\n").unwrap();
+    std::fs::write(inbox.join(".yarım"), "henüz yazılıyor").unwrap();
+    run_once(&p, now(), manager()).unwrap();
+    assert_eq!(load(&p).unwrap().get(&id).unwrap().status, "bitti");
+    assert!(
+        inbox.join("done").join(&name).is_file(),
+        "moved when handled"
+    );
+    assert!(!inbox.join(&name).exists());
+    assert!(inbox.join(".yarım").is_file(), "dot-files are left alone");
+    let j = Journal::open(&p).unwrap();
+    let inputs: Vec<_> = j
+        .events(Some(&journal::subject("deneme", &id)))
+        .unwrap()
+        .into_iter()
+        .filter(|r| r.event.kind == "input.received")
+        .collect();
+    assert_eq!(inputs.len(), 1);
+    assert_eq!(inputs[0].event.source, "inbox");
+    assert_eq!(inputs[0].event.data["name"], name.as_str());
+    assert_eq!(
+        inputs[0].event.data["file"],
+        format!("inbox/done/{name}").as_str()
+    );
+    // nothing new on the next pass, nor when the same file is found again
+    // (as after a stop between saving its event and moving it)
+    run_once(&p, now(), manager()).unwrap();
+    std::fs::rename(inbox.join("done").join(&name), inbox.join(&name)).unwrap();
+    run_once(&p, now(), manager()).unwrap();
+    assert_eq!(
+        j.events(None)
+            .unwrap()
+            .iter()
+            .filter(|r| r.event.kind == "input.received")
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn an_inbox_file_for_no_ticket_goes_to_the_project_and_names_never_clash() {
+    let d = tempfile::tempdir().unwrap();
+    let (p, _) = attached(d.path());
+    let inbox = d.path().join("inbox");
+    std::fs::create_dir_all(inbox.join("done")).unwrap();
+    std::fs::write(inbox.join("done/rapor.csv"), "eski\n").unwrap();
+    std::fs::write(inbox.join("rapor.csv"), "yeni\n").unwrap();
+    run_once(&p, now(), manager()).unwrap();
+    let j = Journal::open(&p).unwrap();
+    let input = j
+        .events(Some(&journal::subject("deneme", "project")))
+        .unwrap()
+        .into_iter()
+        .find(|r| r.event.kind == "input.received")
+        .unwrap();
+    assert!(
+        input
+            .error
+            .as_deref()
+            .unwrap()
+            .contains("project lifecycles"),
+        "{input:?}"
+    );
+    assert_eq!(
+        common::read(d.path(), "inbox/done/rapor.csv"),
+        "eski\n",
+        "not overwritten"
+    );
+    let moved = input.event.data["file"].as_str().unwrap().to_string();
+    assert_ne!(moved, "inbox/done/rapor.csv");
+    assert_eq!(common::read(d.path(), &moved), "yeni\n");
+}

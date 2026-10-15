@@ -64,6 +64,7 @@ pub fn run_once(p: &Project, now: DateTime<Utc>, manager: &Path) -> Result<Pass>
     // changes left from a pass that stopped early, then the feed's own
     pass.written += write_ledger(p, &j, &mut tried)?;
     feed(p, &j, now)?;
+    inbox(p, &j, now)?;
     pass.written += write_ledger(p, &j, &mut tried)?;
     for (id, ticket, data) in j.due_timers(&stamp(now))? {
         let e = Envelope::new(
@@ -206,6 +207,89 @@ fn feed(p: &Project, j: &Journal, now: DateTime<Utc>) -> Result<()> {
             j.forget_seen(id)?;
             j.forget_ticket(id)?;
         }
+    }
+    Ok(())
+}
+
+/// `dir/name`, or `dir/<stem>-2.<ext>` (and so on) when that is taken: a
+/// handled file never overwrites another.
+fn free_name(dir: &Path, name: &str) -> std::path::PathBuf {
+    let first = dir.join(name);
+    if !first.exists() {
+        return first;
+    }
+    let (stem, ext) = match name.rsplit_once('.') {
+        Some((s, e)) if !s.is_empty() => (s, format!(".{e}")),
+        _ => (name, String::new()),
+    };
+    (2..)
+        .map(|n| dir.join(format!("{stem}-{n}{ext}")))
+        .find(|f| !f.exists())
+        .expect("some number is free")
+}
+
+/// Turns files dropped in `inbox/` into `input.received` events, then moves
+/// each to `inbox/done/`. A file named `<id>.<anything>` goes to that ticket
+/// when it is on a lifecycle, any other to the project. Dot-files (still
+/// being written, by convention) are left alone. An event's id comes from
+/// the file's name, size and modification time, so a pass stopped between
+/// saving the event and moving the file does not make a second event.
+fn inbox(p: &Project, j: &Journal, now: DateTime<Utc>) -> Result<()> {
+    let dir = p.root.join("inbox");
+    let entries = match std::fs::read_dir(&dir) {
+        Ok(e) => e,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(anyhow!("cannot read {}: {e}", dir.display())),
+    };
+    let mut files: Vec<std::path::PathBuf> = vec![];
+    for e in entries {
+        let e = e?;
+        if e.file_type()?.is_file() && !e.file_name().to_string_lossy().starts_with('.') {
+            files.push(e.path());
+        }
+    }
+    if files.is_empty() {
+        return Ok(());
+    }
+    files.sort();
+    let board = store::load(p)?;
+    let done = dir.join("done");
+    std::fs::create_dir_all(&done)?;
+    for f in files {
+        let name = f
+            .file_name()
+            .expect("a file")
+            .to_string_lossy()
+            .into_owned();
+        let meta = std::fs::metadata(&f)?;
+        let modified = meta
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map_or(0, |d| d.as_nanos());
+        let target = name
+            .split('.')
+            .next()
+            .filter(|id| board.get(id).is_some_and(|it| it.lifecycle.is_some()))
+            .unwrap_or("project");
+        let to = free_name(&done, &name);
+        let moved = format!(
+            "inbox/done/{}",
+            to.file_name().expect("a file").to_string_lossy()
+        );
+        let key = format!("{}\0{name}\0{}\0{modified}", p.name, meta.len());
+        let e = Envelope {
+            id: uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_URL, key.as_bytes()).to_string(),
+            source: "inbox".into(),
+            kind: "input.received".into(),
+            subject: journal::subject(&p.name, target),
+            time: stamp(now),
+            cause: None,
+            data: json!({ "file": moved, "name": name }),
+        };
+        j.publish(&e)?;
+        std::fs::rename(&f, &to)
+            .map_err(|e| anyhow!("cannot move {} to {}: {e}", f.display(), to.display()))?;
     }
     Ok(())
 }
