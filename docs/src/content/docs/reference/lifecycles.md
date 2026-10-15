@@ -3,11 +3,10 @@ title: Lifecycles
 description: The steps a ticket goes through, from created to closed, as a JSON file in the project. Being built; nothing runs them yet.
 ---
 
-:::caution[In progress]
+:::note
 A ticket on a lifecycle moves by itself while
-[`primum daemon`](/reference/daemon/) runs. Every built-in actionable and
-a project's `executable` actionables run today; `python@` and `bun@`
-actionables come next.
+[`primum daemon`](/reference/daemon/) runs, through every built-in
+actionable and the project's own (`executable`, `python@`, `bun@`).
 :::
 
 A lifecycle is the list of steps one ticket goes through, from created to
