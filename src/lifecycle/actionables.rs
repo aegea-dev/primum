@@ -50,12 +50,17 @@ pub fn check(
             }
         }
         "http.request@1" => {
-            only(&["url", "method", "headers", "json", "body"])?;
+            only(&["url", "method", "headers", "json", "body", "max_bytes"])?;
             if !text("url") {
                 return Err("http.request@1 needs with.url".into());
             }
             if with.contains_key("json") && with.contains_key("body") {
                 return Err("http.request@1 takes with.json or with.body, not both".into());
+            }
+            if with.get("max_bytes").is_some_and(|v| v.as_u64().is_none()) {
+                return Err(
+                    "http.request@1 needs with.max_bytes as a whole number of bytes".into(),
+                );
             }
         }
         "command@1" => {

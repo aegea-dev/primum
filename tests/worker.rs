@@ -80,6 +80,24 @@ fn http_request_sends_and_reads_json() {
 }
 
 #[test]
+fn http_request_reads_no_more_than_its_cap() {
+    let (url, h) = server();
+    let with = json!({"url": format!("{url}/büyük"), "max_bytes": 10});
+    let e = worker::run(&job("http.request@1", with, std::env::temp_dir())).unwrap_err();
+    h.join().unwrap();
+    assert!(
+        e.contains("larger than 10 bytes") && e.contains("max_bytes"),
+        "{e}"
+    );
+    // a cap the answer fits in reads it whole
+    let (url, h) = server();
+    let with = json!({"url": url, "max_bytes": 100_000});
+    let out = worker::run(&job("http.request@1", with, std::env::temp_dir())).unwrap();
+    h.join().unwrap();
+    assert_eq!(out["json"]["data"]["name"], "Ürün");
+}
+
+#[test]
 fn http_request_that_cannot_connect_fails() {
     let l = TcpListener::bind("127.0.0.1:0").unwrap();
     let url = format!("http://{}/", l.local_addr().unwrap());
