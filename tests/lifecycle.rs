@@ -261,6 +261,9 @@ fn a_state_only_a_person_reaches_is_a_warning() {
         validate::warnings(&lifecycle::manual()).is_empty(),
         "manual has no transitions at all"
     );
+    // a state shown while a chain runs is reached too
+    v["transitions"][1]["while"] = json!("beklemede");
+    assert!(validate::warnings(&check(&v).unwrap().file).is_empty());
 }
 
 #[test]
