@@ -1,7 +1,7 @@
 name: Docs
 
 # Builds the documentation site on every pull request that touches it, and
-# publishes it to GitHub Pages (https://erhangundogan.github.io/primum/) from
+# publishes it to GitHub Pages (https://aegea-dev.github.io/primum/) from
 # main. Pages must be set to deploy from GitHub Actions in the repository's
 # settings.
 on:

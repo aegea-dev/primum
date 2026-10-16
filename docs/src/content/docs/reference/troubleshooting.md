@@ -42,5 +42,5 @@ Another program may hold port 8777: `primum serve --port 9000`.
 
 ## Reporting a bug
 
-[Open an issue](https://github.com/erhangundogan/primum/issues) with the
+[Open an issue](https://github.com/aegea-dev/primum/issues) with the
 command, its output, and `primum --version`.

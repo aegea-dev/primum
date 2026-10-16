@@ -2,9 +2,9 @@
 #
 # primum installer.
 #
-#   curl -fsSL https://raw.githubusercontent.com/erhangundogan/primum/main/install.sh | sh
-#   curl -fsSL https://raw.githubusercontent.com/erhangundogan/primum/main/install.sh | sh -s -- --version 0.1.0
-#   curl -fsSL https://raw.githubusercontent.com/erhangundogan/primum/main/install.sh | sh -s -- --uninstall
+#   curl -fsSL https://raw.githubusercontent.com/aegea-dev/primum/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/aegea-dev/primum/main/install.sh | sh -s -- --version 0.1.0
+#   curl -fsSL https://raw.githubusercontent.com/aegea-dev/primum/main/install.sh | sh -s -- --uninstall
 #
 # POSIX sh on purpose, so `| sh` and `| bash` both work. Nothing here reads
 # stdin, because stdin is the script itself when this is piped.
@@ -14,7 +14,7 @@
 
 set -eu
 
-REPO="erhangundogan/primum"
+REPO="aegea-dev/primum"
 
 # Overridable only so the test suite can serve a deliberately corrupted archive
 # and prove the checksum check actually fires. A security check that has never
@@ -34,11 +34,11 @@ have() { command -v "$1" >/dev/null 2>&1; }
 usage() {
 	cat <<'EOF'
 primum installer, from
-https://raw.githubusercontent.com/erhangundogan/primum/main/install.sh
+https://raw.githubusercontent.com/aegea-dev/primum/main/install.sh
 
 USAGE
-    curl -fsSL https://raw.githubusercontent.com/erhangundogan/primum/main/install.sh | sh
-    curl -fsSL https://raw.githubusercontent.com/erhangundogan/primum/main/install.sh | sh -s -- [OPTIONS]
+    curl -fsSL https://raw.githubusercontent.com/aegea-dev/primum/main/install.sh | sh
+    curl -fsSL https://raw.githubusercontent.com/aegea-dev/primum/main/install.sh | sh -s -- [OPTIONS]
 
 OPTIONS
     --version X.Y.Z   Install a specific release instead of the latest
@@ -455,7 +455,7 @@ Check your network connection and try again."
 
 	say ""
 	say "Next:  cd into a project folder, then  primum init"
-	say "Docs:  https://github.com/erhangundogan/primum"
+	say "Docs:  https://github.com/aegea-dev/primum"
 }
 
 main "$@"

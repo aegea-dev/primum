@@ -1,7 +1,7 @@
 # Documentation for primum, prioritized work items as plain markdown files.
-# https://github.com/erhangundogan/primum
+# https://github.com/aegea-dev/primum
 
 User-agent: *
 Allow: /
 
-Sitemap: https://erhangundogan.github.io/primum/sitemap-index.xml
+Sitemap: https://aegea-dev.github.io/primum/sitemap-index.xml

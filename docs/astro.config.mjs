@@ -2,10 +2,10 @@
 import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
 
-const REPO = 'https://github.com/erhangundogan/primum';
-// Served by GitHub Pages at https://erhangundogan.github.io/primum/. With a
+const REPO = 'https://github.com/aegea-dev/primum';
+// Served by GitHub Pages at https://aegea-dev.github.io/primum/. With a
 // custom domain later, set SITE to it and BASE to '/'.
-const SITE = 'https://erhangundogan.github.io';
+const SITE = 'https://aegea-dev.github.io';
 const BASE = '/primum';
 
 // Starlight prefixes BASE onto sidebar and asset links, but not onto links
