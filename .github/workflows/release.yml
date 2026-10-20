@@ -138,10 +138,10 @@ jobs:
           cd "$work/deneme"
           "$bin" --version
           "$bin" init
-          test "$("$bin" add TODO "Gökçe'nin denemesi")" = "TODO:1"
-          "$bin" list | grep -q "TODO:1"
-          test -f items/TODO-1.md
-          grep -q "TODO:1" BOARD.md
+          test "$("$bin" add TODO "Gökçe'nin denemesi")" = "1"
+          "$bin" list | grep -q "^#1 .*Gökçe'nin denemesi"
+          test -f items/1.md
+          grep -qF "[#1](items/1.md)" BOARD.md
 
   # The gate: only a release whose artifacts have run on a clean runner
   # becomes visible.
