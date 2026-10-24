@@ -35,8 +35,10 @@ jobs:
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             echo "release already exists, reusing it"
           else
+            # the install notes, then GitHub's: the PRs merged since the
+            # last tag, by their titles
             gh release create "$GITHUB_REF_NAME" --draft --title "$GITHUB_REF_NAME" \
-              --notes-file .github/release-notes.md
+              --notes-file .github/release-notes.md --generate-notes
           fi
 
   build:
