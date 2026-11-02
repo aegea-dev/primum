@@ -24,8 +24,12 @@ or, with a Rust toolchain:
 cargo install primum --locked
 ```
 
+## AI Usage
+
+`primum` is developed by [Erhan Gundogan] with substantial help from AI coding assistants (mostly Claude Code and OpenAI Codex).
+
 ## License
 
 Apache-2.0
 
-`primum` is developed by `Erhan Gundogan` with substantial help from AI coding assistants (Claude Code and OpenAI Codex).
+[Erhan Gundogan]: https://github.com/erhangundogan
