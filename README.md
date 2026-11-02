@@ -27,3 +27,5 @@ cargo install primum --locked
 ## License
 
 Apache-2.0
+
+`primum` is developed by `Erhan Gundogan` with substantial help from AI coding assistants (Claude Code and OpenAI Codex).
