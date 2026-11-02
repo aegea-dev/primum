@@ -13,8 +13,10 @@ project.
 - **The table**: items in priority order, with scores, priority, needs,
   documents and status. Scores and status are edited in place; closed items'
   scores are not editable. Blocked items show what they wait for.
-- **Lanes as filters** in the toolbar, with counts; **hide done**; and
-  **Sort** by priority, id, any score, title or status (or click a column).
+- **Lanes as filters** in the toolbar, with counts of what the table can
+  show (closed items count only while **hide done** is off); **hide done**;
+  and **Sort** by priority, id, any score, title or status (or click a
+  column).
 - **+ new** adds an item.
 - A document badge opens the item on that document.
 - Keys: `j` or down and `k` or up move between rows, Enter opens one.
