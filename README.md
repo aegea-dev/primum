@@ -28,8 +28,17 @@ cargo install primum --locked
 
 `primum` is developed by [Erhan Gundogan] with substantial help from AI coding assistants (mostly Claude Code and OpenAI Codex).
 
+## Contributing
+
+primum is maintained by one person and its direction is set deliberately. Bug
+reports are always welcome. If you hit a real problem or want a feature you
+would use yourself, so are patches: open an issue first to agree the approach.
+See [CONTRIBUTING.md].
+
 ## License
 
-Apache-2.0
+Apache License 2.0. See [LICENSE].
 
 [Erhan Gundogan]: https://github.com/erhangundogan
+[CONTRIBUTING.md]: CONTRIBUTING.md
+[LICENSE]: LICENSE
