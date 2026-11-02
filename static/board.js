@@ -62,13 +62,15 @@ function compareItems(a,b){
 }
 
 function drawFilters(){
-  const counts={}; ITEMS.forEach(i=>counts[i.kind]=(counts[i.kind]||0)+1);
+  // what the table can show: closed items count only while they are shown
+  const shown=hideDone?ITEMS.filter(i=>!isClosed(i)):ITEMS;
+  const counts={}; shown.forEach(i=>counts[i.kind]=(counts[i.kind]||0)+1);
   const open=ITEMS.filter(i=>!isClosed(i)).length;
   const doing=ITEMS.filter(i=>i.status==='doing').length;
   if(kind!=='ALL'&&!counts[kind])kind='ALL';
   $('#filters').innerHTML=
     ['ALL',...KINDS.filter(k=>counts[k])].map(k=>
-      `<button type=button class="chip ${k===kind?'on':''} ${k==='ALL'?'':kindClass(k)}" data-k="${k}">${k} ${k==='ALL'?ITEMS.length:counts[k]}</button>`).join('')
+      `<button type=button class="chip ${k===kind?'on':''} ${k==='ALL'?'':kindClass(k)}" data-k="${k}">${k} ${k==='ALL'?shown.length:counts[k]}</button>`).join('')
     +`<span class=counts>${open} open${doing?`<span class=doing-count>${doing} in progress</span>`:''}</span>`;
   document.querySelectorAll('[data-k]').forEach(b=>b.onclick=()=>{kind=b.dataset.k;remember();draw();});
   $('#hide-done').checked=hideDone;

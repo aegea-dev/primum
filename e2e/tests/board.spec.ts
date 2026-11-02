@@ -19,6 +19,21 @@ test("lists items in priority order and filters by lane", async ({ page, board }
   await expect(page.locator("#rows tr.item")).toHaveCount(4);
 });
 
+test("the lane chips count what the table can show", async ({ page, board }) => {
+  await page.goto(board.baseURL);
+  const chip = (k: string) => page.locator(`#filters [data-k=${k}]`);
+  await expect(chip("ALL")).toHaveText("ALL 4");
+  await expect(chip("DEBT")).toHaveText("DEBT 1");
+  await page.locator("tr.item[data-id='4'] [data-f=status]").selectOption("done");
+  // Hide done is on: #4 leaves the table, and so does its count and its lane
+  await expect(page.locator("#rows tr.item")).toHaveCount(3);
+  await expect(chip("ALL")).toHaveText("ALL 3");
+  await expect(chip("DEBT")).toHaveCount(0);
+  await page.locator("#hide-done").uncheck();
+  await expect(chip("ALL")).toHaveText("ALL 4");
+  await expect(chip("DEBT")).toHaveText("DEBT 1");
+});
+
 test("editing an effort changes the score and the file", async ({ page, board }) => {
   await page.goto(board.baseURL);
   const row = page.locator("tr.item[data-id='4']");
