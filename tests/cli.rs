@@ -457,6 +457,25 @@ fn listed(help: &str) -> Vec<String> {
 }
 
 #[test]
+fn set_s_help_names_the_statuses_it_accepts() {
+    let t = T::new();
+    let help = t.out(&["set", "--help"]);
+    let line = help
+        .lines()
+        .find(|l| l.contains("--status"))
+        .unwrap_or_else(|| panic!("no --status in:\n{help}"));
+    // "--status <STATUS>  idle, doing, done or wontfix": the names after it
+    let named: Vec<&str> = line
+        .split("<STATUS>")
+        .nth(1)
+        .unwrap()
+        .split(|c: char| !c.is_ascii_alphabetic())
+        .filter(|w| !w.is_empty() && *w != "or")
+        .collect();
+    assert_eq!(named, primum::model::STATUSES, "{line}");
+}
+
+#[test]
 fn help_lists_commands_by_name() {
     let t = T::new();
     for args in [
