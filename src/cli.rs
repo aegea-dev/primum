@@ -101,7 +101,7 @@ pub enum Cmd {
         title: Option<String>,
         #[command(flatten)]
         scores: Scores,
-        /// open, doing, done or wontfix
+        /// idle, doing, done or wontfix
         #[arg(long)]
         status: Option<String>,
         /// Ids it waits for, like 3,5 ("" for none)
