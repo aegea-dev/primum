@@ -134,6 +134,11 @@ main.itempage{padding:16px 16px 48px}
 .md a{color:var(--accent)}
 .md .wl{font-family:ui-monospace,Menlo,monospace;font-size:13px;color:var(--accent)}
 .md .empty{color:var(--mut);font-style:italic}
+/* on the item page the text and documents fill their side of the divider,
+ * and nothing inside them is wider: code and diffs wrap, tables shrink */
+.split .md{max-width:none}
+.split .md pre,.split pre.diff{white-space:pre-wrap;overflow-wrap:anywhere}
+.split .md table{max-width:100%}
 
 @media (max-width:700px){
   table.items th:nth-child(n+3):nth-child(-n+6),table.items td:nth-child(n+3):nth-child(-n+6){display:none}

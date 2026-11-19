@@ -240,3 +240,41 @@ test("neither side of the item page can be dragged away", async ({ page, board }
   await page.setViewportSize({ width: 800, height: 900 });
   await expect(page.locator("#divider")).toBeHidden();
 });
+
+test("the item's text and documents fill their side, wide content included", async ({ page, board }) => {
+  await page.goto(`${board.baseURL}/p/i%C5%9Fler/item/1`);
+  await expect(page.locator("#doc h1")).toBeVisible();
+  const long = "çalışma_günlüğü_".repeat(20);
+  const body = [
+    "## Neden", "", "Gökçe galeriyi açınca boş sayfa görüyor.", "",
+    "```", `ayar=${long}`, "```", "",
+    `| alan | açıklama |`, `|---|---|`, `| ${long} | ${long} |`, "",
+  ].join("\n");
+  await page.locator("#edit").click();
+  await page.locator("#editor").fill(body);
+  await page.locator("#save").click();
+  await expect(page.locator("#view pre")).toBeVisible();
+  const drag = async (to: number) => {
+    const line = (await page.locator("#divider").boundingBox())!;
+    const y = line.y + 40;
+    await page.mouse.move(line.x + line.width / 2, y);
+    await page.mouse.down();
+    await page.mouse.move(to, y, { steps: 5 });
+    await page.mouse.up();
+  };
+  const fits = (sel: string) => page.locator(sel).evaluate((el) => el.scrollWidth <= el.clientWidth + 1);
+  const fill = async (inner: string, outer: string) =>
+    (await page.locator(inner).boundingBox())!.width / (await page.locator(outer).boundingBox())!.width;
+  // left side wide: the text fills it
+  await drag(1200);
+  expect(await fill("#view", "section.left")).toBeGreaterThan(0.98);
+  // left side narrow: nothing inside it is wider than it
+  await drag(5);
+  for (const sel of ["#view", "#view pre", "#view table"]) expect(await fits(sel)).toBe(true);
+  expect((await page.locator("#view table").boundingBox())!.width)
+    .toBeLessThanOrEqual((await page.locator("#view").boundingBox())!.width + 1);
+  // the documents fill their side too
+  expect(await fill("#doc", "#docpane")).toBeGreaterThan(0.95);
+  await drag(1430);
+  expect(await fits("#doc")).toBe(true);
+});
