@@ -3,7 +3,8 @@
 // expanded row, as a page of its own; `#<path>` selects a document's tab,
 // `#history` the history.
 const $=s=>document.querySelector(s);
-let IT=null, HISTORY=[];
+// EDITING: Edit was clicked; the item's fields are fields until save or cancel.
+let IT=null, HISTORY=[], EDITING=false;
 const docCache={};
 
 async function load(){
@@ -22,26 +23,46 @@ function draw(){
   $('#item-id').title=IT.kind;
   $('#item-title').textContent=IT.title;
   document.title=label(IT.id)+' '+IT.title+' · primum';
-  const score=f=>`<label>${f} <input class=num type=number min=1 max=10 value="${IT[f]}" data-f=${f} ${closed?'disabled':''}></label>`;
+  drawFields();
+  $('#item-meta').innerHTML=`<span class=docpath>${esc(IT.file)}</span>`;
+  $('#view').innerHTML=IT.body.trim()?md(IT.body):'<p class=empty>(no text yet)</p>';
+  $('#kind').innerHTML=KINDS.map(k=>`<option ${k===IT.kind?'selected':''}>${k}</option>`).join('');
+  drawConflicts();
+  drawDocs();
+}
+
+// The item's fields: values at rest, fields while editing. A closed item's
+// scores, title, kind and text stay as they are; only its status changes.
+function drawFields(){
+  const closed=isClosed(IT);
+  const value=f=>`<b class=val data-v=${f}>${esc(IT[f])}</b>`;
+  const score=f=>`<label>${f} ${EDITING
+    ?`<input class=num type=number min=1 max=10 value="${IT[f]}" data-f=${f} aria-label=${f} ${closed?'disabled':''}>`
+    :value(f)}</label>`;
   $('#controls').innerHTML=
-    `<label>status <select data-f=status>${STATUSES.map(s=>`<option ${s===IT.status?'selected':''}>${s}</option>`).join('')}</select></label>`
+    `<label>status ${EDITING
+      ?`<select data-f=status aria-label=status>${STATUSES.map(s=>`<option ${s===IT.status?'selected':''}>${s}</option>`).join('')}</select>`
+      :value('status')}</label>`
     +['impact','urgency','risk','effort'].map(score).join('')
     +`<span>score <span class=score>${IT.score}</span></span>`
     +(IT.needs.length?`<span>needs ${IT.blockers.length?'<span class=warn>'+IT.blockers.map(label).join(', ')+'</span>':IT.needs.map(label).join(', ')}</span>`:'')
     +(IT.finished?`<span>finished ${esc(IT.finished)}</span>`:'');
-  document.querySelectorAll('#controls [data-f]').forEach(el=>el.onchange=async()=>{
-    const v=el.tagName==='SELECT'?el.value:parseInt(el.value,10);
-    try{await api('/items',{id:IT.id,[el.dataset.f]:v});}catch(e){alert(e.message);}
-    await load();
-  });
-  $('#item-meta').innerHTML=`<span class=docpath>${esc(IT.file)}</span>`;
-  $('#view').innerHTML=IT.body.trim()?md(IT.body):'<p class=empty>(no text yet)</p>';
-  $('#edit').classList.toggle('hide',closed);
-  $('#kind').classList.toggle('hide',closed);
-  $('#kindsave').classList.toggle('hide',closed);
-  $('#kind').innerHTML=KINDS.map(k=>`<option ${k===IT.kind?'selected':''}>${k}</option>`).join('');
-  drawConflicts();
-  drawDocs();
+  const open=EDITING&&!closed;
+  $('#item-title').classList.toggle('hide',open);
+  let title=$('#title-field');
+  if(open&&!title){
+    title=document.createElement('input');
+    Object.assign(title,{type:'text',id:'title-field',value:IT.title});
+    title.setAttribute('aria-label','title');
+    $('#item-title').after(title);
+  }
+  if(!open&&title)title.remove();
+  $('#kind').classList.toggle('hide',!open);
+  $('#view').classList.toggle('hide',open);
+  $('#editor').classList.toggle('hide',!open);
+  $('#save').classList.toggle('hide',!EDITING);
+  $('#cancel').classList.toggle('hide',!EDITING);
+  $('#edit').classList.toggle('hide',EDITING);
 }
 
 // What a sync could not decide: both sides of each field, the text and
@@ -115,28 +136,39 @@ async function showDoc(path){
 }
 
 function editing(on){
-  $('#view').classList.toggle('hide',on);
-  $('#editor').classList.toggle('hide',!on);
-  $('#save').classList.toggle('hide',!on);
-  $('#cancel').classList.toggle('hide',!on);
-  $('#edit').classList.toggle('hide',on);
+  EDITING=on;
+  $('#editor').value=IT.body;
+  drawFields();
+  ($('#title-field')??$('#controls [data-f=status]'))?.focus();
 }
-$('#edit').onclick=()=>{$('#editor').value=IT.body;editing(true);$('#editor').focus();};
+$('#edit').onclick=()=>editing(true);
 $('#cancel').onclick=()=>editing(false);
+// Save sends what changed in one update, then the kind, which moves the
+// item to another lane (its own call, as it renames the item's files).
 $('#save').onclick=async()=>{
-  try{await api('/items',{id:IT.id,body:$('#editor').value});}catch(e){alert(e.message);return;}
-  editing(false);
+  const changed={};
+  document.querySelectorAll('#controls [data-f]').forEach(el=>{
+    if(el.disabled)return;
+    const v=el.tagName==='SELECT'?el.value:parseInt(el.value,10);
+    if(v!==IT[el.dataset.f])changed[el.dataset.f]=v;
+  });
+  const title=$('#title-field');
+  if(title&&title.value.trim()!==IT.title)changed.title=title.value.trim();
+  const editor=$('#editor');
+  if(!editor.classList.contains('hide')&&editor.value!==IT.body)changed.body=editor.value;
+  const kind=$('#kind').classList.contains('hide')||$('#kind').value===IT.kind?null:$('#kind').value;
+  try{
+    if(Object.keys(changed).length)await api('/items',{id:IT.id,...changed});
+    if(kind){
+      const r=await api('/items/kind',{id:IT.id,kind});
+      location.href=r.stem+location.hash.replace('items%2F'+IT.stem+'.','items%2F'+r.stem+'.');
+      return;
+    }
+  }catch(e){alert(e.message);return;}
+  EDITING=false;
   await load();
   $('#msg').textContent='saved';
   setTimeout(()=>$('#msg').textContent='',1500);
-};
-$('#kindsave').onclick=async()=>{
-  const k=$('#kind').value;
-  if(k===IT.kind)return;
-  try{
-    const r=await api('/items/kind',{id:IT.id,kind:k});
-    location.href=r.stem+location.hash.replace('items%2F'+IT.stem+'.','items%2F'+r.stem+'.');
-  }catch(e){alert(e.message);}
 };
 $('#del').onclick=async()=>{
   const own=IT.docs.filter(d=>d.path.startsWith('items/'+IT.stem+'.')).length;
@@ -184,5 +216,5 @@ window.addEventListener('resize',placeSplit);
 placeSplit();
 // Others' changes arrive by sync; reload every minute unless editing.
 setInterval(()=>{
-  if(document.visibilityState==='visible'&&$('#editor').classList.contains('hide')&&!document.activeElement.closest('input,select'))load();
+  if(document.visibilityState==='visible'&&!EDITING)load();
 },60000);

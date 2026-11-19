@@ -119,6 +119,8 @@ main.itempage{flex:1;min-height:0;padding:16px 16px 0}
 .controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:0 0 2px;color:var(--mut);font-size:12px}
 .controls label{display:inline-flex;align-items:center;gap:4px}
 .controls .score{color:var(--fg);font-size:14px}
+.controls .val{color:var(--fg);font-weight:500}
+#title-field{flex:1;min-width:200px;font:inherit;background:var(--input);color:var(--fg);border:1px solid var(--line-strong);border-radius:6px;padding:2px 8px}
 .itempage textarea{width:100%;min-height:360px;background:var(--input);color:var(--fg);border:1px solid var(--line-strong);border-radius:8px;padding:12px;font:12px/1.6 ui-monospace,Menlo,monospace;resize:vertical}
 .bar{display:flex;gap:8px;align-items:center;margin-top:14px;flex-wrap:wrap}
 .bar .ok{color:var(--mut);font-size:12px}

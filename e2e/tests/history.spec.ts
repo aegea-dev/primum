@@ -17,6 +17,6 @@ test("a conflict is resolved from the item page", async ({ page, board }) => {
   await expect(urgency.locator("button[data-keep='2']")).toContainText("2");
   await urgency.locator("button[data-keep='2']").click();
   await expect(page.locator("#conflicts")).toBeHidden();
-  await expect(page.locator("#controls [data-f=urgency]")).toHaveValue("2");
+  await expect(page.locator("#controls [data-v=urgency]")).toHaveText("2");
   await expect.poll(() => board.item("3")).toContain("urgency: 2");
 });

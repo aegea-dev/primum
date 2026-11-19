@@ -87,8 +87,9 @@ test("adding an item shows it and writes its file", async ({ page, board }) => {
 
 test("changing kind keeps the number; delete returns to the board", async ({ page, board }) => {
   await page.goto(`${board.baseURL}/p/i%C5%9Fler/item/4`);
+  await page.locator("#edit").click();
   await page.locator("#kind").selectOption("URGENT");
-  await page.locator("#kindsave").click();
+  await page.locator("#save").click();
   await expect.poll(() => board.item("4")).toContain("kind: URGENT");
   await expect(page).toHaveURL(/\/item\/4$/);
   await expect(page.locator("#item-id")).toHaveText("#4");
@@ -375,4 +376,57 @@ test("a sticky head fades what scrolls under it, only once something does", asyn
   await expect.poll(() => fade(head)).toBe("1");
   // the documents' head does not fade while they are not scrolled
   expect(await fade("#docpane .sidehead")).toBe("0");
+});
+
+test("the item page shows its fields until Edit makes them all editable", async ({ page, board }) => {
+  await page.goto(`${board.baseURL}/p/i%C5%9Fler/item/1`);
+  await expect(page.locator("#doc h1")).toBeVisible();
+  // at rest: values, no fields
+  await expect(page.locator("#controls [data-v=status]")).toHaveText("idle");
+  await expect(page.locator("#controls [data-v=urgency]")).toHaveText("7");
+  await expect(page.locator(".sidehead input, .sidehead select, #editor:visible, #kind:visible")).toHaveCount(0);
+  // Edit: the title, status, scores, kind and text become fields
+  await page.locator("#edit").click();
+  await expect(page.locator("#title-field")).toHaveValue("Gökçe'nin galerisi boş açılıyor");
+  for (const f of ["impact", "urgency", "risk", "effort"]) await expect(page.locator(`#controls input[data-f=${f}]`)).toBeEditable();
+  await expect(page.locator("#controls select[data-f=status]")).toBeEnabled();
+  await expect(page.locator("#kind")).toBeVisible();
+  await expect(page.locator("#editor")).toBeVisible();
+  // Cancel drops every change
+  await page.locator("#controls input[data-f=impact]").fill("2");
+  await page.locator("#title-field").fill("Başka başlık");
+  await page.locator("#cancel").click();
+  await expect(page.locator("#controls [data-v=impact]")).toHaveText("8");
+  await expect(page.locator("#item-title")).toHaveText("Gökçe'nin galerisi boş açılıyor");
+  expect(await board.item("1")).toContain("impact: 8");
+  // Save keeps them all
+  await page.locator("#edit").click();
+  await page.locator("#title-field").fill("Galeri boş açılıyor, ışık yok");
+  await page.locator("#controls select[data-f=status]").selectOption("doing");
+  await page.locator("#controls input[data-f=urgency]").fill("3");
+  await page.locator("#editor").fill("## Neden\n\nGüncel metin: şimdi düzeldi mi?\n");
+  await page.locator("#save").click();
+  await expect(page.locator("#controls [data-v=status]")).toHaveText("doing");
+  await expect(page.locator("#controls [data-v=urgency]")).toHaveText("3");
+  await expect(page.locator("#item-title")).toHaveText("Galeri boş açılıyor, ışık yok");
+  await expect(page.locator("#view")).toContainText("Güncel metin");
+  await expect(page.locator(".sidehead input, .sidehead select")).toHaveCount(0);
+  const file = await board.item("1");
+  for (const s of ["status: doing", "urgency: 3", "Galeri boş açılıyor, ışık yok", "Güncel metin"]) expect(file).toContain(s);
+});
+
+test("a closed item's Edit changes only its status", async ({ page, board }) => {
+  await page.goto(`${board.baseURL}/p/i%C5%9Fler/item/4`);
+  await page.locator("#edit").click();
+  await page.locator("#controls select[data-f=status]").selectOption("done");
+  await page.locator("#save").click();
+  await expect(page.locator("#controls [data-v=status]")).toHaveText("done");
+  await page.locator("#edit").click();
+  await expect(page.locator("#controls select[data-f=status]")).toBeEnabled();
+  await expect(page.locator("#controls input[data-f=impact]")).toBeDisabled();
+  await expect(page.locator("#title-field, #editor:visible, #kind:visible")).toHaveCount(0);
+  await page.locator("#controls select[data-f=status]").selectOption("idle");
+  await page.locator("#save").click();
+  await expect(page.locator("#controls [data-v=status]")).toHaveText("idle");
+  await expect.poll(() => board.item("4")).toContain("status: idle");
 });
