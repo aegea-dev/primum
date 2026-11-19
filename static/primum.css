@@ -89,8 +89,9 @@ input[type=number]{-moz-appearance:textfield}
 /* An item's page: its text on the left, its documents beside it, stacked on
    a narrow window. */
 main.itempage{padding:16px 16px 48px}
-/* item.js sets --left when the divider is dragged; 240px keeps both sides */
-.split{display:grid;grid-template-columns:minmax(240px,var(--left,74ch)) 9px minmax(240px,1fr);column-gap:20px;align-items:start}
+/* half and half until the divider is dragged: item.js then sets --left;
+ * 240px keeps both sides */
+.split{display:grid;grid-template-columns:minmax(240px,var(--left,1fr)) 9px minmax(240px,1fr);column-gap:20px;align-items:start}
 .split.single{grid-template-columns:minmax(0,74ch)}
 .divider{align-self:stretch;cursor:col-resize;background:linear-gradient(var(--line),var(--line)) center/1px 100% no-repeat}
 .split.single .divider{display:none}

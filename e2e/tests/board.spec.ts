@@ -201,6 +201,8 @@ test("dragging the line between text and documents resizes them, remembered", as
   const left = page.locator("section.left");
   const docs = page.locator("#docpane");
   const start = (await left.boundingBox())!.width;
+  // by default the two sides are as wide as each other
+  expect(start).toBeCloseTo((await docs.boundingBox())!.width, 0);
   const line = (await page.locator("#divider").boundingBox())!;
   const y = line.y + 40;
   await page.mouse.move(line.x + line.width / 2, y);
