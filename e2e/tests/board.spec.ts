@@ -458,6 +458,7 @@ test("a document is edited in its own pane", async ({ page, board }) => {
   await expect(page.locator("#doceditor")).toBeHidden();
   await page.locator("#docedit").click();
   await expect(page.locator("#doceditor")).toHaveValue(/^# Galeri spec/);
+  expect(await page.locator("#doceditor").evaluate((el: HTMLTextAreaElement) => [el.selectionStart, el.scrollTop])).toEqual([0, 0]);
   await expect(page.locator("#doc")).toBeHidden();
   // cancel keeps the document as it was
   await page.locator("#doceditor").fill("# Silinecek\n");

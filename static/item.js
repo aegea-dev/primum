@@ -173,7 +173,8 @@ function docEditing(on){
   DOCEDIT=on;
   if(on)$('#doceditor').value=docCache[DOC];
   drawDocBar();
-  if(on)$('#doceditor').focus();
+  // focused at the start, so it opens on the document's top, not its end
+  if(on){const ed=$('#doceditor');ed.focus();ed.setSelectionRange(0,0);ed.scrollTop=0;}
 }
 $('#docedit').onclick=()=>docEditing(true);
 $('#doccancel').onclick=()=>docEditing(false);
