@@ -15,6 +15,7 @@ The board's pages use a small JSON interface, served on 127.0.0.1 by
 | `POST /p/{project}/api/delete` | Delete: `{"id"}`; returns `{"removed": [...]}` |
 | `POST /p/{project}/api/resolve` | Settle a conflict: `{"id", "field", "keep": 1 \| 2 \| "both"}` |
 | `GET /p/{project}/api/doc?path=items/87.spec.md` | A document's text |
+| `POST /p/{project}/api/doc` | Add or replace an item's document, as `doc`: `{"id", "type": "spec", "text"}`; returns `{"path"}` |
 | `GET /p/{project}/api/history?id=#87` | History entries, as `log --json` |
 | `GET /p/{project}/api/history/diff?commit=C&path=P` | One change's diff |
 
