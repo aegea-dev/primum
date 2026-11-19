@@ -99,8 +99,8 @@ main.itempage{padding:16px 16px 48px}
 .docpane{max-height:calc(100vh - var(--chrome-h,100px) - 60px);overflow:auto;position:sticky;top:calc(var(--chrome-h,100px) + 12px)}
 /* each side's head stays in view: the text's under the bar as the page
  * scrolls, the documents' at the top of their own scrolling pane */
-.sidehead{position:sticky;top:var(--chrome-h,100px);z-index:2;background:var(--bg);padding-top:4px}
-.docpane .sidehead{top:0;padding-top:0}
+.sidehead{position:sticky;top:var(--chrome-h,100px);z-index:2;background:var(--bg)}
+.docpane .sidehead{top:0}
 @media (max-width:1100px){
   .split,.split.single{grid-template-columns:minmax(0,1fr)}
   .divider{display:none}
