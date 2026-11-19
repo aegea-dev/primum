@@ -142,12 +142,17 @@ test("columns fit their content; title, needs and docs share the rest", async ({
   expect(docs).toBeCloseTo(needs, 0);
   expect(await width(page, "id")).toBeLessThan(80);
   expect(await width(page, "impact")).toBeLessThan(90);
-  // a line between headers, the colour of the lines between rows
-  const [header, row] = await page.evaluate(() => [
-    getComputedStyle(document.querySelector("table.items th[data-col=title]")!).borderRightColor,
-    getComputedStyle(document.querySelector("#rows td")!).borderBottomColor,
-  ]);
-  expect(header).toBe(row);
+  // lines beside and under the headers, the colour of the lines between
+  // rows; drawn by the cells themselves, as a collapsed border does not
+  // move with a sticky cell
+  const [th, row] = await page.evaluate(() => {
+    const th = getComputedStyle(document.querySelector("table.items th[data-col=title]")!);
+    return [[th.borderRightWidth, th.borderBottomWidth, th.boxShadow],
+      getComputedStyle(document.querySelector("#rows td")!).borderBottomColor];
+  });
+  expect(th[0]).toBe("0px");
+  expect(th[1]).toBe("0px");
+  expect(th[2]).toBe(`${row} -1px 0px 0px 0px inset, ${row} 0px -1px 0px 0px inset`);
 });
 
 test("dragging a header line resizes its column, remembered after a reload", async ({ page, board }) => {
