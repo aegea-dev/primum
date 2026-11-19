@@ -42,11 +42,17 @@ main.board{padding:0 0 48px}
 #newform input[type=text]{flex:1;min-width:240px}
 #newform input[type=number]{width:56px}
 
-table.items{width:100%;border-collapse:collapse;margin-top:12px;background:var(--surface)}
-table.items th,table.items td{padding:7px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
-table.items th{font-size:12px;font-weight:500;color:var(--mut);cursor:pointer;user-select:none;white-space:nowrap;position:sticky;top:var(--chrome-h,100px);background:var(--surface);z-index:2}
+table.items{width:100%;table-layout:fixed;border-collapse:collapse;margin-top:12px;background:var(--surface)}
+table.items th,table.items td{padding:7px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top;overflow-wrap:anywhere}
+table.items th{font-size:12px;font-weight:500;color:var(--mut);cursor:pointer;user-select:none;position:sticky;top:var(--chrome-h,100px);background:var(--surface);z-index:2;border-right:1px solid var(--line)}
+table.items th:last-child{border-right:0}
+/* board.js sets each width: measured with the content on one line, then a
+ * header's grip drags it wider or narrower */
+table.items.measuring{table-layout:auto;width:max-content}
+table.items.measuring th,table.items.measuring td{white-space:nowrap}
+table.items th .grip{position:absolute;top:0;right:0;width:8px;height:100%;cursor:col-resize;z-index:3}
 table.items th.sorted{color:var(--fg)}
-table.items td.n,table.items th.n{text-align:center;font-variant-numeric:tabular-nums;width:56px}
+table.items td.n,table.items th.n{text-align:center;font-variant-numeric:tabular-nums}
 /* docs and status, the last two columns: titles over their contents */
 table.items th:nth-last-child(-n+2),table.items td:nth-last-child(-n+2){text-align:center}
 tr.item{cursor:pointer;background:var(--surface)}

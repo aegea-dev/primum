@@ -1,19 +1,21 @@
 // The board: lanes as filters, the priority-ordered table with editable
 // scores and status, "next up", and a new item. board.py's page script; a row
 // or a docs badge opens the item's own page instead of expanding in place.
-let ITEMS=[], kind='ALL', hideDone=true, sort='priority', dir=-1;
+let ITEMS=[], kind='ALL', hideDone=true, sort='priority', dir=-1, widths={};
 let selectedId=null, focusedField=null, focusAfterDraw=false;
 const $=s=>document.querySelector(s);
 
-// The lane, sort and "hide done" are remembered per project.
+// The lane, sort, "hide done" and dragged column widths are remembered per
+// project.
 const PREFS='primum-board:'+PROJECT;
 try{
   const p=JSON.parse(localStorage.getItem(PREFS)||'{}');
   if(p.kind)kind=p.kind;
   if(typeof p.hideDone==='boolean')hideDone=p.hideDone;
   if(p.sort){sort=p.sort;dir=p.dir||-1;}
+  if(p.widths&&typeof p.widths==='object')widths=p.widths;
 }catch(e){}
-function remember(){try{localStorage.setItem(PREFS,JSON.stringify({kind,hideDone,sort,dir}));}catch(e){}}
+function remember(){try{localStorage.setItem(PREFS,JSON.stringify({kind,hideDone,sort,dir,widths}));}catch(e){}}
 
 async function load(){
   ITEMS=await api('/items');
@@ -145,7 +147,53 @@ function draw(){
   document.querySelectorAll('#rows .docbadge').forEach(b=>b.onclick=e=>{
     e.stopPropagation(); openItem(b.closest('tr').dataset.stem,b.dataset.doc);});
   markSelected(focusAfterDraw); focusAfterDraw=false;
+  layoutColumns();
 }
+
+// Column widths. Most columns fit their content. title, needs first and docs
+// start at a share of the row (flex-basis) and split what is left 3:1:1
+// (flex-grow), or give it back in proportion to their share when the row is
+// too narrow. A column dragged by its header's grip keeps that width.
+const FLEX={title:{basis:.4,grow:3},needs:{basis:.1,grow:1},docs:{basis:.1,grow:1}};
+const MIN_WIDTH=40;
+const sum=a=>a.reduce((s,x)=>s+x,0);
+function layoutColumns(){
+  const table=$('table.items');
+  const ths=Array.from(table.querySelectorAll('thead th')).filter(th=>th.offsetParent);
+  ths.forEach(th=>th.style.width='');
+  table.style.width='';
+  table.classList.add('measuring');
+  const fit=ths.map(th=>th.getBoundingClientRect().width);
+  table.classList.remove('measuring');
+  const row=table.getBoundingClientRect().width;
+  const w=ths.map((th,n)=>widths[th.dataset.col]||fit[n]);
+  const flex=ths.map((th,n)=>n).filter(n=>FLEX[ths[n].dataset.col]&&!widths[ths[n].dataset.col]);
+  if(flex.length){
+    const basis=flex.map(n=>FLEX[ths[n].dataset.col].basis*row);
+    const left=row-sum(w.filter((x,n)=>!flex.includes(n)))-sum(basis);
+    const share=left>=0?flex.map(n=>FLEX[ths[n].dataset.col].grow):basis;
+    flex.forEach((n,k)=>{w[n]=Math.max(MIN_WIDTH,basis[k]+left*share[k]/sum(share));});
+  }else table.style.width=sum(w)+'px';
+  ths.forEach((th,n)=>{th.style.width=w[n]+'px';});
+}
+
+document.querySelectorAll('table.items thead th').forEach(th=>{
+  const grip=document.createElement('span');
+  grip.className='grip';
+  th.append(grip);
+  grip.onclick=e=>e.stopPropagation();
+  grip.onpointerdown=e=>{
+    e.preventDefault();
+    grip.setPointerCapture(e.pointerId);
+    const x=e.clientX, start=th.getBoundingClientRect().width;
+    grip.onpointermove=m=>{
+      widths[th.dataset.col]=Math.max(MIN_WIDTH,Math.round(start+m.clientX-x));
+      layoutColumns();
+    };
+    grip.onpointerup=()=>{grip.onpointermove=null;grip.onpointerup=null;remember();};
+  };
+});
+window.addEventListener('resize',layoutColumns);
 
 document.querySelectorAll('th[data-s]').forEach(th=>th.onclick=()=>{
   const s=th.dataset.s;

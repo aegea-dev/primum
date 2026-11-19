@@ -23,11 +23,11 @@
 <button type="button" id="ncancel">cancel</button>
 </form>
 <table class="items"><thead><tr>
-<th data-s="id">id</th><th data-s="title">title</th>
-<th data-s="impact" class="n">impact</th><th data-s="urgency" class="n">urgency</th>
-<th data-s="risk" class="n">risk</th><th data-s="effort" class="n">effort</th>
-<th data-s="score" class="n" title="(impact + urgency + risk) x 10 / effort">score</th>
-<th data-s="needs">needs first</th><th>docs</th><th data-s="status">status</th>
+<th data-s="id" data-col="id">id</th><th data-s="title" data-col="title">title</th>
+<th data-s="impact" data-col="impact" class="n">impact</th><th data-s="urgency" data-col="urgency" class="n">urgency</th>
+<th data-s="risk" data-col="risk" class="n">risk</th><th data-s="effort" data-col="effort" class="n">effort</th>
+<th data-s="score" data-col="score" class="n" title="(impact + urgency + risk) x 10 / effort">score</th>
+<th data-s="needs" data-col="needs">needs first</th><th data-col="docs">docs</th><th data-s="status" data-col="status">status</th>
 </tr></thead><tbody id="rows"></tbody></table>
 </main>{% endblock %}
 {% block scripts %}<script src="/static/md.js"></script>
