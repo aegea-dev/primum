@@ -18,9 +18,7 @@ try {
 <body>
 {% include "nav.html" %}
 <div class="header">
-<h1>{{ page.project }}</h1>
 <p class="hmeta"><span class="hlabel">Project:</span> {{ page.path }}</p>
-<p class="hmeta"><span class="hlabel">Items:</span> {{ page.open }} open, {{ page.doing }} in progress</p>
 </div>
 {% block bar %}{% endblock %}
 {% block main %}{% endblock %}

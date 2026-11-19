@@ -258,8 +258,6 @@ pub struct NavLink {
 pub struct PageCommon {
     pub project: String,
     pub path: String,
-    pub open: usize,
-    pub doing: usize,
     pub nav: Vec<NavLink>,
     /// `PROJECT` and `API` for the page's scripts, as a JSON object.
     pub globals: String,
@@ -270,7 +268,7 @@ fn script_json(v: &Value) -> String {
     v.to_string().replace("</", "<\\/")
 }
 
-fn common(s: &AppState, p: &Project, board: &Board) -> PageCommon {
+fn common(s: &AppState, p: &Project) -> PageCommon {
     let nav = s
         .entries
         .iter()
@@ -297,8 +295,6 @@ fn common(s: &AppState, p: &Project, board: &Board) -> PageCommon {
     PageCommon {
         project: p.name.clone(),
         path: projects::contract(&p.root),
-        open: board.items.iter().filter(|i| !i.is_closed()).count(),
-        doing: board.items.iter().filter(|i| i.status == "doing").count(),
         nav,
         globals: script_json(&json!({
             "PROJECT": p.name,
@@ -335,9 +331,10 @@ async fn board_page(
     Path(project): Path<String>,
 ) -> Result<Response, ApiError> {
     let p = s.project(&project)?;
-    let board = store::load(p)?;
+    // a board that cannot be read is said here, not by a page that cannot load
+    store::load(p)?;
     Ok(html(BoardPage {
-        page: common(&s, p, &board),
+        page: common(&s, p),
     }))
 }
 
@@ -353,7 +350,7 @@ async fn item_page(
         .ok_or_else(|| ApiError(StatusCode::NOT_FOUND, format!("no item {item}")))?;
     let it = board.get(&id).expect("found above");
     Ok(html(ItemPage {
-        page: common(&s, p, &board),
+        page: common(&s, p),
         title: it.title.clone(),
         item_json: script_json(&json!(id)),
         id,

@@ -19,13 +19,14 @@ document.getElementById('theme-toggle').addEventListener('click', () => {
 });
 // The heights of the sticky chrome, for what sticks below it: --secnav-h,
 // the nav's, and --chrome-h, the nav's plus the settings bar's. Measured,
-// since both wrap on a narrow window.
+// since both wrap on a narrow window, and exactly: offsetHeight rounds, and
+// the fraction it drops is a gap that scrolled content shows through.
 {
   const chrome = () => document.querySelectorAll('nav.secnav, .gallery-toolbar');
   const measure = () => {
     const [nav, bar] = [document.querySelector('nav.secnav'), document.querySelector('.gallery-toolbar')];
-    const n = nav?.offsetHeight ?? 0;
-    const b = bar?.offsetHeight ?? 0;
+    const n = nav?.getBoundingClientRect().height ?? 0;
+    const b = bar?.getBoundingClientRect().height ?? 0;
     const root = document.documentElement.style;
     root.setProperty('--secnav-h', `${n}px`);
     root.setProperty('--chrome-h', `${n + b}px`);

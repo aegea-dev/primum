@@ -105,7 +105,7 @@ test("the second project's tab shows its own items", async ({ page, board }) => 
   await page.locator("nav.secnav a", { hasText: "ödev" }).click();
   await expect(page).toHaveURL(/\/p\/%C3%B6dev\/$/);
   expect(await ids(page)).toEqual(["#1"]);
-  await expect(page.locator(".header h1")).toHaveText("ödev");
+  await expect(page.locator("nav.secnav a.on")).toHaveText("ödev");
 });
 
 test("#3 in an item's text links to item 3", async ({ page, board }) => {
@@ -309,4 +309,26 @@ test("the item's title, controls and document tabs stay on screen when scrolled"
   // at the end of the page the pane is not pushed up under the bar
   await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
   await expect.poll(() => top("#doctabs")).toBeGreaterThanOrEqual(chrome - 1);
+});
+
+test("sticky parts meet the bars above them with no gap", async ({ page, board }) => {
+  const edges = (sels: string[]) => page.evaluate((s) =>
+    s.map((sel) => { const b = document.querySelector(sel)!.getBoundingClientRect(); return [b.top, b.bottom]; }), sels);
+  await page.setViewportSize({ width: 1440, height: 260 });
+  await page.goto(board.baseURL);
+  await expect(page.locator("#rows tr.item")).toHaveCount(4);
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+  let [nav, bar, th] = await edges(["nav.secnav", ".gallery-toolbar", "table.items th"]);
+  expect(bar[0]).toBeCloseTo(nav[1], 2);
+  expect(th[0]).toBeCloseTo(bar[1], 2);
+  await page.goto(`${board.baseURL}/p/i%C5%9Fler/item/1`);
+  await expect(page.locator("#doc h1")).toBeVisible();
+  await page.locator("#edit").click();
+  await page.locator("#editor").fill(Array.from({ length: 60 }, (_, n) => `Satır ${n}: ğüşıöç`).join("\n\n"));
+  await page.locator("#save").click();
+  await page.evaluate(() => window.scrollTo(0, 800));
+  let head;
+  [nav, bar, head] = await edges(["nav.secnav", ".gallery-toolbar", "section.left .sidehead"]);
+  expect(bar[0]).toBeCloseTo(nav[1], 2);
+  expect(head[0]).toBeCloseTo(bar[1], 2);
 });

@@ -211,7 +211,9 @@ async fn pages_projects_and_assets() {
     );
     let (code, page) = get(&app, "/p/i%C5%9Fler/").await;
     assert_eq!(code, StatusCode::OK);
-    assert!(page.contains("2 open, 0 in progress"), "{page}");
+    // the header names the project's folder, not its counts
+    assert!(page.contains("Project:"), "{page}");
+    assert!(!page.contains("in progress"), "{page}");
     assert!(page.contains(r#""API":"/p/i%C5%9Fler/api""#));
     assert!(page.contains(r#"class="secnav-off" title="no primum.toml in yok""#));
     let (code, page) = get(&app, "/p/i%C5%9Fler/item/1").await;
