@@ -124,7 +124,7 @@ function draw(){
     <td class=n><input class=num type=number min=1 max=10 value="${i.risk}" data-f=risk aria-label=risk ${fin(i)}></td>
     <td class=n><input class=num type=number min=1 max=10 value="${i.effort}" data-f=effort aria-label=effort ${fin(i)}></td>
     <td class="n score">${i.score}</td>
-    <td>${i.blockers.length?'<span class=warn>'+i.blockers.map(label).join(', ')+'</span>':(i.needs.map(label).join(', ')||'-')}</td>
+    <td class=needs>${needBadges(i,'item/')||'-'}</td>
     <td class=docs>${i.docs.map(d=>`<button type=button class=docbadge data-doc="${esc(d.path)}" title="${esc(d.name)}">${esc(d.kind)}</button>`).join('')}</td>
     <td><select data-f=status aria-label=status>${STATUSES.map(s=>
         `<option ${s===i.status?'selected':''}>${s}</option>`).join('')}</select></td>
@@ -151,10 +151,16 @@ function draw(){
 // (flex-grow), or give it back in proportion to their share when the row is
 // too narrow. A column dragged by its header's grip keeps that width; a
 // double-click on the grip fits the column to its content, at most the row.
-const FLEX={title:{basis:.4,grow:3},needs:{basis:.1,grow:1},docs:{basis:.1,grow:1}};
+// No column is narrower than its header on one line, and needs first and
+// docs no narrower than all their content on one line. The table is never
+// wider than the page: what the minimums need comes out of the title
+// first, then out of whichever column has room above its own.
+const FLEX={title:{basis:.4,grow:3},needs:{basis:.1,grow:1,oneLine:true},docs:{basis:.1,grow:1,oneLine:true}};
 const MIN_WIDTH=40;
+const narrowest=(col,fit,head)=>Math.max(MIN_WIDTH,Math.ceil(head),FLEX[col]?.oneLine?Math.ceil(fit):0);
 const sum=a=>a.reduce((s,x)=>s+x,0);
-// Each shown header with its content's width on one line, and the row's.
+// Each shown header with its column's content on one line (fit), its own
+// label on one line with its padding (head), and the row's width.
 function measureColumns(){
   const table=$('table.items');
   const ths=Array.from(table.querySelectorAll('thead th')).filter(th=>th.offsetParent);
@@ -162,19 +168,35 @@ function measureColumns(){
   table.style.width='';
   table.classList.add('measuring');
   const fit=ths.map(th=>th.getBoundingClientRect().width);
+  const head=ths.map(th=>{
+    const r=document.createRange(), css=getComputedStyle(th);
+    r.selectNodeContents(th.firstChild);
+    return r.getBoundingClientRect().width+parseFloat(css.paddingLeft)+parseFloat(css.paddingRight)+1;
+  });
   table.classList.remove('measuring');
-  return {table,ths,fit,row:table.getBoundingClientRect().width};
+  return {table,ths,fit,head,row:table.getBoundingClientRect().width};
 }
 function layoutColumns(){
-  const {table,ths,fit,row}=measureColumns();
-  const w=ths.map((th,n)=>widths[th.dataset.col]||fit[n]);
+  const {table,ths,fit,head,row}=measureColumns();
+  const least=ths.map((th,n)=>narrowest(th.dataset.col,fit[n],head[n]));
+  const w=ths.map((th,n)=>Math.max(least[n],widths[th.dataset.col]||fit[n]));
   const flex=ths.map((th,n)=>n).filter(n=>FLEX[ths[n].dataset.col]&&!widths[ths[n].dataset.col]);
   if(flex.length){
     const basis=flex.map(n=>FLEX[ths[n].dataset.col].basis*row);
     const left=row-sum(w.filter((x,n)=>!flex.includes(n)))-sum(basis);
     const share=left>=0?flex.map(n=>FLEX[ths[n].dataset.col].grow):basis;
-    flex.forEach((n,k)=>{w[n]=Math.max(MIN_WIDTH,basis[k]+left*share[k]/sum(share));});
-  }else table.style.width=sum(w)+'px';
+    flex.forEach((n,k)=>{w[n]=Math.max(least[n],basis[k]+left*share[k]/sum(share));});
+  }
+  let over=sum(w)-row;
+  const title=ths.findIndex(th=>th.dataset.col==='title');
+  const order=ths.map((th,n)=>n).sort((a,b)=>(b===title)-(a===title)||(w[b]-least[b])-(w[a]-least[a]));
+  for(const n of order){
+    if(over<=0)break;
+    const take=Math.min(over,w[n]-least[n]);
+    w[n]-=take; over-=take;
+  }
+  // every column dragged and narrower than the row, or minimums that do not fit
+  if(!flex.length||over>0)table.style.width=sum(w)+'px';
   ths.forEach((th,n)=>{th.style.width=w[n]+'px';});
 }
 
@@ -187,8 +209,10 @@ document.querySelectorAll('table.items thead th').forEach(th=>{
     e.preventDefault();
     grip.setPointerCapture(e.pointerId);
     const x=e.clientX, start=th.getBoundingClientRect().width;
+    const {ths,fit,head}=measureColumns(), n=ths.indexOf(th), least=narrowest(th.dataset.col,fit[n],head[n]);
+    layoutColumns();
     grip.onpointermove=m=>{
-      widths[th.dataset.col]=Math.max(MIN_WIDTH,Math.round(start+m.clientX-x));
+      widths[th.dataset.col]=Math.max(least,Math.round(start+m.clientX-x));
       layoutColumns();
     };
     grip.onpointerup=()=>{grip.onpointermove=null;grip.onpointerup=null;remember();};

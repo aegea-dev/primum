@@ -211,7 +211,9 @@ async fn pages_projects_and_assets() {
     );
     let (code, page) = get(&app, "/p/i%C5%9Fler/").await;
     assert_eq!(code, StatusCode::OK);
-    assert!(page.contains("2 open, 0 in progress"), "{page}");
+    // the header names the project's folder, not its counts
+    assert!(page.contains("Project:"), "{page}");
+    assert!(!page.contains("in progress"), "{page}");
     assert!(page.contains(r#""API":"/p/i%C5%9Fler/api""#));
     assert!(page.contains(r#"class="secnav-off" title="no primum.toml in yok""#));
     let (code, page) = get(&app, "/p/i%C5%9Fler/item/1").await;
@@ -304,4 +306,44 @@ async fn items_say_whether_they_are_closed() {
     let (_, text) = get(&app, &format!("{API}/items")).await;
     let items: Value = serde_json::from_str(&text).unwrap();
     assert_eq!(items[0]["closed"], false);
+}
+
+#[tokio::test]
+async fn saving_a_document_replaces_its_text() {
+    let d = tempfile::tempdir().unwrap();
+    let (p, app) = setup(d.path());
+    let (code, v) = post(
+        &app,
+        &format!("{API}/doc"),
+        json!({"id": "1", "type": "spec", "text": "# Spec\n\nŞimdi Gökçe düzeltti.\n"}),
+    )
+    .await;
+    assert_eq!(code, StatusCode::OK, "{v}");
+    assert_eq!(v["path"], json!("items/1.spec.md"));
+    assert_eq!(
+        std::fs::read_to_string(p.root.join("items/1.spec.md")).unwrap(),
+        "# Spec\n\nŞimdi Gökçe düzeltti.\n"
+    );
+    // every problem is said, not guessed around
+    for (body, want, says) in [
+        (
+            json!({"id": "1", "type": "Spec Dosyası", "text": "x"}),
+            StatusCode::BAD_REQUEST,
+            "document type",
+        ),
+        (
+            json!({"id": "9", "type": "spec", "text": "x"}),
+            StatusCode::NOT_FOUND,
+            "no item",
+        ),
+        (
+            json!({"id": "1", "type": "spec"}),
+            StatusCode::BAD_REQUEST,
+            "text required",
+        ),
+    ] {
+        let (code, v) = post(&app, &format!("{API}/doc"), body).await;
+        assert_eq!(code, want, "{v}");
+        assert!(v.to_string().contains(says), "{v}");
+    }
 }

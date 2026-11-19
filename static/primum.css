@@ -44,8 +44,10 @@ main.board{padding:0 0 48px}
 
 table.items{width:100%;table-layout:fixed;border-collapse:collapse;margin-top:12px;background:var(--surface)}
 table.items th,table.items td{padding:7px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top;overflow-wrap:anywhere}
-table.items th{font-size:12px;font-weight:500;color:var(--mut);cursor:pointer;user-select:none;position:sticky;top:var(--chrome-h,100px);background:var(--surface);z-index:2;border-right:1px solid var(--line)}
-table.items th:last-child{border-right:0}
+table.items th{font-size:12px;font-weight:500;color:var(--mut);cursor:pointer;user-select:none;position:sticky;top:var(--chrome-h,100px);background:var(--surface);z-index:2;border:0;box-shadow:inset -1px 0 0 var(--line),inset 0 -1px 0 var(--line)}
+/* the lines are shadows, not borders: a collapsed border stays behind when
+ * the sticky header moves */
+table.items th:last-child{box-shadow:inset 0 -1px 0 var(--line)}
 /* board.js sets each width: measured with the content on one line, then a
  * header's grip drags it wider or narrower */
 table.items.measuring{table-layout:auto;width:max-content}
@@ -84,34 +86,74 @@ input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-
 input[type=number]{-moz-appearance:textfield}
 .docbadge,.doctabs button{font-size:12px;padding:2px 9px;border:1px solid var(--line-strong);border-radius:99px;background:transparent;color:var(--fg);cursor:pointer}
 .docbadge{margin:0 4px 2px 0}
+.needbadge{display:inline-block;font-size:12px;line-height:1.4;padding:1px 9px;margin:0 4px 2px 0;border:1px solid var(--line-strong);border-radius:99px;color:var(--fg);text-decoration:none}
+.needbadge:hover{border-color:var(--accent)}
+.needbadge.blocked{border-color:var(--warn);color:var(--warn)}
+/* in the board's rows a badge swaps its colours on hover: its text's colour
+ * becomes its background, the table's its text */
+#rows .docbadge:hover,#rows .needbadge:hover{background:var(--fg);border-color:var(--fg);color:var(--surface)}
+#rows .needbadge.blocked:hover{background:var(--warn);border-color:var(--warn);color:var(--surface)}
 .docbadge:hover{border-color:var(--accent)}
 
 /* An item's page: its text on the left, its documents beside it, stacked on
-   a narrow window. */
-main.itempage{padding:16px 16px 48px}
-.split{display:grid;grid-template-columns:minmax(0,74ch) minmax(0,1fr);gap:28px;align-items:start}
+   a narrow window. Side by side the page fits the window and each side
+   scrolls on its own, so there is one scrollbar per side. */
+body:has(>main.itempage){height:100vh;display:flex;flex-direction:column}
+main.itempage{flex:1;min-height:0;padding:16px 16px 0}
+/* half and half until the divider is dragged: item.js then sets --left;
+ * 240px keeps both sides */
+.split{display:grid;grid-template-columns:minmax(240px,var(--left,1fr)) 9px minmax(240px,1fr);column-gap:20px;height:100%}
 .split.single{grid-template-columns:minmax(0,74ch)}
-.docpane{border-left:1px solid var(--line);padding-left:24px;max-height:calc(100vh - var(--chrome-h,100px) - 24px);overflow:auto;position:sticky;top:calc(var(--chrome-h,100px) + 12px)}
+/* no top padding: scrolled text would show above the sticky head */
+.split>section.left,.docpane{min-height:0;overflow:auto;padding:0 8px 48px 0}
+.divider{cursor:col-resize;background:linear-gradient(var(--line),var(--line)) center/1px 100% no-repeat}
+.split.single .divider{display:none}
+/* each side's head stays at the top of its side as it scrolls */
+.sidehead{position:sticky;top:0;z-index:2;background:var(--bg);padding-bottom:6px}
 @media (max-width:1100px){
+  body:has(>main.itempage){height:auto;display:block}
+  main.itempage{padding:16px 16px 48px}
+  .split{height:auto;align-items:start}
   .split,.split.single{grid-template-columns:minmax(0,1fr)}
-  .docpane{border-left:0;border-top:1px solid var(--line);padding:16px 0 0;max-height:none;position:static}
+  .split>section.left,.docpane{overflow:visible;padding:0}
+  .divider{display:none}
+  /* stacked, the page scrolls: each head stays under the bar */
+  .sidehead{top:var(--chrome-h,100px)}
+  .docpane{border-top:1px solid var(--line);padding-top:16px}
 }
-.item-title{font-size:18px;line-height:1.35;margin:0 0 10px;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+.item-title{font-size:18px;line-height:1.35;margin:0 0 8px;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
 .item-title .id{color:#fff;background:var(--kind-color);padding:2px 8px;border-radius:5px;font-size:13px}
-.controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:0 0 14px;color:var(--mut);font-size:12px}
+.controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:0 0 2px;color:var(--mut);font-size:12px}
 .controls label{display:inline-flex;align-items:center;gap:4px}
 .controls .score{color:var(--fg);font-size:14px}
-.itempage textarea{width:100%;min-height:360px;background:var(--input);color:var(--fg);border:1px solid var(--line-strong);border-radius:8px;padding:12px;font:12px/1.6 ui-monospace,Menlo,monospace;resize:vertical}
+.controls .val{color:var(--fg);font-weight:500}
+.controls input.needs{width:120px;font:inherit;background:var(--input);color:var(--fg);border:1px solid var(--line-strong);border-radius:6px;padding:2px 6px}
+#title-field{flex:1;min-width:200px;font:inherit;background:var(--input);color:var(--fg);border:1px solid var(--line-strong);border-radius:6px;padding:2px 8px}
+/* inside the field: the side's scrolling top would cut a ring drawn outside */
+#title-field:focus{outline:2px solid var(--accent);outline-offset:-2px}
+/* while the title is a field, the id badge is as tall as it */
+.item-title:has(#title-field){align-items:stretch}
+.item-title:has(#title-field) .id{display:flex;align-items:center}
+.itempage textarea{width:100%;min-height:360px;background:var(--input);color:var(--fg);border:1px solid var(--line-strong);border-radius:8px;padding:12px;font:12px/1.6 ui-monospace,Menlo,monospace;display:block;resize:none;overflow:hidden}
 .bar{display:flex;gap:8px;align-items:center;margin-top:14px;flex-wrap:wrap}
 .bar .ok{color:var(--mut);font-size:12px}
 .bar .spacer{flex:1}
-.doctabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px}
+/* in a side's sticky head, the buttons sit right under what they act on */
+.sidehead .bar{margin:6px 0 0}
+.sidehead .bar:not(:has(>:not(.hide))){display:none}
+.doctabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;padding-top:4px}
 .doctabs button.on{background:var(--accent);border-color:var(--accent);color:#fff}
-.docpath{font:11px ui-monospace,Menlo,monospace;color:var(--mut);margin-bottom:10px;overflow-wrap:anywhere}
+.docpath{font:11px ui-monospace,Menlo,monospace;color:var(--mut);margin:14px 0 2px;overflow-wrap:anywhere}
 /* the file path in the item page's bar: the bar's size, on its centre line */
 #item-meta .docpath{font:12px/1.2 ui-monospace,Menlo,monospace;margin:0;align-self:center}
 
 /* Markdown, for bodies and documents. */
+/* Under a sticky head, what scrolls beneath it fades and blurs; nav.html
+ * marks the head "over" while something does. */
+.fade-head{--fade-bg:var(--bg)}
+table.items thead.fade-head{--fade-bg:var(--surface)}
+.fade-head.sidehead::after,table.items thead.fade-head th::after{content:"";position:absolute;left:0;right:0;top:100%;height:12px;pointer-events:none;opacity:0;transition:opacity .15s;background:linear-gradient(var(--fade-bg),transparent);-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px);-webkit-mask-image:linear-gradient(#000 40%,transparent);mask-image:linear-gradient(#000 40%,transparent)}
+.fade-head.over.sidehead::after,table.items thead.fade-head.over th::after{opacity:1}
 .md{font:15px/1.65 -apple-system,system-ui,sans-serif;color:var(--fg);max-width:74ch;overflow-wrap:anywhere}
 .md>*:first-child{margin-top:0}
 .md h1,.md h2,.md h3,.md h4,.md h5,.md h6{margin:1em 0 .35em;line-height:1.25}
@@ -130,6 +172,11 @@ main.itempage{padding:16px 16px 48px}
 .md a{color:var(--accent)}
 .md .wl{font-family:ui-monospace,Menlo,monospace;font-size:13px;color:var(--accent)}
 .md .empty{color:var(--mut);font-style:italic}
+/* on the item page the text and documents fill their side of the divider,
+ * and nothing inside them is wider: code and diffs wrap, tables shrink */
+.split .md{max-width:none}
+.split .md pre,.split pre.diff{white-space:pre-wrap;overflow-wrap:anywhere}
+.split .md table{max-width:100%}
 
 @media (max-width:700px){
   table.items th:nth-child(n+3):nth-child(-n+6),table.items td:nth-child(n+3):nth-child(-n+6){display:none}
