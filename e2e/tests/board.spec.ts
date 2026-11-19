@@ -193,3 +193,50 @@ test("double-clicking a header line fits the column to its content", async ({ pa
   await expect(page.locator("#rows tr.item")).toHaveCount(4);
   expect(await width(page, "needs")).toBeCloseTo(fitted, 0);
 });
+
+test("dragging the line between text and documents resizes them, remembered", async ({ page, board }) => {
+  const url = `${board.baseURL}/p/i%C5%9Fler/item/1`;
+  await page.goto(url);
+  await expect(page.locator("#doc h1")).toBeVisible();
+  const left = page.locator("section.left");
+  const docs = page.locator("#docpane");
+  const start = (await left.boundingBox())!.width;
+  const line = (await page.locator("#divider").boundingBox())!;
+  const y = line.y + 40;
+  await page.mouse.move(line.x + line.width / 2, y);
+  await page.mouse.down();
+  await page.mouse.move(line.x + line.width / 2 + 200, y, { steps: 5 });
+  await page.mouse.up();
+  expect((await left.boundingBox())!.width).toBeCloseTo(start + 200, -1);
+  expect((await docs.boundingBox())!.x).toBeGreaterThan(line.x + 200);
+  await page.reload();
+  await expect(page.locator("#doc h1")).toBeVisible();
+  expect((await left.boundingBox())!.width).toBeCloseTo(start + 200, -1);
+  // a double-click puts it back
+  await page.locator("#divider").dblclick();
+  expect((await left.boundingBox())!.width).toBeCloseTo(start, 0);
+  await page.reload();
+  await expect(page.locator("#doc h1")).toBeVisible();
+  expect((await left.boundingBox())!.width).toBeCloseTo(start, 0);
+});
+
+test("neither side of the item page can be dragged away", async ({ page, board }) => {
+  await page.goto(`${board.baseURL}/p/i%C5%9Fler/item/1`);
+  await expect(page.locator("#doc h1")).toBeVisible();
+  const line = (await page.locator("#divider").boundingBox())!;
+  const y = line.y + 40;
+  await page.mouse.move(line.x + line.width / 2, y);
+  await page.mouse.down();
+  await page.mouse.move(1430, y, { steps: 5 });
+  await page.mouse.up();
+  expect((await page.locator("#docpane").boundingBox())!.width).toBeGreaterThanOrEqual(239);
+  const now = (await page.locator("#divider").boundingBox())!;
+  await page.mouse.move(now.x + now.width / 2, y);
+  await page.mouse.down();
+  await page.mouse.move(5, y, { steps: 5 });
+  await page.mouse.up();
+  expect((await page.locator("section.left").boundingBox())!.width).toBeGreaterThanOrEqual(239);
+  // stacked when narrow: no line to drag
+  await page.setViewportSize({ width: 800, height: 900 });
+  await expect(page.locator("#divider")).toBeHidden();
+});

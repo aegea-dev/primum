@@ -89,11 +89,15 @@ input[type=number]{-moz-appearance:textfield}
 /* An item's page: its text on the left, its documents beside it, stacked on
    a narrow window. */
 main.itempage{padding:16px 16px 48px}
-.split{display:grid;grid-template-columns:minmax(0,74ch) minmax(0,1fr);gap:28px;align-items:start}
+/* item.js sets --left when the divider is dragged; 240px keeps both sides */
+.split{display:grid;grid-template-columns:minmax(240px,var(--left,74ch)) 9px minmax(240px,1fr);column-gap:20px;align-items:start}
 .split.single{grid-template-columns:minmax(0,74ch)}
-.docpane{border-left:1px solid var(--line);padding-left:24px;max-height:calc(100vh - var(--chrome-h,100px) - 24px);overflow:auto;position:sticky;top:calc(var(--chrome-h,100px) + 12px)}
+.divider{align-self:stretch;cursor:col-resize;background:linear-gradient(var(--line),var(--line)) center/1px 100% no-repeat}
+.split.single .divider{display:none}
+.docpane{max-height:calc(100vh - var(--chrome-h,100px) - 24px);overflow:auto;position:sticky;top:calc(var(--chrome-h,100px) + 12px)}
 @media (max-width:1100px){
   .split,.split.single{grid-template-columns:minmax(0,1fr)}
+  .divider{display:none}
   .docpane{border-left:0;border-top:1px solid var(--line);padding:16px 0 0;max-height:none;position:static}
 }
 .item-title{font-size:18px;line-height:1.35;margin:0 0 10px;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}

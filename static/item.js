@@ -147,6 +147,41 @@ $('#del').onclick=async()=>{
 };
 window.addEventListener('hashchange',()=>{if(IT)drawDocs();});
 load();
+
+// The divider between the text and the documents drags the split. Its place
+// is kept per project as the left side's share of the page, so it scales
+// with the window; a double-click returns to the default.
+const SPLIT='primum-item:'+PROJECT, SIDE_MIN=240;
+let leftShare=null;
+try{const v=JSON.parse(localStorage.getItem(SPLIT)||'{}').left;if(typeof v==='number')leftShare=v;}catch(e){}
+function placeSplit(){
+  const split=$('#split');
+  if(leftShare===null){split.style.removeProperty('--left');return;}
+  const most=split.clientWidth-$('#divider').offsetWidth-2*parseFloat(getComputedStyle(split).columnGap)-SIDE_MIN;
+  split.style.setProperty('--left',Math.max(SIDE_MIN,Math.min(most,leftShare*split.clientWidth))+'px');
+}
+function rememberSplit(){
+  try{
+    if(leftShare===null)localStorage.removeItem(SPLIT);
+    else localStorage.setItem(SPLIT,JSON.stringify({left:leftShare}));
+  }catch(e){}
+}
+const divider=$('#divider');
+divider.onpointerdown=e=>{
+  e.preventDefault();
+  divider.setPointerCapture(e.pointerId);
+  const x=e.clientX, start=$('section.left').getBoundingClientRect().width;
+  divider.onpointermove=m=>{leftShare=(start+m.clientX-x)/$('#split').clientWidth;placeSplit();};
+  divider.onpointerup=()=>{
+    divider.onpointermove=null; divider.onpointerup=null;
+    // keep what the page shows, not where the pointer went past a side's minimum
+    if(leftShare!==null)leftShare=$('section.left').getBoundingClientRect().width/$('#split').clientWidth;
+    rememberSplit();
+  };
+};
+divider.ondblclick=()=>{leftShare=null;placeSplit();rememberSplit();};
+window.addEventListener('resize',placeSplit);
+placeSplit();
 // Others' changes arrive by sync; reload every minute unless editing.
 setInterval(()=>{
   if(document.visibilityState==='visible'&&$('#editor').classList.contains('hide')&&!document.activeElement.closest('input,select'))load();
