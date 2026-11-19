@@ -144,7 +144,7 @@ pub fn router(entries: Vec<Entry>) -> Router {
         .route("/p/{project}/api/new", post(api_new))
         .route("/p/{project}/api/delete", post(api_delete))
         .route("/p/{project}/api/resolve", post(api_resolve))
-        .route("/p/{project}/api/doc", get(api_doc))
+        .route("/p/{project}/api/doc", get(api_doc).post(api_doc_save))
         .route("/p/{project}/api/history", get(api_history))
         .route("/p/{project}/api/history/diff", get(api_history_diff))
         .route("/static/{file}", get(asset))
@@ -378,6 +378,21 @@ async fn api_doc(
         Some(text) => ([(header::CONTENT_TYPE, "text/plain; charset=utf-8")], text).into_response(),
         None => (StatusCode::NOT_FOUND, "not a document").into_response(),
     })
+}
+
+/// Replaces one of an item's own documents, `items/<ID>.<type>.md`.
+async fn api_doc_save(
+    State(s): State<Shared>,
+    Path(project): Path<String>,
+    axum::Json(v): axum::Json<Value>,
+) -> Result<axum::Json<Value>, ApiError> {
+    let p = s.project(&project)?;
+    let id = id_field(&v)?;
+    let doc_type = text_field(&v, "type")?.ok_or_else(|| bad("type required"))?;
+    let text = text_field(&v, "text")?.ok_or_else(|| bad("text required"))?;
+    let path = store::set_doc(p, &id, &doc_type, &text)?;
+    sync_soon(p);
+    Ok(axum::Json(json!({ "path": path })))
 }
 
 async fn api_history(
