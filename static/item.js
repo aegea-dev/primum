@@ -33,13 +33,12 @@ function draw(){
   drawDocs();
 }
 
-// The item's fields: values at rest, fields while editing. A closed item's
-// scores, title, kind and text stay as they are; only its status changes.
+// The item's fields: values at rest, fields while editing. A closed item
+// has no edit: its status changes on the board.
 function drawFields(){
-  const closed=isClosed(IT);
   const value=f=>`<b class=val data-v=${f}>${esc(IT[f])}</b>`;
   const score=f=>`<label>${f} ${EDITING
-    ?`<input class=num type=number min=1 max=10 value="${IT[f]}" data-f=${f} aria-label=${f} ${closed?'disabled':''}>`
+    ?`<input class=num type=number min=1 max=10 value="${IT[f]}" data-f=${f} aria-label=${f}>`
     :value(f)}</label>`;
   $('#controls').innerHTML=
     `<label>status ${EDITING
@@ -55,22 +54,21 @@ function drawFields(){
     const s=scoreOf(v('impact'),v('urgency'),v('risk'),v('effort'));
     $('#controls .score').textContent=Number.isNaN(s)?'?':s;
   });
-  const open=EDITING&&!closed;
-  $('#item-title').classList.toggle('hide',open);
+  $('#item-title').classList.toggle('hide',EDITING);
   let title=$('#title-field');
-  if(open&&!title){
+  if(EDITING&&!title){
     title=document.createElement('input');
     Object.assign(title,{type:'text',id:'title-field',value:IT.title});
     title.setAttribute('aria-label','title');
     $('#item-title').after(title);
   }
-  if(!open&&title)title.remove();
-  $('#kind').classList.toggle('hide',!open);
-  $('#view').classList.toggle('hide',open);
-  $('#editor').classList.toggle('hide',!open);
+  if(!EDITING&&title)title.remove();
+  $('#kind').classList.toggle('hide',!EDITING);
+  $('#view').classList.toggle('hide',EDITING);
+  $('#editor').classList.toggle('hide',!EDITING);
   $('#save').classList.toggle('hide',!EDITING);
   $('#cancel').classList.toggle('hide',!EDITING);
-  $('#edit').classList.toggle('hide',EDITING);
+  $('#edit').classList.toggle('hide',EDITING||isClosed(IT));
 }
 
 // What a sync could not decide: both sides of each field, the text and
@@ -199,7 +197,6 @@ $('#cancel').onclick=()=>editing(false);
 $('#save').onclick=async()=>{
   const changed={};
   document.querySelectorAll('#controls [data-f]').forEach(el=>{
-    if(el.disabled)return;
     const v=el.tagName==='SELECT'?el.value:parseInt(el.value,10);
     if(v!==IT[el.dataset.f])changed[el.dataset.f]=v;
   });

@@ -415,20 +415,15 @@ test("the item page shows its fields until Edit makes them all editable", async 
   for (const s of ["status: doing", "urgency: 3", "Galeri boş açılıyor, ışık yok", "Güncel metin"]) expect(file).toContain(s);
 });
 
-test("a closed item's Edit changes only its status", async ({ page, board }) => {
+test("a closed item has no edit; its status changes on the board", async ({ page, board }) => {
+  await page.goto(board.baseURL);
+  await page.locator("#hide-done").uncheck();
+  await page.locator("tr.item[data-id='4'] select[data-f=status]").selectOption("done");
+  await expect.poll(() => board.item("4")).toContain("status: done");
   await page.goto(`${board.baseURL}/p/i%C5%9Fler/item/4`);
-  await page.locator("#edit").click();
-  await page.locator("#controls select[data-f=status]").selectOption("done");
-  await page.locator("#save").click();
   await expect(page.locator("#controls [data-v=status]")).toHaveText("done");
-  await page.locator("#edit").click();
-  await expect(page.locator("#controls select[data-f=status]")).toBeEnabled();
-  await expect(page.locator("#controls input[data-f=impact]")).toBeDisabled();
-  await expect(page.locator("#title-field, #editor:visible, #kind:visible")).toHaveCount(0);
-  await page.locator("#controls select[data-f=status]").selectOption("idle");
-  await page.locator("#save").click();
-  await expect(page.locator("#controls [data-v=status]")).toHaveText("idle");
-  await expect.poll(() => board.item("4")).toContain("status: idle");
+  await expect(page.locator("#edit")).toBeHidden();
+  await expect(page.locator("#del")).toBeVisible();
 });
 
 test("the item's buttons sit under its fields, and the score follows the scores", async ({ page, board }) => {

@@ -29,8 +29,8 @@ not decide something, each conflicting field's two sides to choose between.
 
 - **edit**, under the item's fields, makes its title, status, scores, kind
   and text editable; the score follows the scores as they change. **save**
-  keeps every change, **cancel** drops them. A closed item's **edit**
-  changes only its status.
+  keeps every change, **cancel** drops them. A closed item has no **edit**:
+  its status changes on the board.
 - A document's own **edit** does the same for the document shown.
 - The line between the two sides drags them wider or narrower, and is
   remembered per project; a double-click puts them back to half and half.
