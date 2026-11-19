@@ -124,7 +124,7 @@ function draw(){
     <td class=n><input class=num type=number min=1 max=10 value="${i.risk}" data-f=risk aria-label=risk ${fin(i)}></td>
     <td class=n><input class=num type=number min=1 max=10 value="${i.effort}" data-f=effort aria-label=effort ${fin(i)}></td>
     <td class="n score">${i.score}</td>
-    <td>${i.blockers.length?'<span class=warn>'+i.blockers.map(label).join(', ')+'</span>':(i.needs.map(label).join(', ')||'-')}</td>
+    <td class=needs>${needBadges(i,'item/')||'-'}</td>
     <td class=docs>${i.docs.map(d=>`<button type=button class=docbadge data-doc="${esc(d.path)}" title="${esc(d.name)}">${esc(d.kind)}</button>`).join('')}</td>
     <td><select data-f=status aria-label=status>${STATUSES.map(s=>
         `<option ${s===i.status?'selected':''}>${s}</option>`).join('')}</select></td>

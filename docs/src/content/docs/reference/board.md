@@ -12,7 +12,8 @@ project.
   in progress, those first. Finish what is started before starting more.
 - **The table**: items in priority order, with scores, priority, needs,
   documents and status. Scores and status are edited in place; closed items'
-  scores are not editable. Blocked items show what they wait for.
+  scores are not editable. **needs first** shows each item needed as a
+  badge that opens it, those not done yet in orange.
 - **Lanes as filters** in the toolbar, with counts of what the table can
   show (closed items count only while **hide done** is off); **hide done**;
   and **Sort** by priority, id, any score, title or status (or click a
@@ -29,7 +30,7 @@ not decide something, each conflicting field's two sides to choose between.
 
 - **edit**, under the item's fields, makes its title, status, scores,
   needs (`#1, #2`), kind and text editable; the score follows the scores
-  as they change. Each item it needs links to that item. **save**
+  as they change. Its needs show as badges, as on the board. **save**
   keeps every change, **cancel** drops them. A closed item has no **edit**:
   its status changes on the board.
 - A document's own **edit** does the same for the document shown.

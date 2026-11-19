@@ -519,26 +519,26 @@ test("in edit mode the title row and the two sides' buttons line up", async ({ p
 
 test("an item's needs link to their items and are edited with the rest", async ({ page, board }) => {
   await page.goto(`${board.baseURL}/p/i%C5%9Fler/item/2`);
-  await expect(page.locator("#controls a.ref")).toHaveText(["#1"]);
+  await expect(page.locator("#controls a.needbadge")).toHaveText(["#1"]);
   // Edit: a field, listing them as they are typed
   await page.locator("#edit").click();
   const needs = page.locator("#controls input[data-f=needs]");
   await expect(needs).toHaveValue("#1");
   await needs.fill("#1, #3");
   await page.locator("#save").click();
-  await expect(page.locator("#controls a.ref")).toHaveText(["#1", "#3"]);
+  await expect(page.locator("#controls a.needbadge")).toHaveText(["#1", "#3"]);
   await expect.poll(() => board.item("2")).toMatch(/needs:.*1.*3/);
   // an empty field clears them
   await page.locator("#edit").click();
   await needs.fill("");
   await page.locator("#save").click();
-  await expect(page.locator("#controls a.ref")).toHaveCount(0);
+  await expect(page.locator("#controls a.needbadge")).toHaveCount(0);
   await expect.poll(() => board.item("2")).toContain("needs: []");
   // an item with none still gets the field, and a link opens its item
   await page.locator("#edit").click();
   await needs.fill("#3");
   await page.locator("#save").click();
-  await page.locator("#controls a.ref", { hasText: "#3" }).click();
+  await page.locator("#controls a.needbadge", { hasText: "#3" }).click();
   await expect(page).toHaveURL(/\/item\/3$/);
 });
 
@@ -601,4 +601,17 @@ test("no column's header is narrower than its text on one line", async ({ page, 
   await page.reload();
   await expect(page.locator("#rows tr.item")).toHaveCount(4);
   for (const col of ["title", "urgency", "status"]) expect(await lines(col), col).toBe(1);
+});
+
+test("a need on the board is a badge that opens the item it needs", async ({ page, board }) => {
+  await page.goto(board.baseURL);
+  const badge = page.locator("tr.item[data-id='2'] a.needbadge");
+  await expect(badge).toHaveText(["#1"]);
+  // #1 is not done yet: the badge warns
+  await expect(badge).toHaveClass(/blocked/);
+  await badge.click();
+  await expect(page).toHaveURL(/\/item\/1$/);
+  // the item page shows its needs the same way
+  await page.goto(`${board.baseURL}/p/i%C5%9Fler/item/2`);
+  await expect(page.locator("#controls a.needbadge.blocked")).toHaveText(["#1"]);
 });

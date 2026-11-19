@@ -58,10 +58,17 @@ const knowItems=(items,base)=>{
   window.ITEM_TITLES=Object.fromEntries(items.map(i=>[i.id,{title:i.title,kind:i.kind}]));
   window.ITEM_BASE=base;
 };
+// An item's needs as badges, each a link to the item it needs, its kind and
+// title on hover; one not done yet warns. base: where item links point from
+// this page.
+const needBadges=(it,base)=>it.needs.map(id=>{
+  const t=window.ITEM_TITLES?.[id];
+  return `<a class="needbadge ${it.blockers.includes(id)?'blocked':''}" href="${base}${id}"${t?` title="${esc(t.kind+': '+t.title)}"`:''}>${label(id)}</a>`;
+}).join('');
 async function api(path,body){
   const r=await fetch(API+path,body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   const data=await r.json().catch(()=>({}));
   if(!r.ok)throw new Error(data.error||('HTTP '+r.status));
   return data;
 }
-Object.assign(window,{esc,md,mdInline,KINDS,STATUSES,kindClass,isClosed,label,knowItems,api});
+Object.assign(window,{esc,md,mdInline,KINDS,STATUSES,kindClass,isClosed,label,knowItems,needBadges,api});

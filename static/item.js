@@ -48,8 +48,7 @@ function drawFields(){
     +`<span>score <span class=score>${IT.score}</span></span>`
     +(EDITING
       ?`<label>needs <input type=text class=needs data-f=needs value="${esc(IT.needs.map(label).join(', '))}" placeholder="#1, #2" aria-label=needs></label>`
-      // each a link to its item, as #12 in the text; what is not done yet warns
-      :IT.needs.length?`<span>needs ${IT.blockers.length?'<span class=warn>'+mdInline(IT.blockers.map(label).join(', '))+'</span>':mdInline(IT.needs.map(label).join(', '))}</span>`:'')
+      :IT.needs.length?`<span>needs ${needBadges(IT,'')}</span>`:'')
     +(IT.finished?`<span>finished ${esc(IT.finished)}</span>`:'');
   // while editing, the score follows the scores before they are saved
   document.querySelectorAll('#controls input.num').forEach(el=>el.oninput=()=>{

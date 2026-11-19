@@ -86,6 +86,9 @@ input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-
 input[type=number]{-moz-appearance:textfield}
 .docbadge,.doctabs button{font-size:12px;padding:2px 9px;border:1px solid var(--line-strong);border-radius:99px;background:transparent;color:var(--fg);cursor:pointer}
 .docbadge{margin:0 4px 2px 0}
+.needbadge{display:inline-block;font-size:12px;line-height:1.4;padding:1px 9px;margin:0 4px 2px 0;border:1px solid var(--line-strong);border-radius:99px;color:var(--fg);text-decoration:none}
+.needbadge:hover{border-color:var(--accent)}
+.needbadge.blocked{border-color:var(--warn);color:var(--warn)}
 .docbadge:hover{border-color:var(--accent)}
 
 /* An item's page: its text on the left, its documents beside it, stacked on
