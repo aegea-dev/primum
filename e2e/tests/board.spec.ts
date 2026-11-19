@@ -473,3 +473,22 @@ test("a document is edited in its own pane", async ({ page, board }) => {
   await page.locator("#doctabs button", { hasText: "history" }).click();
   await expect(page.locator("#docedit")).toBeHidden();
 });
+
+test("an editor fills its side and grows with its text, with no scrollbar of its own", async ({ page, board }) => {
+  await page.goto(`${board.baseURL}/p/i%C5%9Fler/item/1`);
+  await expect(page.locator("#doc h1")).toBeVisible();
+  const fits = (sel: string) => page.locator(sel).evaluate((el) => el.scrollHeight <= el.clientHeight + 1);
+  const bottom = async (sel: string) => { const b = (await page.locator(sel).boundingBox())!; return b.y + b.height; };
+  // a short text: the editor reaches the bottom of its side
+  await page.locator("#edit").click();
+  expect(await fits("#editor")).toBe(true);
+  expect(await bottom("#editor")).toBeGreaterThan(await bottom("section.left") - 60);
+  // a long one: it grows, and the side scrolls instead
+  await page.locator("#editor").fill(Array.from({ length: 120 }, (_, n) => `Satır ${n}: ğüşıöç`).join("\n"));
+  expect(await fits("#editor")).toBe(true);
+  expect(await page.locator("section.left").evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
+  // the same for a document
+  await page.locator("#docedit").click();
+  expect(await fits("#doceditor")).toBe(true);
+  expect(await bottom("#doceditor")).toBeGreaterThan(await bottom("#docpane") - 60);
+});

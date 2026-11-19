@@ -172,7 +172,7 @@ function docEditing(on){
   if(on)$('#doceditor').value=docCache[DOC];
   drawDocBar();
   // focused at the start, so it opens on the document's top, not its end
-  if(on){const ed=$('#doceditor');ed.focus();ed.setSelectionRange(0,0);ed.scrollTop=0;}
+  if(on){const ed=$('#doceditor');fitEditor(ed);ed.focus();ed.setSelectionRange(0,0);ed.parentElement.scrollTop=0;}
 }
 $('#docedit').onclick=()=>docEditing(true);
 $('#doccancel').onclick=()=>docEditing(false);
@@ -184,10 +184,29 @@ $('#docsave').onclick=async()=>{
   showDoc(DOC);
 };
 
+// An editor is as tall as its text, and at least as tall as the room left
+// in its side (or, stacked, in the window), so it never scrolls itself:
+// its side does.
+function fitEditor(ed){
+  if(ed.classList.contains('hide'))return;
+  const side=ed.parentElement, css=getComputedStyle(side);
+  const scrolls=css.overflowY!=='visible';
+  const bottom=scrolls?side.getBoundingClientRect().bottom-parseFloat(css.paddingBottom):innerHeight-16;
+  const keep=side.scrollTop;
+  ed.style.height='auto';
+  const border=ed.offsetHeight-ed.clientHeight;
+  ed.style.height=Math.max(ed.scrollHeight+border,bottom-ed.getBoundingClientRect().top)+'px';
+  side.scrollTop=keep;
+}
+const fitEditors=()=>['#editor','#doceditor'].forEach(s=>fitEditor($(s)));
+['#editor','#doceditor'].forEach(s=>$(s).addEventListener('input',()=>fitEditor($(s))));
+window.addEventListener('resize',fitEditors);
+
 function editing(on){
   EDITING=on;
   $('#editor').value=IT.body;
   drawFields();
+  fitEditor($('#editor'));
   ($('#title-field')??$('#controls [data-f=status]'))?.focus();
 }
 $('#edit').onclick=()=>editing(true);
