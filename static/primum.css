@@ -116,7 +116,7 @@ main.itempage{flex:1;min-height:0;padding:16px 16px 0}
 }
 .item-title{font-size:18px;line-height:1.35;margin:0 0 10px;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
 .item-title .id{color:#fff;background:var(--kind-color);padding:2px 8px;border-radius:5px;font-size:13px}
-.controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:0 0 14px;color:var(--mut);font-size:12px}
+.controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:0 0 2px;color:var(--mut);font-size:12px}
 .controls label{display:inline-flex;align-items:center;gap:4px}
 .controls .score{color:var(--fg);font-size:14px}
 .itempage textarea{width:100%;min-height:360px;background:var(--input);color:var(--fg);border:1px solid var(--line-strong);border-radius:8px;padding:12px;font:12px/1.6 ui-monospace,Menlo,monospace;resize:vertical}
@@ -125,7 +125,7 @@ main.itempage{flex:1;min-height:0;padding:16px 16px 0}
 .bar .spacer{flex:1}
 .doctabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px}
 .doctabs button.on{background:var(--accent);border-color:var(--accent);color:#fff}
-.docpath{font:11px ui-monospace,Menlo,monospace;color:var(--mut);margin-bottom:10px;overflow-wrap:anywhere}
+.docpath{font:11px ui-monospace,Menlo,monospace;color:var(--mut);margin-bottom:2px;overflow-wrap:anywhere}
 /* the file path in the item page's bar: the bar's size, on its centre line */
 #item-meta .docpath{font:12px/1.2 ui-monospace,Menlo,monospace;margin:0;align-self:center}
 
