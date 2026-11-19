@@ -94,7 +94,9 @@ main.itempage{padding:16px 16px 48px}
 .split.single{grid-template-columns:minmax(0,74ch)}
 .divider{align-self:stretch;cursor:col-resize;background:linear-gradient(var(--line),var(--line)) center/1px 100% no-repeat}
 .split.single .divider{display:none}
-.docpane{max-height:calc(100vh - var(--chrome-h,100px) - 24px);overflow:auto;position:sticky;top:calc(var(--chrome-h,100px) + 12px)}
+/* 60px: its 12px below the bar and the page's 48px bottom padding, so the
+ * end of the page never pushes it up under the bar */
+.docpane{max-height:calc(100vh - var(--chrome-h,100px) - 60px);overflow:auto;position:sticky;top:calc(var(--chrome-h,100px) + 12px)}
 /* each side's head stays in view: the text's under the bar as the page
  * scrolls, the documents' at the top of their own scrolling pane */
 .sidehead{position:sticky;top:var(--chrome-h,100px);z-index:2;background:var(--bg);padding-top:4px}

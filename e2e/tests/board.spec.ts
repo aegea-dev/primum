@@ -306,4 +306,7 @@ test("the item's title, controls and document tabs stay on screen when scrolled"
   const pane = await top("#docpane");
   expect(await top("#doctabs")).toBeCloseTo(pane, -1);
   await expect(page.locator("#docpath")).toBeInViewport();
+  // at the end of the page the pane is not pushed up under the bar
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+  await expect.poll(() => top("#doctabs")).toBeGreaterThanOrEqual(chrome - 1);
 });
