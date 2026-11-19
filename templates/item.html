@@ -11,9 +11,6 @@
 <h2 class="item-title"><span class="id" id="item-id">#{{ id }}</span> <span id="item-title">{{ title }}</span></h2>
 <div class="conflicts hide" id="conflicts"></div>
 <div class="controls" id="controls"></div>
-</div>
-<div class="md" id="view"></div>
-<textarea class="hide" id="editor" spellcheck="false"></textarea>
 <div class="bar">
 <button type="button" id="edit">edit</button>
 <button type="button" class="primary hide" id="save">save</button>
@@ -23,14 +20,23 @@
 <select class="hide" id="kind" aria-label="kind"></select>
 <button type="button" class="danger" id="del">delete {{ id }}</button>
 </div>
+</div>
+<div class="md" id="view"></div>
+<textarea class="hide" id="editor" spellcheck="false"></textarea>
 </section>
 <div class="divider" id="divider" title="drag to resize; double-click for the default"></div>
 <aside class="docpane" id="docpane">
 <div class="sidehead fade-head">
 <div class="doctabs" id="doctabs"></div>
 <div class="docpath" id="docpath"></div>
+<div class="bar">
+<button type="button" class="hide" id="docedit">edit</button>
+<button type="button" class="primary hide" id="docsave">save</button>
+<button type="button" class="hide" id="doccancel">cancel</button>
+</div>
 </div>
 <div class="md" id="doc"></div>
+<textarea class="hide" id="doceditor" spellcheck="false" aria-label="document text"></textarea>
 </aside>
 </div>
 </main>{% endblock %}

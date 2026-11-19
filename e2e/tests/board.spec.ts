@@ -384,7 +384,7 @@ test("the item page shows its fields until Edit makes them all editable", async 
   // at rest: values, no fields
   await expect(page.locator("#controls [data-v=status]")).toHaveText("idle");
   await expect(page.locator("#controls [data-v=urgency]")).toHaveText("7");
-  await expect(page.locator(".sidehead input, .sidehead select, #editor:visible, #kind:visible")).toHaveCount(0);
+  await expect(page.locator(".sidehead input:visible, .sidehead select:visible, #editor:visible")).toHaveCount(0);
   // Edit: the title, status, scores, kind and text become fields
   await page.locator("#edit").click();
   await expect(page.locator("#title-field")).toHaveValue("Gökçe'nin galerisi boş açılıyor");
@@ -410,7 +410,7 @@ test("the item page shows its fields until Edit makes them all editable", async 
   await expect(page.locator("#controls [data-v=urgency]")).toHaveText("3");
   await expect(page.locator("#item-title")).toHaveText("Galeri boş açılıyor, ışık yok");
   await expect(page.locator("#view")).toContainText("Güncel metin");
-  await expect(page.locator(".sidehead input, .sidehead select")).toHaveCount(0);
+  await expect(page.locator(".sidehead input:visible, .sidehead select:visible")).toHaveCount(0);
   const file = await board.item("1");
   for (const s of ["status: doing", "urgency: 3", "Galeri boş açılıyor, ışık yok", "Güncel metin"]) expect(file).toContain(s);
 });
@@ -429,4 +429,51 @@ test("a closed item's Edit changes only its status", async ({ page, board }) => 
   await page.locator("#save").click();
   await expect(page.locator("#controls [data-v=status]")).toHaveText("idle");
   await expect.poll(() => board.item("4")).toContain("status: idle");
+});
+
+test("the item's buttons sit under its fields, and the score follows the scores", async ({ page, board }) => {
+  await page.goto(`${board.baseURL}/p/i%C5%9Fler/item/1`);
+  await expect(page.locator("#doc h1")).toBeVisible();
+  // in the sticky head, under the fields, above the text
+  await expect(page.locator(".sidehead #edit")).toBeVisible();
+  const controls = (await page.locator("#controls").boundingBox())!;
+  const edit = (await page.locator("#edit").boundingBox())!;
+  expect(edit.y).toBeGreaterThanOrEqual(controls.y + controls.height - 1);
+  expect(edit.y).toBeLessThan((await page.locator("#view").boundingBox())!.y);
+  await page.locator("#edit").click();
+  const field = (f: string) => page.locator(`#controls input[data-f=${f}]`);
+  const risk = Number(await field("risk").inputValue());
+  await field("impact").fill("9");
+  await field("effort").fill("3");
+  // (impact + urgency + risk) x 10 / effort, to one decimal, before saving
+  const want = Math.round(((9 + 7 + risk) * 10 / 3) * 10) / 10;
+  await expect(page.locator("#controls .score")).toHaveText(String(want));
+  await page.locator("#cancel").click();
+  await expect(page.locator("#controls .score")).not.toHaveText(String(want));
+});
+
+test("a document is edited in its own pane", async ({ page, board }) => {
+  await page.goto(`${board.baseURL}/p/i%C5%9Fler/item/1`);
+  await expect(page.locator("#doc h1")).toHaveText("Galeri spec");
+  await expect(page.locator("#doceditor")).toBeHidden();
+  await page.locator("#docedit").click();
+  await expect(page.locator("#doceditor")).toHaveValue(/^# Galeri spec/);
+  await expect(page.locator("#doc")).toBeHidden();
+  // cancel keeps the document as it was
+  await page.locator("#doceditor").fill("# Silinecek\n");
+  await page.locator("#doccancel").click();
+  await expect(page.locator("#doc h1")).toHaveText("Galeri spec");
+  // save writes it
+  await page.locator("#docedit").click();
+  await page.locator("#doceditor").fill("# Galeri spec, ikinci sürüm\n\nÜç alan: ad, tür, açıklama.\n");
+  await page.locator("#docsave").click();
+  await expect(page.locator("#doc h1")).toHaveText("Galeri spec, ikinci sürüm");
+  await expect(page.locator("#doceditor")).toBeHidden();
+  const { readFile } = await import("node:fs/promises");
+  await expect.poll(() => readFile(join(board.root, "items/1.spec.md"), "utf8")).toContain("Üç alan");
+  // another tab shows its own text; the history has nothing to edit
+  await page.locator("#doctabs button", { hasText: "plan" }).click();
+  await expect(page.locator("#doc h1")).toHaveText("Galeri planı");
+  await page.locator("#doctabs button", { hasText: "history" }).click();
+  await expect(page.locator("#docedit")).toBeHidden();
 });

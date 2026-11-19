@@ -4,7 +4,9 @@
 // `#history` the history.
 const $=s=>document.querySelector(s);
 // EDITING: Edit was clicked; the item's fields are fields until save or cancel.
-let IT=null, HISTORY=[], EDITING=false;
+// DOC: the documents' tab shown, a path or #history; DOCEDIT: its text is
+// being edited.
+let IT=null, HISTORY=[], EDITING=false, DOC=null, DOCEDIT=false;
 const docCache={};
 
 async function load(){
@@ -47,6 +49,12 @@ function drawFields(){
     +`<span>score <span class=score>${IT.score}</span></span>`
     +(IT.needs.length?`<span>needs ${IT.blockers.length?'<span class=warn>'+IT.blockers.map(label).join(', ')+'</span>':IT.needs.map(label).join(', ')}</span>`:'')
     +(IT.finished?`<span>finished ${esc(IT.finished)}</span>`:'');
+  // while editing, the score follows the scores before they are saved
+  document.querySelectorAll('#controls input.num').forEach(el=>el.oninput=()=>{
+    const v=f=>parseInt($(`#controls input[data-f=${f}]`).value,10);
+    const s=scoreOf(v('impact'),v('urgency'),v('risk'),v('effort'));
+    $('#controls .score').textContent=Number.isNaN(s)?'?':s;
+  });
   const open=EDITING&&!closed;
   $('#item-title').classList.toggle('hide',open);
   let title=$('#title-field');
@@ -97,16 +105,22 @@ function drawDocs(){
   $('#doctabs').innerHTML=docs.map(d=>`<button type=button data-doc="${esc(d.path)}" title="${esc(d.name)}">${esc(label(d))}</button>`).join('')
     +(HISTORY.length?`<button type=button data-doc="#history" title="every change to this item">history (${HISTORY.length})</button>`:'');
   document.querySelectorAll('#doctabs button').forEach(b=>b.onclick=()=>{
+    if(b.dataset.doc===DOC)return;
+    if(DOCEDIT&&$('#doceditor').value!==docCache[DOC]&&!confirm('Drop your changes to '+DOC+'?'))return;
+    docEditing(false);
     history.replaceState(null,'','#'+(b.dataset.doc==='#history'?'history':encodeURIComponent(b.dataset.doc)));
     show(b.dataset.doc);
   });
+  if(DOCEDIT)return show(DOC);
   const want=decodeURIComponent(location.hash.slice(1));
   if(want==='history'&&HISTORY.length)return show('#history');
   show(docs.some(d=>d.path===want)?want:(docs.length?docs[0].path:'#history'));
 }
 
 function show(tab){
+  DOC=tab;
   document.querySelectorAll('#doctabs button').forEach(b=>b.classList.toggle('on',b.dataset.doc===tab));
+  drawDocBar();
   return tab==='#history'?showHistory():showDoc(tab);
 }
 
@@ -133,7 +147,43 @@ async function showDoc(path){
     docCache[path]=r.ok?await r.text():null;
   }
   pane.innerHTML=docCache[path]==null?'<p class=warn>Could not read '+esc(path)+'</p>':md(docCache[path]);
+  drawDocBar();
 }
+
+// model.rs's score: (impact + urgency + risk) x 10 / effort, to one decimal,
+// half to even.
+function scoreOf(impact,urgency,risk,effort){
+  const tenths=(impact+urgency+risk)*100/Math.max(1,effort), down=Math.floor(tenths);
+  const half=Math.abs(tenths-down-0.5)<1e-9;
+  return (half?(down%2?down+1:down):Math.round(tenths))/10;
+}
+
+// An item's own document (items/<stem>.<type>.md) is edited in its pane;
+// the history, and a document of another item, are not.
+const docType=path=>path?.startsWith('items/'+IT.stem+'.')?path.slice(('items/'+IT.stem+'.').length,-'.md'.length):null;
+function drawDocBar(){
+  const own=docType(DOC)!==null&&docCache[DOC]!==null;
+  $('#docedit').classList.toggle('hide',!own||DOCEDIT);
+  $('#docsave').classList.toggle('hide',!DOCEDIT);
+  $('#doccancel').classList.toggle('hide',!DOCEDIT);
+  $('#doc').classList.toggle('hide',DOCEDIT);
+  $('#doceditor').classList.toggle('hide',!DOCEDIT);
+}
+function docEditing(on){
+  DOCEDIT=on;
+  if(on)$('#doceditor').value=docCache[DOC];
+  drawDocBar();
+  if(on)$('#doceditor').focus();
+}
+$('#docedit').onclick=()=>docEditing(true);
+$('#doccancel').onclick=()=>docEditing(false);
+$('#docsave').onclick=async()=>{
+  const text=$('#doceditor').value;
+  try{await api('/doc',{id:IT.id,type:docType(DOC),text});}catch(e){alert(e.message);return;}
+  docCache[DOC]=text;
+  docEditing(false);
+  showDoc(DOC);
+};
 
 function editing(on){
   EDITING=on;
@@ -216,5 +266,5 @@ window.addEventListener('resize',placeSplit);
 placeSplit();
 // Others' changes arrive by sync; reload every minute unless editing.
 setInterval(()=>{
-  if(document.visibilityState==='visible'&&!EDITING)load();
+  if(document.visibilityState==='visible'&&!EDITING&&!DOCEDIT)load();
 },60000);

@@ -23,10 +23,19 @@ project.
 
 ## The item page
 
-The item's text, rendered, with its documents as tabs beside it; every field
-editable; its history with each change's diff; and, after a sync that
-could not decide something, each conflicting field's two sides to choose
-between.
+The item's text, rendered, on the left, with its documents as tabs and its
+history (each change with its diff) on the right; after a sync that could
+not decide something, each conflicting field's two sides to choose between.
+
+- **edit**, under the item's fields, makes its title, status, scores, kind
+  and text editable; the score follows the scores as they change. **save**
+  keeps every change, **cancel** drops them. A closed item's **edit**
+  changes only its status.
+- A document's own **edit** does the same for the document shown.
+- The line between the two sides drags them wider or narrower, and is
+  remembered per project; a double-click puts them back to half and half.
+  Each side scrolls on its own, its head staying in view. On a narrow
+  window the documents go below the text.
 
 ## Light and dark
 
