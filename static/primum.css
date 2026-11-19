@@ -121,6 +121,11 @@ main.itempage{flex:1;min-height:0;padding:16px 16px 0}
 .controls .score{color:var(--fg);font-size:14px}
 .controls .val{color:var(--fg);font-weight:500}
 #title-field{flex:1;min-width:200px;font:inherit;background:var(--input);color:var(--fg);border:1px solid var(--line-strong);border-radius:6px;padding:2px 8px}
+/* inside the field: the side's scrolling top would cut a ring drawn outside */
+#title-field:focus{outline:2px solid var(--accent);outline-offset:-2px}
+/* while the title is a field, the id badge is as tall as it */
+.item-title:has(#title-field){align-items:stretch}
+.item-title:has(#title-field) .id{display:flex;align-items:center}
 .itempage textarea{width:100%;min-height:360px;background:var(--input);color:var(--fg);border:1px solid var(--line-strong);border-radius:8px;padding:12px;font:12px/1.6 ui-monospace,Menlo,monospace;display:block;resize:none;overflow:hidden}
 .bar{display:flex;gap:8px;align-items:center;margin-top:14px;flex-wrap:wrap}
 .bar .ok{color:var(--mut);font-size:12px}

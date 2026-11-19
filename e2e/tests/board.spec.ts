@@ -493,3 +493,26 @@ test("an editor fills its side and grows with its text, with no scrollbar of its
   expect(await fits("#doceditor")).toBe(true);
   expect(await bottom("#doceditor")).toBeGreaterThan(await bottom("#docpane") - 60);
 });
+
+test("in edit mode the title row and the two sides' buttons line up", async ({ page, board }) => {
+  await page.goto(`${board.baseURL}/p/i%C5%9Fler/item/1`);
+  await expect(page.locator("#doc h1")).toBeVisible();
+  const box = async (sel: string) => (await page.locator(sel).boundingBox())!;
+  // at rest the two edit buttons share a line
+  expect((await box("#edit")).y).toBeCloseTo((await box("#docedit")).y, 0);
+  await page.locator("#edit").click();
+  await page.locator("#docedit").click();
+  // the id badge is as tall as the title field beside it
+  const [badge, field] = [await box("#item-id"), await box("#title-field")];
+  expect(badge.height).toBeCloseTo(field.height, 0);
+  expect(badge.y).toBeCloseTo(field.y, 0);
+  // so are the two saves
+  expect((await box("#save")).y).toBeCloseTo((await box("#docsave")).y, 0);
+  // the focus ring is drawn inside the field, so the side's top cannot cut it
+  await page.locator("#title-field").focus();
+  const ring = await page.locator("#title-field").evaluate((el) => {
+    const s = getComputedStyle(el);
+    return parseFloat(s.outlineOffset) + parseFloat(s.outlineWidth);
+  });
+  expect(ring).toBeLessThanOrEqual(0);
+});

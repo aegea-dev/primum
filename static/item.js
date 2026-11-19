@@ -69,7 +69,20 @@ function drawFields(){
   $('#save').classList.toggle('hide',!EDITING);
   $('#cancel').classList.toggle('hide',!EDITING);
   $('#edit').classList.toggle('hide',EDITING||isClosed(IT));
+  alignBars();
 }
+
+// Side by side, the two heads' button rows share a line: the shorter head
+// gets the difference above its row.
+function alignBars(){
+  const rows=[$('section.left .sidehead .bar'),$('#docpane .sidehead .bar')];
+  rows.forEach(r=>{r.style.marginTop='';});
+  if(getComputedStyle($('#divider')).display==='none'||rows.some(r=>!r.offsetParent))return;
+  const [left,right]=rows.map(r=>r.getBoundingClientRect().top);
+  const higher=left<right?rows[0]:rows[1];
+  higher.style.marginTop=parseFloat(getComputedStyle(higher).marginTop)+Math.abs(left-right)+'px';
+}
+window.addEventListener('resize',()=>alignBars());
 
 // What a sync could not decide: both sides of each field, the text and
 // each document, with "keep" buttons.
@@ -166,6 +179,7 @@ function drawDocBar(){
   $('#doccancel').classList.toggle('hide',!DOCEDIT);
   $('#doc').classList.toggle('hide',DOCEDIT);
   $('#doceditor').classList.toggle('hide',!DOCEDIT);
+  alignBars();
 }
 function docEditing(on){
   DOCEDIT=on;
