@@ -168,3 +168,20 @@ test("dragging a header line resizes its column, remembered after a reload", asy
   await page.mouse.up();
   expect((await cell.boundingBox())!.height).toBeGreaterThan(line * 1.5);
 });
+
+test("double-clicking a header line fits the column to its content", async ({ page, board }) => {
+  await page.goto(board.baseURL);
+  await expect(page.locator("#rows tr.item")).toHaveCount(4);
+  const before = await width(page, "needs");
+  await page.locator("table.items th[data-col=needs] .grip").dblclick();
+  const fitted = await width(page, "needs");
+  expect(fitted).toBeLessThan(before - 20);
+  // "needs first" stays on one line
+  const header = page.locator("table.items th[data-col=needs]");
+  const line = await header.evaluate((th) => parseFloat(getComputedStyle(th).lineHeight) || 16);
+  expect((await header.boundingBox())!.height).toBeLessThan(line * 1.5 + 14);
+  await expect(header).not.toHaveClass(/sorted/);
+  await page.reload();
+  await expect(page.locator("#rows tr.item")).toHaveCount(4);
+  expect(await width(page, "needs")).toBeCloseTo(fitted, 0);
+});

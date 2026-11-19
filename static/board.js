@@ -153,11 +153,13 @@ function draw(){
 // Column widths. Most columns fit their content. title, needs first and docs
 // start at a share of the row (flex-basis) and split what is left 3:1:1
 // (flex-grow), or give it back in proportion to their share when the row is
-// too narrow. A column dragged by its header's grip keeps that width.
+// too narrow. A column dragged by its header's grip keeps that width; a
+// double-click on the grip fits the column to its content, at most the row.
 const FLEX={title:{basis:.4,grow:3},needs:{basis:.1,grow:1},docs:{basis:.1,grow:1}};
 const MIN_WIDTH=40;
 const sum=a=>a.reduce((s,x)=>s+x,0);
-function layoutColumns(){
+// Each shown header with its content's width on one line, and the row's.
+function measureColumns(){
   const table=$('table.items');
   const ths=Array.from(table.querySelectorAll('thead th')).filter(th=>th.offsetParent);
   ths.forEach(th=>th.style.width='');
@@ -165,7 +167,10 @@ function layoutColumns(){
   table.classList.add('measuring');
   const fit=ths.map(th=>th.getBoundingClientRect().width);
   table.classList.remove('measuring');
-  const row=table.getBoundingClientRect().width;
+  return {table,ths,fit,row:table.getBoundingClientRect().width};
+}
+function layoutColumns(){
+  const {table,ths,fit,row}=measureColumns();
   const w=ths.map((th,n)=>widths[th.dataset.col]||fit[n]);
   const flex=ths.map((th,n)=>n).filter(n=>FLEX[ths[n].dataset.col]&&!widths[ths[n].dataset.col]);
   if(flex.length){
@@ -191,6 +196,12 @@ document.querySelectorAll('table.items thead th').forEach(th=>{
       layoutColumns();
     };
     grip.onpointerup=()=>{grip.onpointermove=null;grip.onpointerup=null;remember();};
+  };
+  grip.ondblclick=e=>{
+    e.stopPropagation();
+    const {ths,fit,row}=measureColumns();
+    widths[th.dataset.col]=Math.max(MIN_WIDTH,Math.ceil(Math.min(row,fit[ths.indexOf(th)])));
+    layoutColumns(); remember();
   };
 });
 window.addEventListener('resize',layoutColumns);
