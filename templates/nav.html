@@ -39,4 +39,23 @@ document.getElementById('theme-toggle').addEventListener('click', () => {
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', watch);
   else watch();
 }
+// A .fade-head (a sticky head) gets "over" while what follows it has
+// scrolled beneath it, so its fade shows only then: checked on every scroll
+// and whenever the head or what follows changes size (a redraw, an edit).
+// A thead is measured by its sticky cells; what is hidden is under nothing.
+{
+  const heads = () => document.querySelectorAll('.fade-head');
+  const update = () => heads().forEach(head => {
+    const next = head.nextElementSibling;
+    const box = (head.querySelector('th') ?? head).getBoundingClientRect();
+    head.classList.toggle('over', !!next?.offsetParent && next.getBoundingClientRect().top < box.bottom - 0.5);
+  });
+  const watch = () => {
+    const ro = new ResizeObserver(update);
+    heads().forEach(head => { ro.observe(head); if (head.nextElementSibling) ro.observe(head.nextElementSibling); });
+  };
+  document.addEventListener('scroll', update, { capture: true, passive: true });
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', watch);
+  else watch();
+}
 </script>

@@ -100,7 +100,7 @@ main.itempage{flex:1;min-height:0;padding:16px 16px 0}
 .divider{cursor:col-resize;background:linear-gradient(var(--line),var(--line)) center/1px 100% no-repeat}
 .split.single .divider{display:none}
 /* each side's head stays at the top of its side as it scrolls */
-.sidehead{position:sticky;top:0;z-index:2;background:var(--bg)}
+.sidehead{position:sticky;top:0;z-index:2;background:var(--bg);padding-bottom:6px}
 @media (max-width:1100px){
   body:has(>main.itempage){height:auto;display:block}
   main.itempage{padding:16px 16px 48px}
@@ -128,6 +128,13 @@ main.itempage{flex:1;min-height:0;padding:16px 16px 0}
 #item-meta .docpath{font:12px/1.2 ui-monospace,Menlo,monospace;margin:0;align-self:center}
 
 /* Markdown, for bodies and documents. */
+/* Under a sticky head, what scrolls beneath it fades and blurs; nav.html
+ * marks the head "over" while something does. */
+.fade-head{--fade-bg:var(--bg)}
+table.items thead.fade-head{--fade-bg:var(--surface)}
+.fade-head.sidehead::after,table.items thead.fade-head th::after{content:"";position:absolute;left:0;right:0;top:100%;height:12px;pointer-events:none;opacity:0;transition:opacity .15s;background:linear-gradient(var(--fade-bg),transparent);-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px);-webkit-mask-image:linear-gradient(#000 40%,transparent);mask-image:linear-gradient(#000 40%,transparent)}
+table.items thead.fade-head th::after{right:-1px}
+.fade-head.over.sidehead::after,table.items thead.fade-head.over th::after{opacity:1}
 .md{font:15px/1.65 -apple-system,system-ui,sans-serif;color:var(--fg);max-width:74ch;overflow-wrap:anywhere}
 .md>*:first-child{margin-top:0}
 .md h1,.md h2,.md h3,.md h4,.md h5,.md h6{margin:1em 0 .35em;line-height:1.25}

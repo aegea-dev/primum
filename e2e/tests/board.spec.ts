@@ -339,3 +339,28 @@ test("sticky parts meet the bars above them with no gap", async ({ page, board }
   expect(bar[0]).toBeCloseTo(nav[1], 2);
   expect(head[0]).toBeCloseTo(bar[1], 2);
 });
+
+test("a sticky head fades what scrolls under it, only once something does", async ({ page, board }) => {
+  const fade = (sel: string) => page.locator(sel).evaluate((el) => getComputedStyle(el, "::after").opacity);
+  await page.setViewportSize({ width: 1440, height: 260 });
+  await page.goto(board.baseURL);
+  await expect(page.locator("#rows tr.item")).toHaveCount(4);
+  await expect.poll(() => fade("table.items th[data-col=title]")).toBe("0");
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+  await expect.poll(() => fade("table.items th[data-col=title]")).toBe("1");
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await expect.poll(() => fade("table.items th[data-col=title]")).toBe("0");
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(`${board.baseURL}/p/i%C5%9Fler/item/1`);
+  await expect(page.locator("#doc h1")).toBeVisible();
+  await page.locator("#edit").click();
+  await page.locator("#editor").fill(Array.from({ length: 60 }, (_, n) => `Satır ${n}: ğüşıöç`).join("\n\n"));
+  await page.locator("#save").click();
+  await expect(page.locator("#view p").nth(50)).toBeAttached();
+  const head = "section.left .sidehead";
+  await expect.poll(() => fade(head)).toBe("0");
+  await page.locator("section.left").evaluate((el) => { el.scrollTop = 600; });
+  await expect.poll(() => fade(head)).toBe("1");
+  // the documents' head does not fade while they are not scrolled
+  expect(await fade("#docpane .sidehead")).toBe("0");
+});
