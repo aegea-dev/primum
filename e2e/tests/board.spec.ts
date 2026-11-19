@@ -281,7 +281,7 @@ test("the item's text and documents fill their side, wide content included", asy
   expect(await fits("#doc")).toBe(true);
 });
 
-test("the item's title, controls and document tabs stay on screen when scrolled", async ({ page, board }) => {
+test("each side of the item page scrolls on its own, its head staying on screen", async ({ page, board }) => {
   await page.goto(`${board.baseURL}/p/i%C5%9Fler/item/1`);
   await expect(page.locator("#doc h1")).toBeVisible();
   const body = ["## Neden", ""].concat(Array.from({ length: 60 }, (_, n) => `Gökçe ${n}. kez galeriyi açıyor ve boş sayfa görüyor.\n`)).join("\n");
@@ -289,28 +289,31 @@ test("the item's title, controls and document tabs stay on screen when scrolled"
   await page.locator("#editor").fill(body);
   await page.locator("#save").click();
   await expect(page.locator("#view p").nth(50)).toBeAttached();
-  const top = async (sel: string) => (await page.locator(sel).boundingBox())!.y;
-  const chrome = await page.evaluate(() =>
-    parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--chrome-h")) || 100);
-  // the page scrolls: the left side's head stays under the bar
-  await page.mouse.wheel(0, 1500);
-  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(1000);
-  for (const sel of [".item-title", "#controls"]) {
-    expect(await top(sel)).toBeGreaterThanOrEqual(chrome - 1);
-    expect(await top(sel)).toBeLessThan(chrome + 120);
-  }
-  // the documents scroll in their pane: its tabs and path stay at its top
-  await page.setViewportSize({ width: 1440, height: 420 });
   // the fixture's spec is short: lengthen the shown document
   await page.locator("#doc").evaluate((el) => { el.innerHTML += "<p>ayrıntı</p>".repeat(80); });
-  await page.locator("#docpane").evaluate((el) => { el.scrollTop = el.scrollHeight; });
-  await expect.poll(() => page.locator("#docpane").evaluate((el) => el.scrollTop)).toBeGreaterThan(20);
-  const pane = await top("#docpane");
-  expect(await top("#doctabs")).toBeCloseTo(pane, -1);
+  const top = async (sel: string) => (await page.locator(sel).boundingBox())!.y;
+  // side by side the page itself does not scroll: one scrollbar per side
+  expect(await page.evaluate(() => document.documentElement.scrollHeight <= innerHeight)).toBe(true);
+  const left = (await page.locator("section.left").boundingBox())!;
+  await page.mouse.move(left.x + 100, left.y + 300);
+  await page.mouse.wheel(0, 1500);
+  await expect.poll(() => page.locator("section.left").evaluate((el) => el.scrollTop)).toBeGreaterThan(1000);
+  expect(await top(".item-title")).toBeCloseTo(left.y, 0);
+  await expect(page.locator("#controls")).toBeInViewport();
+  const pane = (await page.locator("#docpane").boundingBox())!;
+  await page.mouse.move(pane.x + 100, pane.y + 300);
+  await page.mouse.wheel(0, 1500);
+  await expect.poll(() => page.locator("#docpane").evaluate((el) => el.scrollTop)).toBeGreaterThan(1000);
+  expect(await top("#doctabs")).toBeCloseTo(pane.y, 0);
   await expect(page.locator("#docpath")).toBeInViewport();
-  // at the end of the page the pane is not pushed up under the bar
-  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-  await expect.poll(() => top("#doctabs")).toBeGreaterThanOrEqual(chrome - 1);
+  // the left side did not move with the documents
+  expect(await page.locator("section.left").evaluate((el) => el.scrollTop)).toBeGreaterThan(1000);
+  // stacked on a narrow page, the page scrolls and the head stays under the bar
+  await page.setViewportSize({ width: 800, height: 600 });
+  await page.evaluate(() => window.scrollTo(0, 1500));
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(1000);
+  const bar = (await page.locator(".gallery-toolbar").boundingBox())!;
+  expect(await top("section.left .sidehead")).toBeCloseTo(bar.y + bar.height, 1);
 });
 
 test("sticky parts meet the bars above them with no gap", async ({ page, board }) => {
@@ -328,6 +331,8 @@ test("sticky parts meet the bars above them with no gap", async ({ page, board }
   await page.locator("#edit").click();
   await page.locator("#editor").fill(Array.from({ length: 60 }, (_, n) => `Satır ${n}: ğüşıöç`).join("\n\n"));
   await page.locator("#save").click();
+  // stacked, where the page scrolls under the bars
+  await page.setViewportSize({ width: 800, height: 600 });
   await page.evaluate(() => window.scrollTo(0, 800));
   let head;
   [nav, bar, head] = await edges(["nav.secnav", ".gallery-toolbar", "section.left .sidehead"]);

@@ -87,26 +87,30 @@ input[type=number]{-moz-appearance:textfield}
 .docbadge:hover{border-color:var(--accent)}
 
 /* An item's page: its text on the left, its documents beside it, stacked on
-   a narrow window. */
-main.itempage{padding:16px 16px 48px}
+   a narrow window. Side by side the page fits the window and each side
+   scrolls on its own, so there is one scrollbar per side. */
+body:has(>main.itempage){height:100vh;display:flex;flex-direction:column}
+main.itempage{flex:1;min-height:0;padding:16px 16px 0}
 /* half and half until the divider is dragged: item.js then sets --left;
  * 240px keeps both sides */
-.split{display:grid;grid-template-columns:minmax(240px,var(--left,1fr)) 9px minmax(240px,1fr);column-gap:20px;align-items:start}
+.split{display:grid;grid-template-columns:minmax(240px,var(--left,1fr)) 9px minmax(240px,1fr);column-gap:20px;height:100%}
 .split.single{grid-template-columns:minmax(0,74ch)}
-.divider{align-self:stretch;cursor:col-resize;background:linear-gradient(var(--line),var(--line)) center/1px 100% no-repeat}
+/* no top padding: scrolled text would show above the sticky head */
+.split>section.left,.docpane{min-height:0;overflow:auto;padding:0 8px 48px 0}
+.divider{cursor:col-resize;background:linear-gradient(var(--line),var(--line)) center/1px 100% no-repeat}
 .split.single .divider{display:none}
-/* 60px: its 12px below the bar and the page's 48px bottom padding, so the
- * end of the page never pushes it up under the bar */
-.docpane{max-height:calc(100vh - var(--chrome-h,100px) - 60px);overflow:auto;position:sticky;top:calc(var(--chrome-h,100px) + 12px)}
-/* each side's head stays in view: the text's under the bar as the page
- * scrolls, the documents' at the top of their own scrolling pane */
-.sidehead{position:sticky;top:var(--chrome-h,100px);z-index:2;background:var(--bg)}
-.docpane .sidehead{top:0}
+/* each side's head stays at the top of its side as it scrolls */
+.sidehead{position:sticky;top:0;z-index:2;background:var(--bg)}
 @media (max-width:1100px){
+  body:has(>main.itempage){height:auto;display:block}
+  main.itempage{padding:16px 16px 48px}
+  .split{height:auto;align-items:start}
   .split,.split.single{grid-template-columns:minmax(0,1fr)}
+  .split>section.left,.docpane{overflow:visible;padding:0}
   .divider{display:none}
-  .docpane .sidehead{top:var(--chrome-h,100px)}
-  .docpane{border-left:0;border-top:1px solid var(--line);padding:16px 0 0;max-height:none;position:static}
+  /* stacked, the page scrolls: each head stays under the bar */
+  .sidehead{top:var(--chrome-h,100px)}
+  .docpane{border-top:1px solid var(--line);padding-top:16px}
 }
 .item-title{font-size:18px;line-height:1.35;margin:0 0 10px;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
 .item-title .id{color:#fff;background:var(--kind-color);padding:2px 8px;border-radius:5px;font-size:13px}
