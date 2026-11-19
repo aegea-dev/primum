@@ -516,3 +516,28 @@ test("in edit mode the title row and the two sides' buttons line up", async ({ p
   });
   expect(ring).toBeLessThanOrEqual(0);
 });
+
+test("an item's needs link to their items and are edited with the rest", async ({ page, board }) => {
+  await page.goto(`${board.baseURL}/p/i%C5%9Fler/item/2`);
+  await expect(page.locator("#controls a.ref")).toHaveText(["#1"]);
+  // Edit: a field, listing them as they are typed
+  await page.locator("#edit").click();
+  const needs = page.locator("#controls input[data-f=needs]");
+  await expect(needs).toHaveValue("#1");
+  await needs.fill("#1, #3");
+  await page.locator("#save").click();
+  await expect(page.locator("#controls a.ref")).toHaveText(["#1", "#3"]);
+  await expect.poll(() => board.item("2")).toMatch(/needs:.*1.*3/);
+  // an empty field clears them
+  await page.locator("#edit").click();
+  await needs.fill("");
+  await page.locator("#save").click();
+  await expect(page.locator("#controls a.ref")).toHaveCount(0);
+  await expect.poll(() => board.item("2")).toContain("needs: []");
+  // an item with none still gets the field, and a link opens its item
+  await page.locator("#edit").click();
+  await needs.fill("#3");
+  await page.locator("#save").click();
+  await page.locator("#controls a.ref", { hasText: "#3" }).click();
+  await expect(page).toHaveURL(/\/item\/3$/);
+});

@@ -46,7 +46,10 @@ function drawFields(){
       :value('status')}</label>`
     +['impact','urgency','risk','effort'].map(score).join('')
     +`<span>score <span class=score>${IT.score}</span></span>`
-    +(IT.needs.length?`<span>needs ${IT.blockers.length?'<span class=warn>'+IT.blockers.map(label).join(', ')+'</span>':IT.needs.map(label).join(', ')}</span>`:'')
+    +(EDITING
+      ?`<label>needs <input type=text class=needs data-f=needs value="${esc(IT.needs.map(label).join(', '))}" placeholder="#1, #2" aria-label=needs></label>`
+      // each a link to its item, as #12 in the text; what is not done yet warns
+      :IT.needs.length?`<span>needs ${IT.blockers.length?'<span class=warn>'+mdInline(IT.blockers.map(label).join(', '))+'</span>':mdInline(IT.needs.map(label).join(', '))}</span>`:'')
     +(IT.finished?`<span>finished ${esc(IT.finished)}</span>`:'');
   // while editing, the score follows the scores before they are saved
   document.querySelectorAll('#controls input.num').forEach(el=>el.oninput=()=>{
@@ -230,6 +233,12 @@ $('#cancel').onclick=()=>editing(false);
 $('#save').onclick=async()=>{
   const changed={};
   document.querySelectorAll('#controls [data-f]').forEach(el=>{
+    if(el.dataset.f==='needs'){
+      // sent as typed when the ids differ; the server reads and checks them
+      const ids=el.value.split(',').map(s=>s.trim().replace(/^#/,'')).filter(Boolean);
+      if(ids.join()!==IT.needs.join())changed.needs=el.value;
+      return;
+    }
     const v=el.tagName==='SELECT'?el.value:parseInt(el.value,10);
     if(v!==IT[el.dataset.f])changed[el.dataset.f]=v;
   });

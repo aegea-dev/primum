@@ -27,8 +27,9 @@ The item's text, rendered, on the left, with its documents as tabs and its
 history (each change with its diff) on the right; after a sync that could
 not decide something, each conflicting field's two sides to choose between.
 
-- **edit**, under the item's fields, makes its title, status, scores, kind
-  and text editable; the score follows the scores as they change. **save**
+- **edit**, under the item's fields, makes its title, status, scores,
+  needs (`#1, #2`), kind and text editable; the score follows the scores
+  as they change. Each item it needs links to that item. **save**
   keeps every change, **cancel** drops them. A closed item has no **edit**:
   its status changes on the board.
 - A document's own **edit** does the same for the document shown.
