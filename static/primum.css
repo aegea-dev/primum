@@ -114,7 +114,7 @@ main.itempage{flex:1;min-height:0;padding:16px 16px 0}
   .sidehead{top:var(--chrome-h,100px)}
   .docpane{border-top:1px solid var(--line);padding-top:16px}
 }
-.item-title{font-size:18px;line-height:1.35;margin:0 0 10px;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+.item-title{font-size:18px;line-height:1.35;margin:0 0 8px;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
 .item-title .id{color:#fff;background:var(--kind-color);padding:2px 8px;border-radius:5px;font-size:13px}
 .controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:0 0 2px;color:var(--mut);font-size:12px}
 .controls label{display:inline-flex;align-items:center;gap:4px}
