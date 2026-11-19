@@ -128,9 +128,9 @@ main.itempage{flex:1;min-height:0;padding:16px 16px 0}
 /* in a side's sticky head, the buttons sit right under what they act on */
 .sidehead .bar{margin:6px 0 0}
 .sidehead .bar:not(:has(>:not(.hide))){display:none}
-.doctabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+.doctabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;padding-top:4px}
 .doctabs button.on{background:var(--accent);border-color:var(--accent);color:#fff}
-.docpath{font:11px ui-monospace,Menlo,monospace;color:var(--mut);margin-bottom:2px;overflow-wrap:anywhere}
+.docpath{font:11px ui-monospace,Menlo,monospace;color:var(--mut);margin:14px 0 2px;overflow-wrap:anywhere}
 /* the file path in the item page's bar: the bar's size, on its centre line */
 #item-meta .docpath{font:12px/1.2 ui-monospace,Menlo,monospace;margin:0;align-self:center}
 
