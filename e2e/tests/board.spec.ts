@@ -615,3 +615,18 @@ test("a need on the board is a badge that opens the item it needs", async ({ pag
   await page.goto(`${board.baseURL}/p/i%C5%9Fler/item/2`);
   await expect(page.locator("#controls a.needbadge.blocked")).toHaveText(["#1"]);
 });
+
+test("a badge in a row swaps its colours on hover", async ({ page, board }) => {
+  await page.goto(board.baseURL);
+  const colours = (sel: string) => page.locator(sel).first().evaluate((el) => {
+    const s = getComputedStyle(el);
+    return [s.color, s.backgroundColor];
+  });
+  const row = await page.locator("#rows td").first().evaluate((td) => getComputedStyle(td.closest("table")!).backgroundColor);
+  for (const sel of ["tr.item[data-id='1'] .docbadge", "tr.item[data-id='2'] .needbadge"]) {
+    const [text] = await colours(sel);
+    await page.locator(sel).first().hover();
+    // the transition ends where the colours have swapped
+    await expect.poll(() => colours(sel)).toEqual([row, text]);
+  }
+});

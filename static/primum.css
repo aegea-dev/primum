@@ -89,6 +89,10 @@ input[type=number]{-moz-appearance:textfield}
 .needbadge{display:inline-block;font-size:12px;line-height:1.4;padding:1px 9px;margin:0 4px 2px 0;border:1px solid var(--line-strong);border-radius:99px;color:var(--fg);text-decoration:none}
 .needbadge:hover{border-color:var(--accent)}
 .needbadge.blocked{border-color:var(--warn);color:var(--warn)}
+/* in the board's rows a badge swaps its colours on hover: its text's colour
+ * becomes its background, the table's its text */
+#rows .docbadge:hover,#rows .needbadge:hover{background:var(--fg);border-color:var(--fg);color:var(--surface)}
+#rows .needbadge.blocked:hover{background:var(--warn);border-color:var(--warn);color:var(--surface)}
 .docbadge:hover{border-color:var(--accent)}
 
 /* An item's page: its text on the left, its documents beside it, stacked on
