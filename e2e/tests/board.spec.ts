@@ -542,27 +542,63 @@ test("an item's needs link to their items and are edited with the rest", async (
   await expect(page).toHaveURL(/\/item\/3$/);
 });
 
-test("needs first and docs never get narrower than one line", async ({ page, board }) => {
+test("needs first and docs stay on one line, and the table within the page", async ({ page, board }) => {
   await page.goto(board.baseURL);
   await expect(page.locator("#rows tr.item")).toHaveCount(4);
   const head = (col: string) => page.locator(`table.items th[data-col=${col}]`);
-  const height = async (col: string) => (await head(col).boundingBox())!.height;
-  // a title dragged very wide takes the room they would have shrunk into
-  const grip = (await head("title").locator(".grip").boundingBox())!;
-  const y = grip.y + grip.height / 2;
-  await page.mouse.move(grip.x + grip.width / 2, y);
-  await page.mouse.down();
-  await page.mouse.move(1400, y, { steps: 5 });
-  await page.mouse.up();
-  for (const col of ["needs", "docs"]) expect(await height(col)).toBeCloseTo(await height("id"), 0);
-  // nor can they be dragged narrower themselves
-  const g = (await head("needs").locator(".grip").boundingBox())!;
-  await page.mouse.move(g.x + g.width / 2, y);
-  await page.mouse.down();
-  await page.mouse.move(g.x - 200, y, { steps: 5 });
-  await page.mouse.up();
-  expect(await height("needs")).toBeCloseTo(await height("id"), 0);
-  await expect(page.locator("tr.item[data-id='1'] .docbadge")).toHaveCount(2);
-  const badges = await page.locator("tr.item[data-id='1'] .docbadge").evaluateAll((b) => b.map((x) => x.getBoundingClientRect().top));
-  expect(badges[1]).toBeCloseTo(badges[0], 0);
+  // the lines a header's label takes
+  const lines = (sel: string) => page.locator(sel).first().evaluate((el) => {
+    const r = document.createRange();
+    r.selectNodeContents(el.firstChild!);
+    return new Set(Array.from(r.getClientRects()).filter((b) => b.width > 0).map((b) => Math.round(b.top))).size;
+  });
+  const fits = () => page.evaluate(() =>
+    document.querySelector("table.items")!.getBoundingClientRect().width <= document.documentElement.clientWidth + 0.5);
+  const drag = async (col: string, to: number) => {
+    const g = (await head(col).locator(".grip").boundingBox())!;
+    const y = g.y + g.height / 2;
+    await page.mouse.move(g.x + g.width / 2, y);
+    await page.mouse.down();
+    await page.mouse.move(to, y, { steps: 5 });
+    await page.mouse.up();
+  };
+  // a title dragged as wide as it goes takes only the room that is left
+  await drag("title", 1435);
+  expect(await fits()).toBe(true);
+  expect(await lines("table.items th[data-col=needs]")).toBe(1);
+  expect(await lines("table.items th[data-col=docs]")).toBe(1);
+  const badges = await page.locator("tr.item[data-id='1'] .docbadge").evaluateAll((b) => b.map((x) => Math.round(x.getBoundingClientRect().top)));
+  expect(badges.length).toBe(2);
+  expect(new Set(badges).size).toBe(1);
+  // needs first cannot be dragged narrower than that either
+  await drag("needs", 5);
+  expect(await lines("table.items th[data-col=needs]")).toBe(1);
+  // and a narrow window keeps the table inside it
+  await page.setViewportSize({ width: 900, height: 900 });
+  await expect.poll(fits).toBe(true);
+});
+
+test("no column's header is narrower than its text on one line", async ({ page, board }) => {
+  await page.goto(board.baseURL);
+  await expect(page.locator("#rows tr.item")).toHaveCount(4);
+  const head = (col: string) => page.locator(`table.items th[data-col=${col}]`);
+  // the lines its label takes (cells in a row share a height, so count them)
+  const lines = (col: string) => head(col).evaluate((th) => {
+    const r = document.createRange();
+    r.selectNodeContents(th.firstChild!);
+    return new Set(Array.from(r.getClientRects()).map((b) => Math.round(b.top))).size;
+  });
+  for (const col of ["title", "urgency", "status"]) {
+    const g = (await head(col).locator(".grip").boundingBox())!;
+    const y = g.y + g.height / 2;
+    await page.mouse.move(g.x + g.width / 2, y);
+    await page.mouse.down();
+    await page.mouse.move(5, y, { steps: 5 });
+    await page.mouse.up();
+    expect(await lines(col), col).toBe(1);
+  }
+  // nor after a reload, from the widths kept
+  await page.reload();
+  await expect(page.locator("#rows tr.item")).toHaveCount(4);
+  for (const col of ["title", "urgency", "status"]) expect(await lines(col), col).toBe(1);
 });

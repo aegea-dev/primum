@@ -151,13 +151,16 @@ function draw(){
 // (flex-grow), or give it back in proportion to their share when the row is
 // too narrow. A column dragged by its header's grip keeps that width; a
 // double-click on the grip fits the column to its content, at most the row.
-// needs first and docs never get narrower than their content on one line,
-// header included, however wide the title is set: they stay readable.
+// No column is narrower than its header on one line, and needs first and
+// docs no narrower than all their content on one line. The table is never
+// wider than the page: what the minimums need comes out of the title
+// first, then out of whichever column has room above its own.
 const FLEX={title:{basis:.4,grow:3},needs:{basis:.1,grow:1,oneLine:true},docs:{basis:.1,grow:1,oneLine:true}};
 const MIN_WIDTH=40;
-const narrowest=(col,fit)=>FLEX[col]?.oneLine?Math.max(MIN_WIDTH,fit):MIN_WIDTH;
+const narrowest=(col,fit,head)=>Math.max(MIN_WIDTH,Math.ceil(head),FLEX[col]?.oneLine?Math.ceil(fit):0);
 const sum=a=>a.reduce((s,x)=>s+x,0);
-// Each shown header with its content's width on one line, and the row's.
+// Each shown header with its column's content on one line (fit), its own
+// label on one line with its padding (head), and the row's width.
 function measureColumns(){
   const table=$('table.items');
   const ths=Array.from(table.querySelectorAll('thead th')).filter(th=>th.offsetParent);
@@ -165,12 +168,17 @@ function measureColumns(){
   table.style.width='';
   table.classList.add('measuring');
   const fit=ths.map(th=>th.getBoundingClientRect().width);
+  const head=ths.map(th=>{
+    const r=document.createRange(), css=getComputedStyle(th);
+    r.selectNodeContents(th.firstChild);
+    return r.getBoundingClientRect().width+parseFloat(css.paddingLeft)+parseFloat(css.paddingRight)+1;
+  });
   table.classList.remove('measuring');
-  return {table,ths,fit,row:table.getBoundingClientRect().width};
+  return {table,ths,fit,head,row:table.getBoundingClientRect().width};
 }
 function layoutColumns(){
-  const {table,ths,fit,row}=measureColumns();
-  const least=ths.map((th,n)=>narrowest(th.dataset.col,fit[n]));
+  const {table,ths,fit,head,row}=measureColumns();
+  const least=ths.map((th,n)=>narrowest(th.dataset.col,fit[n],head[n]));
   const w=ths.map((th,n)=>Math.max(least[n],widths[th.dataset.col]||fit[n]));
   const flex=ths.map((th,n)=>n).filter(n=>FLEX[ths[n].dataset.col]&&!widths[ths[n].dataset.col]);
   if(flex.length){
@@ -179,8 +187,16 @@ function layoutColumns(){
     const share=left>=0?flex.map(n=>FLEX[ths[n].dataset.col].grow):basis;
     flex.forEach((n,k)=>{w[n]=Math.max(least[n],basis[k]+left*share[k]/sum(share));});
   }
-  // wider than the row when what must stay on one line does not fit in it
-  if(!flex.length||sum(w)>row)table.style.width=sum(w)+'px';
+  let over=sum(w)-row;
+  const title=ths.findIndex(th=>th.dataset.col==='title');
+  const order=ths.map((th,n)=>n).sort((a,b)=>(b===title)-(a===title)||(w[b]-least[b])-(w[a]-least[a]));
+  for(const n of order){
+    if(over<=0)break;
+    const take=Math.min(over,w[n]-least[n]);
+    w[n]-=take; over-=take;
+  }
+  // every column dragged and narrower than the row, or minimums that do not fit
+  if(!flex.length||over>0)table.style.width=sum(w)+'px';
   ths.forEach((th,n)=>{th.style.width=w[n]+'px';});
 }
 
@@ -193,7 +209,7 @@ document.querySelectorAll('table.items thead th').forEach(th=>{
     e.preventDefault();
     grip.setPointerCapture(e.pointerId);
     const x=e.clientX, start=th.getBoundingClientRect().width;
-    const {ths,fit}=measureColumns(), least=narrowest(th.dataset.col,Math.ceil(fit[ths.indexOf(th)]));
+    const {ths,fit,head}=measureColumns(), n=ths.indexOf(th), least=narrowest(th.dataset.col,fit[n],head[n]);
     layoutColumns();
     grip.onpointermove=m=>{
       widths[th.dataset.col]=Math.max(least,Math.round(start+m.clientX-x));
