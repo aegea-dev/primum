@@ -19,6 +19,14 @@ test("lists items in priority order and filters by lane", async ({ page, board }
   await expect(page.locator("#rows tr.item")).toHaveCount(4);
 });
 
+test("the id column sorts by number across lanes", async ({ page, board }) => {
+  await page.goto(board.baseURL);
+  await page.locator("th[data-s=id]").click();
+  await expect.poll(() => ids(page)).toEqual(["#1", "#2", "#3", "#4"]);
+  await page.locator("th[data-s=id]").click();
+  await expect.poll(() => ids(page)).toEqual(["#4", "#3", "#2", "#1"]);
+});
+
 test("the lane chips count what the table can show", async ({ page, board }) => {
   await page.goto(board.baseURL);
   const chip = (k: string) => page.locator(`#filters [data-k=${k}]`);

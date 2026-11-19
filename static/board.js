@@ -48,10 +48,6 @@ function nextItem(){
   return ITEMS.filter(i=>i.status==='idle'&&!i.blocked).sort(itemOrder)[0];
 }
 function compareIds(a,b){
-  if(kind==='ALL'){
-    const k=a.kind_rank-b.kind_rank;
-    if(k)return k;
-  }
   return (a.num-b.num)*dir;
 }
 function compareItems(a,b){
