@@ -541,3 +541,28 @@ test("an item's needs link to their items and are edited with the rest", async (
   await page.locator("#controls a.ref", { hasText: "#3" }).click();
   await expect(page).toHaveURL(/\/item\/3$/);
 });
+
+test("needs first and docs never get narrower than one line", async ({ page, board }) => {
+  await page.goto(board.baseURL);
+  await expect(page.locator("#rows tr.item")).toHaveCount(4);
+  const head = (col: string) => page.locator(`table.items th[data-col=${col}]`);
+  const height = async (col: string) => (await head(col).boundingBox())!.height;
+  // a title dragged very wide takes the room they would have shrunk into
+  const grip = (await head("title").locator(".grip").boundingBox())!;
+  const y = grip.y + grip.height / 2;
+  await page.mouse.move(grip.x + grip.width / 2, y);
+  await page.mouse.down();
+  await page.mouse.move(1400, y, { steps: 5 });
+  await page.mouse.up();
+  for (const col of ["needs", "docs"]) expect(await height(col)).toBeCloseTo(await height("id"), 0);
+  // nor can they be dragged narrower themselves
+  const g = (await head("needs").locator(".grip").boundingBox())!;
+  await page.mouse.move(g.x + g.width / 2, y);
+  await page.mouse.down();
+  await page.mouse.move(g.x - 200, y, { steps: 5 });
+  await page.mouse.up();
+  expect(await height("needs")).toBeCloseTo(await height("id"), 0);
+  await expect(page.locator("tr.item[data-id='1'] .docbadge")).toHaveCount(2);
+  const badges = await page.locator("tr.item[data-id='1'] .docbadge").evaluateAll((b) => b.map((x) => x.getBoundingClientRect().top));
+  expect(badges[1]).toBeCloseTo(badges[0], 0);
+});

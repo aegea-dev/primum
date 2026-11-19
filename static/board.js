@@ -151,8 +151,11 @@ function draw(){
 // (flex-grow), or give it back in proportion to their share when the row is
 // too narrow. A column dragged by its header's grip keeps that width; a
 // double-click on the grip fits the column to its content, at most the row.
-const FLEX={title:{basis:.4,grow:3},needs:{basis:.1,grow:1},docs:{basis:.1,grow:1}};
+// needs first and docs never get narrower than their content on one line,
+// header included, however wide the title is set: they stay readable.
+const FLEX={title:{basis:.4,grow:3},needs:{basis:.1,grow:1,oneLine:true},docs:{basis:.1,grow:1,oneLine:true}};
 const MIN_WIDTH=40;
+const narrowest=(col,fit)=>FLEX[col]?.oneLine?Math.max(MIN_WIDTH,fit):MIN_WIDTH;
 const sum=a=>a.reduce((s,x)=>s+x,0);
 // Each shown header with its content's width on one line, and the row's.
 function measureColumns(){
@@ -167,14 +170,17 @@ function measureColumns(){
 }
 function layoutColumns(){
   const {table,ths,fit,row}=measureColumns();
-  const w=ths.map((th,n)=>widths[th.dataset.col]||fit[n]);
+  const least=ths.map((th,n)=>narrowest(th.dataset.col,fit[n]));
+  const w=ths.map((th,n)=>Math.max(least[n],widths[th.dataset.col]||fit[n]));
   const flex=ths.map((th,n)=>n).filter(n=>FLEX[ths[n].dataset.col]&&!widths[ths[n].dataset.col]);
   if(flex.length){
     const basis=flex.map(n=>FLEX[ths[n].dataset.col].basis*row);
     const left=row-sum(w.filter((x,n)=>!flex.includes(n)))-sum(basis);
     const share=left>=0?flex.map(n=>FLEX[ths[n].dataset.col].grow):basis;
-    flex.forEach((n,k)=>{w[n]=Math.max(MIN_WIDTH,basis[k]+left*share[k]/sum(share));});
-  }else table.style.width=sum(w)+'px';
+    flex.forEach((n,k)=>{w[n]=Math.max(least[n],basis[k]+left*share[k]/sum(share));});
+  }
+  // wider than the row when what must stay on one line does not fit in it
+  if(!flex.length||sum(w)>row)table.style.width=sum(w)+'px';
   ths.forEach((th,n)=>{th.style.width=w[n]+'px';});
 }
 
@@ -187,8 +193,10 @@ document.querySelectorAll('table.items thead th').forEach(th=>{
     e.preventDefault();
     grip.setPointerCapture(e.pointerId);
     const x=e.clientX, start=th.getBoundingClientRect().width;
+    const {ths,fit}=measureColumns(), least=narrowest(th.dataset.col,Math.ceil(fit[ths.indexOf(th)]));
+    layoutColumns();
     grip.onpointermove=m=>{
-      widths[th.dataset.col]=Math.max(MIN_WIDTH,Math.round(start+m.clientX-x));
+      widths[th.dataset.col]=Math.max(least,Math.round(start+m.clientX-x));
       layoutColumns();
     };
     grip.onpointerup=()=>{grip.onpointermove=null;grip.onpointerup=null;remember();};
