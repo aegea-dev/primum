@@ -94,6 +94,7 @@ test("changing kind keeps the number; delete returns to the board", async ({ pag
   await expect(page).toHaveURL(/\/item\/4$/);
   await expect(page.locator("#item-id")).toHaveText("#4");
   await expect(page.locator("#item-id")).toHaveClass(/kind-urgent/);
+  await expect(page.locator("#del")).toHaveText("delete");
   page.once("dialog", (d) => d.accept());
   await page.locator("#del").click();
   await expect(page).toHaveURL(/\/p\/i%C5%9Fler\/$/);
