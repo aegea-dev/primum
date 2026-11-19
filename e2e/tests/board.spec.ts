@@ -316,28 +316,35 @@ test("each side of the item page scrolls on its own, its head staying on screen"
   expect(await top("section.left .sidehead")).toBeCloseTo(bar.y + bar.height, 1);
 });
 
-test("sticky parts meet the bars above them with no gap", async ({ page, board }) => {
+test("the page's top stays in one piece, and what sticks below meets it", async ({ page, board }) => {
   const edges = (sels: string[]) => page.evaluate((s) =>
     s.map((sel) => { const b = document.querySelector(sel)!.getBoundingClientRect(); return [b.top, b.bottom]; }), sels);
-  await page.setViewportSize({ width: 1440, height: 260 });
+  const top = ["header.pagetop", "nav.secnav", ".header", ".gallery-toolbar"];
+  const together = (t: number[][]) => {
+    expect(t[0][0]).toBe(0);
+    for (let n = 2; n < t.length; n++) expect(t[n][0]).toBeCloseTo(t[n - 1][1], 2);
+    expect(t[0][1]).toBeCloseTo(t[t.length - 1][1], 2);
+  };
+  await page.setViewportSize({ width: 1440, height: 300 });
   await page.goto(board.baseURL);
   await expect(page.locator("#rows tr.item")).toHaveCount(4);
   await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-  let [nav, bar, th] = await edges(["nav.secnav", ".gallery-toolbar", "table.items th"]);
-  expect(bar[0]).toBeCloseTo(nav[1], 2);
-  expect(th[0]).toBeCloseTo(bar[1], 2);
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(50);
+  let [pagetop, nav, header, bar, below] = await edges([...top, "table.items th"]);
+  together([pagetop, nav, header, bar]);
+  expect(below[0]).toBeCloseTo(pagetop[1], 2);
   await page.goto(`${board.baseURL}/p/i%C5%9Fler/item/1`);
   await expect(page.locator("#doc h1")).toBeVisible();
   await page.locator("#edit").click();
   await page.locator("#editor").fill(Array.from({ length: 60 }, (_, n) => `Satır ${n}: ğüşıöç`).join("\n\n"));
   await page.locator("#save").click();
-  // stacked, where the page scrolls under the bars
+  // stacked, where the page scrolls under its top
   await page.setViewportSize({ width: 800, height: 600 });
   await page.evaluate(() => window.scrollTo(0, 800));
-  let head;
-  [nav, bar, head] = await edges(["nav.secnav", ".gallery-toolbar", "section.left .sidehead"]);
-  expect(bar[0]).toBeCloseTo(nav[1], 2);
-  expect(head[0]).toBeCloseTo(bar[1], 2);
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(50);
+  [pagetop, nav, header, bar, below] = await edges([...top, "section.left .sidehead"]);
+  together([pagetop, nav, header, bar]);
+  expect(below[0]).toBeCloseTo(pagetop[1], 2);
 });
 
 test("a sticky head fades what scrolls under it, only once something does", async ({ page, board }) => {

@@ -34,7 +34,10 @@
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--fg);font-size:14px;line-height:1.5}
 
 /* The nav strip: the brand, then one link per project. */
-.secnav{display:flex;align-items:center;gap:2px;padding:10px 16px;background:var(--nav-bg);border-bottom:1px solid var(--nav-line);position:sticky;top:0;z-index:50;flex-wrap:wrap}
+/* The page's top: the nav, the header and the settings bar, one block that
+   sticks to the top of the window. */
+.pagetop{position:sticky;top:0;z-index:50}
+.secnav{display:flex;align-items:center;gap:2px;padding:10px 16px;background:var(--nav-bg);border-bottom:1px solid var(--nav-line);flex-wrap:wrap}
 .secnav a:not(.secnav-brand),.secnav-off{padding:6px 14px;border-radius:6px;color:var(--nav-fg);text-decoration:none;font:500 14px/1.2 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
 .secnav a:not(.secnav-brand):hover{background:var(--nav-hover);color:var(--nav-hover-fg)}
 .secnav a.on{background:var(--nav-on);color:#fff}
@@ -50,8 +53,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .header .hlabel{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:var(--header-mut);margin-right:4px}
 
 /* Each page's settings bar, directly under the header: the controls that
-   change how the page shows its content. It sticks under the nav. */
-.gallery-toolbar{padding:8px 16px;display:flex;align-items:center;flex-wrap:wrap;gap:12px;background:var(--bar-bg);color:var(--bar-fg);border-bottom:1px solid var(--bar-line);position:sticky;top:var(--secnav-h,53px);z-index:45}
+   change how the page shows its content. */
+.gallery-toolbar{padding:8px 16px;display:flex;align-items:center;flex-wrap:wrap;gap:12px;background:var(--bar-bg);color:var(--bar-fg);border-bottom:1px solid var(--bar-line)}
 .gallery-toolbar :where(a,strong,span,button,input,select,label){font:500 13px/1.2 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
 .gallery-toolbar :where(a){color:var(--accent);text-decoration:none}
 .gallery-toolbar :where(a):hover{text-decoration:underline}

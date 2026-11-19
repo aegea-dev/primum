@@ -16,11 +16,44 @@ try {
 <link rel="stylesheet" href="/static/primum.css">
 </head>
 <body>
+<header class="pagetop">
 {% include "nav.html" %}
 <div class="header">
 <p class="hmeta"><span class="hlabel">Project:</span> {{ page.path }}</p>
 </div>
 {% block bar %}{% endblock %}
+</header>
+<script>
+// The height of the page's top (nav, header and settings bar, one sticky
+// block) as --chrome-h, for what sticks below it. Measured, since it wraps
+// on a narrow window, and exactly: offsetHeight rounds, and the fraction it
+// drops is a gap that scrolled content shows through.
+{
+  const top = document.querySelector('header.pagetop');
+  const measure = () => document.documentElement.style.setProperty('--chrome-h', `${top.getBoundingClientRect().height}px`);
+  measure();
+  new ResizeObserver(measure).observe(top);
+}
+// A .fade-head (a sticky head) gets "over" while what follows it has
+// scrolled beneath it, so its fade shows only then: checked on every scroll
+// and whenever the head or what follows changes size (a redraw, an edit).
+// A thead is measured by its sticky cells; what is hidden is under nothing.
+{
+  const heads = () => document.querySelectorAll('.fade-head');
+  const update = () => heads().forEach(head => {
+    const next = head.nextElementSibling;
+    const box = (head.querySelector('th') ?? head).getBoundingClientRect();
+    head.classList.toggle('over', !!next?.offsetParent && next.getBoundingClientRect().top < box.bottom - 0.5);
+  });
+  const watch = () => {
+    const ro = new ResizeObserver(update);
+    heads().forEach(head => { ro.observe(head); if (head.nextElementSibling) ro.observe(head.nextElementSibling); });
+  };
+  document.addEventListener('scroll', update, { capture: true, passive: true });
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', watch);
+  else watch();
+}
+</script>
 {% block main %}{% endblock %}
 <script>Object.assign(window,{{ page.globals|safe }});</script>
 {% block scripts %}{% endblock %}
