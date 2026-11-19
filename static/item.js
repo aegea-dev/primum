@@ -75,14 +75,20 @@ function drawFields(){
 }
 
 // Side by side, the two heads' button rows share a line: the shorter head
-// gets the difference above its row.
+// gets the difference above its row. While only one side is editing, the
+// documents' side keeps its place and only the text's side moves, so a
+// click on one side never shifts the other.
 function alignBars(){
   const rows=[$('section.left .sidehead .bar'),$('#docpane .sidehead .bar')];
-  rows.forEach(r=>{r.style.marginTop='';});
-  if(getComputedStyle($('#divider')).display==='none'||rows.some(r=>!r.offsetParent))return;
+  const both=EDITING===DOCEDIT;
+  rows.forEach((r,n)=>{if(both||n===0)r.style.marginTop='';});
+  if(getComputedStyle($('#divider')).display==='none'||rows.some(r=>!r.offsetParent)){
+    rows.forEach(r=>{r.style.marginTop='';});
+    return;
+  }
   const [left,right]=rows.map(r=>r.getBoundingClientRect().top);
-  const higher=left<right?rows[0]:rows[1];
-  higher.style.marginTop=parseFloat(getComputedStyle(higher).marginTop)+Math.abs(left-right)+'px';
+  const higher=left<right?rows[0]:both?rows[1]:null;
+  if(higher)higher.style.marginTop=parseFloat(getComputedStyle(higher).marginTop)+Math.abs(left-right)+'px';
 }
 window.addEventListener('resize',()=>alignBars());
 

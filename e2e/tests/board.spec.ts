@@ -630,3 +630,20 @@ test("a badge in a row swaps its colours on hover", async ({ page, board }) => {
     await expect.poll(() => colours(sel)).toEqual([row, text]);
   }
 });
+
+test("editing one side of the item page does not move the other", async ({ page, board }) => {
+  await page.goto(`${board.baseURL}/p/i%C5%9Fler/item/2`);
+  await page.locator("#edit").click();
+  await page.locator("#cancel").click();
+  const top = async (sel: string) => (await page.locator(sel).boundingBox())!.y;
+  // item 2 has no documents; item 1 has, and needs, and wraps its fields in edit
+  await page.goto(`${board.baseURL}/p/i%C5%9Fler/item/1`);
+  await expect(page.locator("#doc h1")).toBeVisible();
+  const doc = await top("#doc"), docedit = await top("#docedit");
+  await page.locator("#edit").click();
+  await expect(page.locator("#title-field")).toBeVisible();
+  expect(await top("#doc")).toBeCloseTo(doc, 0);
+  expect(await top("#docedit")).toBeCloseTo(docedit, 0);
+  await page.locator("#cancel").click();
+  expect(await top("#doc")).toBeCloseTo(doc, 0);
+});
