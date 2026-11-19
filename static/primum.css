@@ -95,9 +95,14 @@ main.itempage{padding:16px 16px 48px}
 .divider{align-self:stretch;cursor:col-resize;background:linear-gradient(var(--line),var(--line)) center/1px 100% no-repeat}
 .split.single .divider{display:none}
 .docpane{max-height:calc(100vh - var(--chrome-h,100px) - 24px);overflow:auto;position:sticky;top:calc(var(--chrome-h,100px) + 12px)}
+/* each side's head stays in view: the text's under the bar as the page
+ * scrolls, the documents' at the top of their own scrolling pane */
+.sidehead{position:sticky;top:var(--chrome-h,100px);z-index:2;background:var(--bg);padding-top:4px}
+.docpane .sidehead{top:0;padding-top:0}
 @media (max-width:1100px){
   .split,.split.single{grid-template-columns:minmax(0,1fr)}
   .divider{display:none}
+  .docpane .sidehead{top:var(--chrome-h,100px)}
   .docpane{border-left:0;border-top:1px solid var(--line);padding:16px 0 0;max-height:none;position:static}
 }
 .item-title{font-size:18px;line-height:1.35;margin:0 0 10px;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}

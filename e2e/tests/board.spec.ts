@@ -278,3 +278,32 @@ test("the item's text and documents fill their side, wide content included", asy
   await drag(1430);
   expect(await fits("#doc")).toBe(true);
 });
+
+test("the item's title, controls and document tabs stay on screen when scrolled", async ({ page, board }) => {
+  await page.goto(`${board.baseURL}/p/i%C5%9Fler/item/1`);
+  await expect(page.locator("#doc h1")).toBeVisible();
+  const body = ["## Neden", ""].concat(Array.from({ length: 60 }, (_, n) => `Gökçe ${n}. kez galeriyi açıyor ve boş sayfa görüyor.\n`)).join("\n");
+  await page.locator("#edit").click();
+  await page.locator("#editor").fill(body);
+  await page.locator("#save").click();
+  await expect(page.locator("#view p").nth(50)).toBeAttached();
+  const top = async (sel: string) => (await page.locator(sel).boundingBox())!.y;
+  const chrome = await page.evaluate(() =>
+    parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--chrome-h")) || 100);
+  // the page scrolls: the left side's head stays under the bar
+  await page.mouse.wheel(0, 1500);
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(1000);
+  for (const sel of [".item-title", "#controls"]) {
+    expect(await top(sel)).toBeGreaterThanOrEqual(chrome - 1);
+    expect(await top(sel)).toBeLessThan(chrome + 120);
+  }
+  // the documents scroll in their pane: its tabs and path stay at its top
+  await page.setViewportSize({ width: 1440, height: 420 });
+  // the fixture's spec is short: lengthen the shown document
+  await page.locator("#doc").evaluate((el) => { el.innerHTML += "<p>ayrıntı</p>".repeat(80); });
+  await page.locator("#docpane").evaluate((el) => { el.scrollTop = el.scrollHeight; });
+  await expect.poll(() => page.locator("#docpane").evaluate((el) => el.scrollTop)).toBeGreaterThan(20);
+  const pane = await top("#docpane");
+  expect(await top("#doctabs")).toBeCloseTo(pane, -1);
+  await expect(page.locator("#docpath")).toBeInViewport();
+});

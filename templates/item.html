@@ -7,9 +7,11 @@
 {% block main %}<main class="itempage">
 <div class="split" id="split">
 <section class="left">
+<div class="sidehead">
 <h2 class="item-title"><span class="id" id="item-id">#{{ id }}</span> <span id="item-title">{{ title }}</span></h2>
 <div class="conflicts hide" id="conflicts"></div>
 <div class="controls" id="controls"></div>
+</div>
 <div class="md" id="view"></div>
 <textarea class="hide" id="editor" spellcheck="false"></textarea>
 <div class="bar">
@@ -24,8 +26,10 @@
 </section>
 <div class="divider" id="divider" title="drag to resize; double-click for the default"></div>
 <aside class="docpane" id="docpane">
+<div class="sidehead">
 <div class="doctabs" id="doctabs"></div>
 <div class="docpath" id="docpath"></div>
+</div>
 <div class="md" id="doc"></div>
 </aside>
 </div>
