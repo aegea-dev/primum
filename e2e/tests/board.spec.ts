@@ -127,3 +127,69 @@ test("a ticket offers idle, doing, done and wontfix", async ({ page, board }) =>
   const options = await page.locator("tr.item[data-id='4'] select[data-f=status] option").allTextContents();
   expect(options).toEqual(["idle", "doing", "done", "wontfix"]);
 });
+
+const width = async (page: import("@playwright/test").Page, col: string) =>
+  (await page.locator(`table.items th[data-col=${col}]`).boundingBox())!.width;
+
+test("columns fit their content; title, needs and docs share the rest", async ({ page, board }) => {
+  await page.goto(board.baseURL);
+  await expect(page.locator("#rows tr.item")).toHaveCount(4);
+  const table = (await page.locator("table.items").boundingBox())!.width;
+  const [title, needs, docs] = [await width(page, "title"), await width(page, "needs"), await width(page, "docs")];
+  // 40%, 10% and 10% of the row, and what is left grows them 3:1:1
+  expect(title - 0.4 * table).toBeGreaterThan(0);
+  expect((title - 0.4 * table) / (needs - 0.1 * table)).toBeCloseTo(3, 1);
+  expect(docs).toBeCloseTo(needs, 0);
+  expect(await width(page, "id")).toBeLessThan(80);
+  expect(await width(page, "impact")).toBeLessThan(90);
+  // a line between headers, the colour of the lines between rows
+  const [header, row] = await page.evaluate(() => [
+    getComputedStyle(document.querySelector("table.items th[data-col=title]")!).borderRightColor,
+    getComputedStyle(document.querySelector("#rows td")!).borderBottomColor,
+  ]);
+  expect(header).toBe(row);
+});
+
+test("dragging a header line resizes its column, remembered after a reload", async ({ page, board }) => {
+  await page.goto(board.baseURL);
+  await expect(page.locator("#rows tr.item")).toHaveCount(4);
+  const before = await width(page, "title");
+  const grip = (await page.locator("table.items th[data-col=title] .grip").boundingBox())!;
+  const y = grip.y + grip.height / 2;
+  await page.mouse.move(grip.x + grip.width / 2, y);
+  await page.mouse.down();
+  await page.mouse.move(grip.x + grip.width / 2 - 300, y, { steps: 5 });
+  await page.mouse.up();
+  expect(await width(page, "title")).toBeCloseTo(before - 300, -1);
+  // the drag did not sort by title
+  await expect(page.locator("table.items th[data-col=title]")).not.toHaveClass(/sorted/);
+  // a title that no longer fits goes on to the next line
+  const cell = page.locator("tr.item[data-id='1'] td.title");
+  const line = await cell.evaluate((td) => parseFloat(getComputedStyle(td).lineHeight) || 20);
+  await page.reload();
+  await expect(page.locator("#rows tr.item")).toHaveCount(4);
+  expect(await width(page, "title")).toBeCloseTo(before - 300, -1);
+  const shrunk = (await page.locator("table.items th[data-col=title] .grip").boundingBox())!;
+  await page.mouse.move(shrunk.x + shrunk.width / 2, y);
+  await page.mouse.down();
+  await page.mouse.move(80, y, { steps: 5 });
+  await page.mouse.up();
+  expect((await cell.boundingBox())!.height).toBeGreaterThan(line * 1.5);
+});
+
+test("double-clicking a header line fits the column to its content", async ({ page, board }) => {
+  await page.goto(board.baseURL);
+  await expect(page.locator("#rows tr.item")).toHaveCount(4);
+  const before = await width(page, "needs");
+  await page.locator("table.items th[data-col=needs] .grip").dblclick();
+  const fitted = await width(page, "needs");
+  expect(fitted).toBeLessThan(before - 20);
+  // "needs first" stays on one line
+  const header = page.locator("table.items th[data-col=needs]");
+  const line = await header.evaluate((th) => parseFloat(getComputedStyle(th).lineHeight) || 16);
+  expect((await header.boundingBox())!.height).toBeLessThan(line * 1.5 + 14);
+  await expect(header).not.toHaveClass(/sorted/);
+  await page.reload();
+  await expect(page.locator("#rows tr.item")).toHaveCount(4);
+  expect(await width(page, "needs")).toBeCloseTo(fitted, 0);
+});
